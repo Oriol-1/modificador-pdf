@@ -51,9 +51,20 @@ jobs:
       run: |
         choco install innosetup -y
     
+    - name: Crear carpeta para instalador
+      run: |
+        New-Item -ItemType Directory -Force -Path "dist\installer"
+      shell: powershell
+    
     - name: Crear instalador
       run: |
         & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "installer\inno_setup.iss"
+      shell: powershell
+    
+    - name: Listar archivos generados
+      run: |
+        echo "=== Contenido de dist ==="
+        Get-ChildItem -Path dist -Recurse | Select-Object FullName
       shell: powershell
     
     - name: Subir artefactos Windows
@@ -62,7 +73,7 @@ jobs:
         name: Windows-Installers
         path: |
           dist/installer/*.exe
-          dist/ModificadorPDF_Windows_Portable.zip
+          dist/*.zip
         retention-days: 30
 
   # ==================== BUILD macOS ====================
