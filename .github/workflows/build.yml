@@ -58,13 +58,15 @@ jobs:
     
     - name: Crear instalador
       run: |
-        & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "installer\inno_setup.iss"
+        & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /O"dist\installer" "installer\inno_setup.iss"
       shell: powershell
     
     - name: Listar archivos generados
       run: |
         echo "=== Contenido de dist ==="
         Get-ChildItem -Path dist -Recurse | Select-Object FullName
+        echo "=== Buscando .exe ==="
+        Get-ChildItem -Path . -Recurse -Filter "*.exe" | Where-Object { $_.Name -like "*Setup*" } | Select-Object FullName
       shell: powershell
     
     - name: Subir artefactos Windows
@@ -73,6 +75,7 @@ jobs:
         name: Windows-Installers
         path: |
           dist/installer/*.exe
+          dist/*.exe
           dist/*.zip
         retention-days: 30
 
