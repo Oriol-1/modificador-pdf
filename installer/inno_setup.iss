@@ -77,6 +77,9 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 ; Acceso rápido
 Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: quicklaunchicon
 
+; Desinstalador en menú inicio
+Name: "{autoprograms}\Desinstalar {#MyAppName}"; Filename: "{uninstallexe}"; Comment: "Desinstalar {#MyAppName}"
+
 [Run]
 ; Ejecutar después de instalar
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
@@ -105,5 +108,17 @@ begin
 end;
 
 [UninstallDelete]
-; Limpiar configuración al desinstalar (opcional)
+; Limpiar configuración y archivos temporales al desinstalar
 Type: filesandordirs; Name: "{localappdata}\ModificadorPDF"
+Type: filesandordirs; Name: "{app}\__pycache__"
+Type: filesandordirs; Name: "{app}\*.log"
+Type: dirifempty; Name: "{app}"
+
+[UninstallRun]
+; Cerrar la aplicación si está corriendo antes de desinstalar
+Filename: "taskkill"; Parameters: "/F /IM ""{#MyAppExeName}"""; Flags: runhidden; RunOnceId: "KillApp"
+
+[Messages]
+; Mensajes personalizados en español
+ConfirmUninstall=¿Está seguro de que desea eliminar completamente %1 y todos sus componentes?
+UninstallStatusLabel=Por favor espere mientras %1 se elimina de su equipo.
