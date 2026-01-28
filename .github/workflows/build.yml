@@ -58,7 +58,14 @@ jobs:
     
     - name: Crear instalador
       run: |
-        & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /O"dist\installer" "installer\inno_setup.iss"
+        echo "=== Verificando archivos necesarios ==="
+        Test-Path "dist\ModificadorPDF" 
+        Test-Path "installer\inno_setup.iss"
+        Test-Path "installer\app_icon.ico"
+        echo "=== Ejecutando Inno Setup ==="
+        & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /O"dist" "installer\inno_setup.iss"
+        echo "=== Verificando resultado ==="
+        Get-ChildItem -Path dist -Filter "*.exe" | Select-Object FullName, Length
       shell: powershell
     
     - name: Listar archivos generados
