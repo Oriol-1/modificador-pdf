@@ -1,0 +1,152 @@
+# GitHub Actions - Compilación automática para Windows y macOS
+# Cada vez que hagas push o release, se generan los instaladores
+
+name: Build Installers
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # Permite ejecutar manualmente
+
+jobs:
+  # ==================== BUILD WINDOWS ====================
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout código
+      uses: actions/checkout@v4
+    
+    - name: Configurar Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Instalar dependencias
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install Pillow
+    
+    - name: Generar icono
+      run: python installer/create_icon.py
+    
+    - name: Compilar con PyInstaller
+      run: pyinstaller --clean --noconfirm ModificadorPDF.spec
+    
+    - name: Crear ZIP portátil
+      run: |
+        Compress-Archive -Path "dist\ModificadorPDF\*" -DestinationPath "dist\ModificadorPDF_Windows_Portable.zip"
+    
+    - name: Instalar Inno Setup
+      run: |
+        choco install innosetup -y
+    
+    - name: Crear instalador
+      run: |
+        & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "installer\inno_setup.iss"
+      shell: powershell
+    
+    - name: Subir artefactos Windows
+      uses: actions/upload-artifact@v4
+      with:
+        name: Windows-Installers
+        path: |
+          dist/installer/*.exe
+          dist/ModificadorPDF_Windows_Portable.zip
+        retention-days: 30
+
+  # ==================== BUILD macOS ====================
+  build-macos:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout código
+      uses: actions/checkout@v4
+    
+    - name: Configurar Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Instalar dependencias
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install Pillow
+    
+    - name: Generar icono PNG
+      run: python installer/create_icon.py
+    
+    - name: Crear icono ICNS para macOS
+      run: |
+        mkdir -p installer/icon.iconset
+        sips -z 16 16     installer/app_icon_mac.png --out installer/icon.iconset/icon_16x16.png
+        sips -z 32 32     installer/app_icon_mac.png --out installer/icon.iconset/icon_16x16@2x.png
+        sips -z 32 32     installer/app_icon_mac.png --out installer/icon.iconset/icon_32x32.png
+        sips -z 64 64     installer/app_icon_mac.png --out installer/icon.iconset/icon_32x32@2x.png
+        sips -z 128 128   installer/app_icon_mac.png --out installer/icon.iconset/icon_128x128.png
+        sips -z 256 256   installer/app_icon_mac.png --out installer/icon.iconset/icon_128x128@2x.png
+        sips -z 256 256   installer/app_icon_mac.png --out installer/icon.iconset/icon_256x256.png
+        sips -z 512 512   installer/app_icon_mac.png --out installer/icon.iconset/icon_256x256@2x.png
+        sips -z 512 512   installer/app_icon_mac.png --out installer/icon.iconset/icon_512x512.png
+        sips -z 1024 1024 installer/app_icon_mac.png --out installer/icon.iconset/icon_512x512@2x.png
+        iconutil -c icns installer/icon.iconset -o installer/app_icon.icns
+    
+    - name: Compilar con PyInstaller
+      run: pyinstaller --clean --noconfirm ModificadorPDF.spec
+    
+    - name: Crear DMG
+      run: |
+        mkdir -p dist/dmg_temp
+        cp -R "dist/Modificador de PDF.app" dist/dmg_temp/ 2>/dev/null || cp -R dist/ModificadorPDF dist/dmg_temp/
+        ln -s /Applications dist/dmg_temp/Applications
+        hdiutil create -volname "Modificador de PDF" \
+                       -srcfolder dist/dmg_temp \
+                       -ov -format UDZO \
+                       "dist/ModificadorPDF_macOS.dmg"
+    
+    - name: Subir artefactos macOS
+      uses: actions/upload-artifact@v4
+      with:
+        name: macOS-Installer
+        path: dist/ModificadorPDF_macOS.dmg
+        retention-days: 30
+
+  # ==================== CREAR RELEASE ====================
+  create-release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - name: Descargar artefactos Windows
+      uses: actions/download-artifact@v4
+      with:
+        name: Windows-Installers
+        path: ./release
+    
+    - name: Descargar artefactos macOS
+      uses: actions/download-artifact@v4
+      with:
+        name: macOS-Installer
+        path: ./release
+    
+    - name: Crear Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          release/*.exe
+          release/*.zip
+          release/*.dmg
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
