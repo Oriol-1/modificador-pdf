@@ -83,22 +83,24 @@ def create_icon():
     output_dir = os.path.dirname(os.path.abspath(__file__))
     png_path = os.path.join(output_dir, "app_icon.png")
     img.save(png_path, "PNG")
-    print(f"✓ PNG guardado: {png_path}")
+    print(f"[OK] PNG guardado: {png_path}")
     
     # Guardar ICO (Windows)
     ico_path = os.path.join(output_dir, "app_icon.ico")
     img.save(ico_path, format='ICO', sizes=icon_sizes)
-    print(f"✓ ICO guardado: {ico_path}")
+    print(f"[OK] ICO guardado: {ico_path}")
     
     # Guardar ICNS (macOS) - Necesita iconutil en Mac, hacemos PNG por ahora
     icns_png = os.path.join(output_dir, "app_icon_mac.png")
     img.save(icns_png, "PNG")
-    print(f"✓ PNG para Mac guardado: {icns_png}")
+    print(f"[OK] PNG para Mac guardado: {icns_png}")
     
-    print("\n✅ Iconos generados correctamente!")
-    print("\nPara macOS, convierte app_icon_mac.png a .icns usando:")
+    print("")
+    print("[SUCCESS] Iconos generados correctamente!")
+    print("")
+    print("Para macOS, convierte app_icon_mac.png a .icns usando:")
     print("  1. En Mac: iconutil -c icns icon.iconset")
-    print("  2. O usa una herramienta online de conversión PNG a ICNS")
+    print("  2. O usa una herramienta online de conversion PNG a ICNS")
 
 if __name__ == "__main__":
     create_icon()
