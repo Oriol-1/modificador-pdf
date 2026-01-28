@@ -106,6 +106,15 @@ jobs:
     - name: Compilar con PyInstaller
       run: pyinstaller --clean --noconfirm ModificadorPDF.spec
     
+    - name: Crear ZIP portátil macOS
+      run: |
+        cd dist
+        if [ -d "Modificador de PDF.app" ]; then
+          zip -r ModificadorPDF_macOS_Portable.zip "Modificador de PDF.app"
+        elif [ -d "ModificadorPDF" ]; then
+          zip -r ModificadorPDF_macOS_Portable.zip ModificadorPDF
+        fi
+    
     - name: Crear DMG
       run: |
         mkdir -p dist/dmg_temp
@@ -120,7 +129,9 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: macOS-Installer
-        path: dist/ModificadorPDF_macOS.dmg
+        path: |
+          dist/ModificadorPDF_macOS.dmg
+          dist/ModificadorPDF_macOS_Portable.zip
         retention-days: 30
 
   # ==================== CREAR RELEASE ====================
