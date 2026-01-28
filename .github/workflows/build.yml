@@ -12,6 +12,10 @@ on:
     branches: [ main, master ]
   workflow_dispatch:  # Permite ejecutar manualmente
 
+# Permisos necesarios para crear releases
+permissions:
+  contents: write
+
 jobs:
   # ==================== BUILD WINDOWS ====================
   build-windows:
@@ -131,22 +135,28 @@ jobs:
       with:
         name: Windows-Installers
         path: ./release
+      continue-on-error: true
     
     - name: Descargar artefactos macOS
       uses: actions/download-artifact@v4
       with:
         name: macOS-Installer
         path: ./release
+      continue-on-error: true
+    
+    - name: Listar archivos descargados
+      run: |
+        echo "Contenido de ./release:"
+        ls -la ./release/ || echo "Carpeta vacia"
+        find ./release -type f || echo "No hay archivos"
     
     - name: Crear Release
       uses: softprops/action-gh-release@v1
       with:
-        files: |
-          release/*.exe
-          release/*.zip
-          release/*.dmg
+        files: release/*
         draft: false
         prerelease: false
         generate_release_notes: true
+        fail_on_unmatched_files: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
