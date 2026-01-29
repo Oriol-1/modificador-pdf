@@ -9,3 +9,5 @@ PyQt5>=5.15.0
 
 # Para crear ejecutable
 pyinstaller>=6.0.0
+# Para tests
+pytest>=9.0.0

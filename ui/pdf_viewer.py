@@ -5,9 +5,11 @@ Visor de páginas PDF con soporte para zoom, scroll y selección de texto.
 from PyQt5.QtWidgets import (
     QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
     QGraphicsRectItem, QMenu, QAction, QInputDialog, QMessageBox,
-    QGraphicsTextItem, QGraphicsDropShadowEffect, QToolTip
+    QGraphicsTextItem, QGraphicsDropShadowEffect, QToolTip,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
+    QSpinBox, QCheckBox, QDialogButtonBox, QGroupBox
 )
-from PyQt5.QtCore import Qt, QRectF, pyqtSignal, QPointF, QTimer
+from PyQt5.QtCore import Qt, QRectF, pyqtSignal, QPointF, QTimer, QRect
 from PyQt5.QtGui import (
     QPixmap, QImage, QPen, QBrush, QColor, QPainter, QCursor,
     QFont, QFontMetrics
@@ -84,6 +86,137 @@ class HighlightRect(QGraphicsRectItem):
         self.setZValue(50)
 
 
+class TextEditDialog(QDialog):
+    """
+    Diálogo personalizado para editar texto con opciones de formato.
+    """
+    def __init__(self, text: str = "", font_size: int = 12, is_bold: bool = False, 
+                 title: str = "Editar texto", parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(self)
+        
+        # Grupo de texto
+        text_group = QGroupBox("Contenido")
+        text_layout = QVBoxLayout(text_group)
+        
+        self.text_edit = QLineEdit(text)
+        self.text_edit.setPlaceholderText("Escribe el texto aquí...")
+        self.text_edit.selectAll()
+        text_layout.addWidget(self.text_edit)
+        layout.addWidget(text_group)
+        
+        # Grupo de formato
+        format_group = QGroupBox("Formato")
+        format_layout = QHBoxLayout(format_group)
+        
+        # Tamaño de fuente
+        size_layout = QHBoxLayout()
+        size_label = QLabel("Tamaño:")
+        self.size_spin = QSpinBox()
+        self.size_spin.setRange(6, 72)
+        self.size_spin.setValue(int(font_size))
+        self.size_spin.setSuffix(" pt")
+        size_layout.addWidget(size_label)
+        size_layout.addWidget(self.size_spin)
+        format_layout.addLayout(size_layout)
+        
+        # Checkbox para negrita
+        self.bold_check = QCheckBox("Negrita")
+        self.bold_check.setChecked(is_bold)
+        format_layout.addWidget(self.bold_check)
+        
+        format_layout.addStretch()
+        layout.addWidget(format_group)
+        
+        # Botones
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        
+        # Foco inicial en el texto
+        self.text_edit.setFocus()
+    
+    def get_values(self):
+        """Retorna los valores del diálogo."""
+        return {
+            'text': self.text_edit.text(),
+            'font_size': self.size_spin.value(),
+            'is_bold': self.bold_check.isChecked()
+        }
+
+
+class EditableTextItem(QGraphicsRectItem):
+    """
+    Representa un texto editable añadido al PDF.
+    Permite seleccionar, mover y editar el texto.
+    """
+    
+    def __init__(self, rect: QRectF, text: str, font_size: float = 12, 
+                 color: tuple = (0, 0, 0), page_num: int = 0, 
+                 font_name: str = "helv", is_bold: bool = False, parent=None):
+        super().__init__(rect, parent)
+        self.text = text
+        self.font_size = font_size
+        self.text_color = color
+        self.page_num = page_num
+        self.font_name = font_name  # Nombre de la fuente
+        self.is_bold = is_bold  # Si es negrita
+        self.pdf_rect = None  # Se establece después de añadir al PDF
+        
+        # Estado visual
+        self.is_selected = False
+        self.is_hovered = False
+        
+        # Configuración visual base (invisible hasta hover/select)
+        self._update_visual()
+        self.setZValue(150)
+        self.setAcceptHoverEvents(True)
+        self.setCursor(QCursor(Qt.PointingHandCursor))
+        
+        # Flags para interacción
+        self.setFlag(QGraphicsRectItem.ItemIsSelectable, True)
+        self.setFlag(QGraphicsRectItem.ItemIsMovable, True)
+        self.setFlag(QGraphicsRectItem.ItemSendsGeometryChanges, True)
+    
+    def _update_visual(self):
+        """Actualiza el estilo visual según el estado."""
+        if self.is_selected:
+            # Seleccionado: borde azul sólido
+            self.setPen(QPen(QColor(0, 120, 215), 2, Qt.SolidLine))
+            self.setBrush(QBrush(QColor(0, 120, 215, 30)))
+        elif self.is_hovered:
+            # Hover: borde azul punteado
+            self.setPen(QPen(QColor(0, 120, 215), 1, Qt.DashLine))
+            self.setBrush(QBrush(QColor(0, 120, 215, 15)))
+        else:
+            # Normal: invisible
+            self.setPen(QPen(Qt.NoPen))
+            self.setBrush(QBrush(Qt.NoBrush))
+    
+    def set_selected(self, selected: bool):
+        """Establece el estado de selección."""
+        self.is_selected = selected
+        self._update_visual()
+    
+    def hoverEnterEvent(self, event):
+        """Mouse entra en el área."""
+        self.is_hovered = True
+        self._update_visual()
+        super().hoverEnterEvent(event)
+    
+    def hoverLeaveEvent(self, event):
+        """Mouse sale del área."""
+        self.is_hovered = False
+        self._update_visual()
+        super().hoverLeaveEvent(event)
+
+
 class PDFPageView(QGraphicsView):
     """Vista de una página de PDF con capacidades de selección y edición."""
     
@@ -156,12 +289,36 @@ class PDFPageView(QGraphicsView):
         self.min_zoom = 0.25
         self.max_zoom = 5.0
         
+        # Tamaños para conversión de coordenadas
+        self.pdf_page_width = 612  # Tamaño por defecto (Letter)
+        self.pdf_page_height = 792
+        self.pixmap_width = 612
+        self.pixmap_height = 792
+        
+        # Información de transformación de página
+        self.page_rotation = 0
+        self.page_mediabox = None
+        self.page_cropbox = None
+        self.page_transform_matrix = None
+        self.page_derotation_matrix = None
+        
         # Items gráficos
         self.page_item = None
         self.selection_rect = None
         self.delete_preview = None
         self.floating_label = None
         self.highlight_items = []
+        
+        # Textos editables añadidos por el usuario (por página)
+        # Estructura: {page_num: [dict con datos del texto, ...]}
+        # Cada dict tiene: text, pdf_rect, font_size, color, view_rect
+        self.editable_texts_data = {}
+        self.editable_text_items = []  # Items gráficos actuales (se recrean al renderizar)
+        self.selected_text_item = None  # Texto actualmente seleccionado
+        self.dragging_text = False  # Si estamos arrastrando un texto
+        self.drag_start_pos = None  # Posición inicial del arrastre
+        self.drag_original_rect = None  # Rectángulo original antes de mover
+        self.text_was_moved = False  # Si el texto realmente se movió
         
         # Modo de herramienta
         self.tool_mode = 'select'  # 'select', 'highlight', 'delete', 'edit'
@@ -209,6 +366,15 @@ class PDFPageView(QGraphicsView):
         self.floating_label = None
         self.highlight_items = []
         
+        # Limpiar textos editables
+        self.editable_texts_data = {}
+        self.editable_text_items = []
+        self.selected_text_item = None
+        self.dragging_text = False
+        self.drag_start_pos = None
+        self.drag_original_rect = None
+        self.text_was_moved = False
+        
         # Reiniciar página
         self.current_page = 0
     
@@ -235,10 +401,42 @@ class PDFPageView(QGraphicsView):
         self.delete_preview = None
         self.floating_label = None
         
+        # Obtener información completa de la página (incluyendo rotación)
+        page_info = self.pdf_doc.get_page_info(self.current_page)
+        if page_info:
+            self.pdf_page_width = page_info['rect'].width
+            self.pdf_page_height = page_info['rect'].height
+            self.page_rotation = page_info['rotation']
+            self.page_mediabox = page_info['mediabox']
+            self.page_cropbox = page_info['cropbox']
+            self.page_transform_matrix = page_info['transformation_matrix']
+            self.page_derotation_matrix = page_info['derotation_matrix']
+        else:
+            self.pdf_page_width, self.pdf_page_height = 612, 792  # Tamaño por defecto (Letter)
+            self.page_rotation = 0
+            self.page_mediabox = None
+            self.page_cropbox = None
+            self.page_transform_matrix = None
+            self.page_derotation_matrix = None
+        
         # Renderizar página
         pixmap = self.pdf_doc.render_page(self.current_page, self.zoom_level)
         if not pixmap:
             return
+        
+        # Guardar tamaño del pixmap para conversión de coordenadas
+        self.pixmap_width = pixmap.width
+        self.pixmap_height = pixmap.height
+        
+        # Debug información de página
+        print(f"=== Renderizando página ===")
+        print(f"PDF page rect: {self.pdf_page_width:.1f} x {self.pdf_page_height:.1f}")
+        print(f"Pixmap size: {self.pixmap_width} x {self.pixmap_height}")
+        print(f"Page rotation: {self.page_rotation}°")
+        if self.page_mediabox:
+            print(f"MediaBox: {self.page_mediabox}")
+        if self.page_cropbox:
+            print(f"CropBox: {self.page_cropbox}")
         
         # Convertir a QImage
         img = QImage(
@@ -264,6 +462,9 @@ class PDFPageView(QGraphicsView):
         # Mostrar indicadores de resaltados existentes si está en modo highlight
         if self.tool_mode == 'highlight':
             self.show_existing_highlights()
+        
+        # Restaurar textos editables para esta página
+        self._restore_editable_texts_for_page()
     
     def show_existing_highlights(self):
         """Muestra indicadores visuales de los resaltados existentes que pueden eliminarse."""
@@ -385,6 +586,37 @@ class PDFPageView(QGraphicsView):
         if event.button() == Qt.LeftButton:
             scene_pos = self.mapToScene(event.pos())
             
+            # En modo edición, primero verificar si se hace clic en un texto editable
+            if self.tool_mode == 'edit':
+                # Primero buscar en textos editables ya registrados
+                clicked_text = self._find_text_at_position(scene_pos)
+                if clicked_text:
+                    # Clic en un texto editable existente
+                    self._select_text_item(clicked_text)
+                    self.dragging_text = True
+                    self.drag_start_pos = scene_pos
+                    self.drag_original_rect = QRectF(clicked_text.rect())  # Guardar posición original
+                    self.text_was_moved = False  # Marcar que aún no se movió
+                    event.accept()
+                    return
+                
+                # Si no hay texto editable, buscar texto del PDF en esa posición
+                pdf_text = self._find_pdf_text_at_position(scene_pos)
+                if pdf_text:
+                    # Convertir el texto del PDF en un texto editable
+                    text_item = self._convert_pdf_text_to_editable(pdf_text)
+                    if text_item:
+                        self._select_text_item(text_item)
+                        self.dragging_text = True
+                        self.drag_start_pos = scene_pos
+                        self.drag_original_rect = QRectF(text_item.rect())  # Guardar posición original
+                        self.text_was_moved = False  # Marcar que aún no se movió
+                        event.accept()
+                        return
+                
+                # Deseleccionar cualquier texto previamente seleccionado
+                self._deselect_all_texts()
+            
             if self.tool_mode in ['select', 'highlight', 'delete', 'edit']:
                 self.is_selecting = True
                 self.selection_start = scene_pos
@@ -406,9 +638,26 @@ class PDFPageView(QGraphicsView):
     
     def mouseMoveEvent(self, event):
         """Maneja el evento de mover el ratón."""
+        scene_pos = self.mapToScene(event.pos())
+        
+        # Manejar arrastre de texto editable
+        if self.dragging_text and self.selected_text_item and self.drag_start_pos:
+            delta = scene_pos - self.drag_start_pos
+            current_rect = self.selected_text_item.rect()
+            new_rect = QRectF(
+                current_rect.x() + delta.x(),
+                current_rect.y() + delta.y(),
+                current_rect.width(),
+                current_rect.height()
+            )
+            print(f"Moviendo texto: delta=({delta.x():.1f}, {delta.y():.1f}), nuevo rect={new_rect}")
+            self.selected_text_item.setRect(new_rect)
+            self.drag_start_pos = scene_pos
+            self.text_was_moved = True  # Marcar que hubo movimiento real
+            event.accept()
+            return
+        
         if self.is_selecting and self.selection_start:
-            scene_pos = self.mapToScene(event.pos())
-            
             # Actualizar rectángulo de selección
             rect = QRectF(self.selection_start, scene_pos).normalized()
             if self.selection_rect:
@@ -422,39 +671,70 @@ class PDFPageView(QGraphicsView):
     
     def mouseReleaseEvent(self, event):
         """Maneja el evento de soltar el ratón."""
-        if event.button() == Qt.LeftButton and self.is_selecting:
-            self.is_selecting = False
-            self.preview_timer.stop()
+        if event.button() == Qt.LeftButton:
+            # Manejar fin del arrastre de texto
+            if self.dragging_text and self.selected_text_item:
+                self.dragging_text = False
+                self.drag_start_pos = None
+                # Solo actualizar el PDF si realmente hubo movimiento
+                if getattr(self, 'text_was_moved', False):
+                    self._update_text_in_pdf(self.selected_text_item)
+                    self.text_was_moved = False
+                self.drag_original_rect = None
+                event.accept()
+                super().mouseReleaseEvent(event)
+                return
             
-            # Limpiar preview
-            if self.delete_preview:
-                self.scene.removeItem(self.delete_preview)
-                self.delete_preview = None
-            if self.floating_label:
-                self.scene.removeItem(self.floating_label)
-                self.floating_label = None
-            
-            if self.selection_rect:
-                rect = self.selection_rect.rect()
+            if self.is_selecting:
+                self.is_selecting = False
+                self.preview_timer.stop()
                 
-                # Solo procesar si la selección tiene tamaño mínimo
-                if rect.width() > 5 and rect.height() > 5:
-                    self.current_selection = rect
-                    self.process_selection(rect)
-                else:
-                    # Selección muy pequeña (click simple)
-                    self.scene.removeItem(self.selection_rect)
-                    self.selection_rect = None
+                # Limpiar preview
+                if self.delete_preview:
+                    self.scene.removeItem(self.delete_preview)
+                    self.delete_preview = None
+                if self.floating_label:
+                    self.scene.removeItem(self.floating_label)
+                    self.floating_label = None
+                
+                if self.selection_rect:
+                    rect = self.selection_rect.rect()
                     
-                    # En modo edición, un click simple permite añadir/editar texto
-                    if self.tool_mode == 'edit' and self.selection_start:
-                        self.handle_edit_click(self.selection_start)
-                    
-                    # En modo highlight, un click simple permite eliminar resaltados existentes
-                    elif self.tool_mode == 'highlight' and self.selection_start:
-                        self.handle_highlight_click(self.selection_start)
+                    # Solo procesar si la selección tiene tamaño mínimo
+                    if rect.width() > 5 and rect.height() > 5:
+                        self.current_selection = rect
+                        self.process_selection(rect)
+                    else:
+                        # Selección muy pequeña (click simple) - limpiar el rectángulo
+                        self.scene.removeItem(self.selection_rect)
+                        self.selection_rect = None
+                        
+                        # Guardar posición del clic
+                        click_pos = self.selection_start
+                        
+                        # En modo highlight, un click simple permite eliminar resaltados existentes
+                        if self.tool_mode == 'highlight' and click_pos:
+                            self.handle_highlight_click(click_pos)
+                        
+                        # En modo edición, un click simple permite añadir/editar texto
+                        elif self.tool_mode == 'edit' and click_pos:
+                            self.handle_edit_click(click_pos)
         
         super().mouseReleaseEvent(event)
+    
+    def mouseDoubleClickEvent(self, event):
+        """Maneja el doble clic - editar texto seleccionado."""
+        if event.button() == Qt.LeftButton and self.tool_mode == 'edit':
+            scene_pos = self.mapToScene(event.pos())
+            clicked_text = self._find_text_at_position(scene_pos)
+            
+            if clicked_text:
+                # Doble clic en un texto editable - abrir diálogo de edición
+                self._edit_text_content(clicked_text)
+                event.accept()
+                return
+        
+        super().mouseDoubleClickEvent(event)
     
     def show_selection_info(self, rect: QRectF, mouse_pos):
         """Muestra información sobre el texto seleccionado."""
@@ -524,31 +804,65 @@ class PDFPageView(QGraphicsView):
             self.selectionChanged.emit(rect)
     
     def view_to_pdf_rect(self, view_rect: QRectF) -> fitz.Rect:
-        """Convierte un rectángulo de coordenadas de vista a coordenadas de PDF."""
-        # Ajustar por zoom
-        return fitz.Rect(
-            view_rect.x() / self.zoom_level,
-            view_rect.y() / self.zoom_level,
-            view_rect.right() / self.zoom_level,
-            view_rect.bottom() / self.zoom_level
-        )
+        """
+        Convierte un rectángulo de coordenadas de vista (pixmap) a coordenadas de PDF.
+        
+        IMPORTANTE: PyMuPDF maneja las coordenadas de página internamente considerando
+        la rotación. Las coordenadas de page.rect ya están en el sistema "visual".
+        Por lo tanto, solo necesitamos escalar por el zoom.
+        """
+        # El pixmap es el PDF renderizado con zoom, así que dividimos por zoom
+        x0 = view_rect.x() / self.zoom_level
+        y0 = view_rect.y() / self.zoom_level
+        x1 = view_rect.right() / self.zoom_level
+        y1 = view_rect.bottom() / self.zoom_level
+        
+        # Debug info
+        print(f"=== Conversión de coordenadas ===")
+        print(f"View rect: ({view_rect.x():.1f}, {view_rect.y():.1f}) -> ({view_rect.right():.1f}, {view_rect.bottom():.1f})")
+        print(f"Zoom: {self.zoom_level}")
+        print(f"Rotación página: {self.page_rotation}°")
+        print(f"PDF rect (escalado): ({x0:.1f}, {y0:.1f}) -> ({x1:.1f}, {y1:.1f})")
+        
+        # Crear el rectángulo - PyMuPDF maneja la rotación internamente
+        pdf_rect = fitz.Rect(x0, y0, x1, y1)
+        
+        print(f"PDF rect final: {pdf_rect}")
+        return pdf_rect
     
     def pdf_to_view_rect(self, pdf_rect: fitz.Rect) -> QRectF:
-        """Convierte un rectángulo de coordenadas de PDF a coordenadas de vista."""
-        return QRectF(
-            pdf_rect.x0 * self.zoom_level,
-            pdf_rect.y0 * self.zoom_level,
-            pdf_rect.width * self.zoom_level,
-            pdf_rect.height * self.zoom_level
-        )
+        """
+        Convierte un rectángulo de coordenadas de PDF a coordenadas de vista.
+        Operación inversa a view_to_pdf_rect.
+        """
+        # Simplemente aplicar el zoom
+        x0 = pdf_rect.x0 * self.zoom_level
+        y0 = pdf_rect.y0 * self.zoom_level
+        x1 = pdf_rect.x1 * self.zoom_level
+        y1 = pdf_rect.y1 * self.zoom_level
+        
+        return QRectF(x0, y0, x1 - x0, y1 - y0)
     
     def edit_selection(self, pdf_rect: fitz.Rect, blocks=None):
-        """Edita o añade texto en el área seleccionada."""
+        """Edita o añade texto en el área seleccionada. Funciona para PDFs con texto e imágenes."""
+        print(f"=== EDIT_SELECTION INICIADO ===")
+        print(f"pdf_rect: {pdf_rect}")
+        print(f"blocks: {blocks}")
+        
         if not self.pdf_doc:
+            print("No hay pdf_doc, saliendo")
             self.clear_selection()
             return
         
-        if blocks and blocks[0].text.strip():
+        # Detectar tipo de PDF para mensajes contextuales
+        is_image_pdf = self.pdf_doc.is_image_based_pdf()
+        print(f"is_image_pdf: {is_image_pdf}")
+        
+        has_text = blocks and blocks[0].text.strip() if blocks else False
+        print(f"has_text: {has_text}")
+        
+        if has_text:
+            print(">>> FLUJO: Editar texto existente")
             # Hay texto existente - editar
             original_text = ' '.join([b.text for b in blocks])
             
@@ -560,109 +874,109 @@ class PDFPageView(QGraphicsView):
             )
             
             if ok and new_text.strip():
+                print(f">>> Texto editado: '{new_text}'")
                 # Guardar snapshot UNA SOLA VEZ antes de ambas operaciones
                 self.pdf_doc._save_snapshot()
                 # Borrar el texto original SIN guardar snapshot adicional
+                print(">>> Borrando área...")
                 self.pdf_doc.erase_area(self.current_page, pdf_rect, color=(1, 1, 1), save_snapshot=False)
                 block = blocks[0]
+                font_size = block.font_size or 12
+                color = block.color or (0, 0, 0)
                 # Añadir nuevo texto SIN guardar snapshot adicional
-                if self.pdf_doc.add_text_to_page(
+                print(f">>> Añadiendo texto con font_size={font_size}...")
+                success = self.pdf_doc.add_text_to_page(
                     self.current_page,
                     pdf_rect,
                     new_text,
-                    font_size=block.font_size or 12,
-                    color=block.color or (0, 0, 0),
+                    font_size=font_size,
+                    color=color,
                     save_snapshot=False
-                ):
+                )
+                print(f">>> add_text_to_page retornó: {success}")
+                if success:
+                    # Registrar el texto como editable para poder moverlo
+                    view_rect = self.pdf_to_view_rect(pdf_rect)
+                    self._add_editable_text(
+                        view_rect,
+                        new_text,
+                        font_size=font_size,
+                        color=color,
+                        pdf_rect=pdf_rect
+                    )
                     self.render_page()
                     self.documentModified.emit()
         else:
+            print(">>> FLUJO: Añadir texto nuevo (no hay texto)")
             # No hay texto - añadir texto nuevo en el área seleccionada
+            # Mensaje contextual según tipo de PDF
+            if is_image_pdf:
+                dialog_title = 'Añadir texto (PDF escaneado)'
+                dialog_msg = '📷 Este es un PDF escaneado.\nEscribe el texto a añadir sobre la imagen:'
+            else:
+                dialog_title = 'Añadir texto'
+                dialog_msg = 'Escribe el texto a insertar en el área seleccionada:'
+            
             new_text, ok = QInputDialog.getText(
                 self,
-                'Añadir texto',
-                'Escribe el texto a insertar en el área seleccionada:',
+                dialog_title,
+                dialog_msg,
                 text=""
             )
             
             if ok and new_text.strip():
-                # Aquí sí se guarda snapshot (solo una operación)
-                if self.pdf_doc.add_text_to_page(
-                    self.current_page,
-                    pdf_rect,
-                    new_text,
-                    font_size=12,
-                    color=(0, 0, 0),
-                    save_snapshot=True
-                ):
+                print(f"=== EDIT_SELECTION: Texto ingresado: '{new_text}' ===")
+                # Para PDFs de imagen, primero borrar el área y luego añadir texto
+                if is_image_pdf:
+                    print("Es PDF de imagen, borrando área primero...")
+                    self.pdf_doc._save_snapshot()
+                    self.pdf_doc.erase_area(self.current_page, pdf_rect, color=(1, 1, 1), save_snapshot=False)
+                    print("Área borrada, ahora añadiendo texto...")
+                    success = self.pdf_doc.add_text_to_page(
+                        self.current_page,
+                        pdf_rect,
+                        new_text,
+                        font_size=12,
+                        color=(0, 0, 0),
+                        save_snapshot=False
+                    )
+                    print(f"add_text_to_page retornó: {success}")
+                else:
+                    # PDF normal - solo añadir texto
+                    print("PDF normal, añadiendo texto directamente...")
+                    success = self.pdf_doc.add_text_to_page(
+                        self.current_page,
+                        pdf_rect,
+                        new_text,
+                        font_size=12,
+                        color=(0, 0, 0),
+                        save_snapshot=True
+                    )
+                    print(f"add_text_to_page retornó: {success}")
+                
+                if success:
+                    # Registrar el texto como editable
+                    view_rect = self.pdf_to_view_rect(pdf_rect)
+                    self._add_editable_text(
+                        view_rect, 
+                        new_text, 
+                        font_size=12, 
+                        color=(0, 0, 0), 
+                        pdf_rect=pdf_rect
+                    )
                     self.render_page()
                     self.documentModified.emit()
         
         self.clear_selection()
     
     def highlight_selection(self, pdf_rect: fitz.Rect, blocks=None):
-        """Resalta la selección actual o elimina resaltado existente."""
+        """Resalta la selección actual."""
         if not self.pdf_doc:
             return
         
-        # Verificar si hay resaltados existentes en el área seleccionada
-        existing_highlights = self.pdf_doc.get_highlight_annotations(self.current_page)
-        highlights_in_area = []
+        # Añadir resaltado usando Shape (funciona para texto e imágenes)
+        is_image_pdf = self.pdf_doc.is_image_based_pdf()
         
-        for hl in existing_highlights:
-            if pdf_rect.intersects(hl['rect']):
-                highlights_in_area.append(hl)
-        
-        if highlights_in_area:
-            # Hay resaltados existentes - preguntar qué hacer
-            msg = QMessageBox(self)
-            msg.setWindowTitle('Resaltado existente')
-            msg.setIcon(QMessageBox.Question)
-            msg.setText('<b>Se encontró un resaltado en esta área</b>')
-            msg.setInformativeText('¿Qué deseas hacer?')
-            
-            btn_remove = msg.addButton('🗑️ Eliminar resaltado', QMessageBox.DestructiveRole)
-            btn_add = msg.addButton('🖍️ Añadir nuevo resaltado', QMessageBox.AcceptRole)
-            btn_cancel = msg.addButton('Cancelar', QMessageBox.RejectRole)
-            
-            msg.setStyleSheet("""
-                QMessageBox {
-                    background-color: #2d2d30;
-                }
-                QMessageBox QLabel {
-                    color: #ffffff;
-                    font-size: 13px;
-                }
-                QPushButton {
-                    background-color: #0078d4;
-                    color: white;
-                    border: none;
-                    padding: 8px 16px;
-                    border-radius: 4px;
-                    font-size: 12px;
-                    min-width: 80px;
-                }
-                QPushButton:hover {
-                    background-color: #1084d8;
-                }
-            """)
-            
-            msg.exec_()
-            clicked = msg.clickedButton()
-            
-            if clicked == btn_remove:
-                # Eliminar resaltados en el área
-                if self.pdf_doc.remove_highlight_in_rect(self.current_page, pdf_rect):
-                    self.render_page()
-                    self.documentModified.emit()
-                self.clear_selection()
-                return
-            elif clicked == btn_cancel:
-                self.clear_selection()
-                return
-            # Si es btn_add, continuar para añadir nuevo resaltado
-        
-        # Añadir nuevo resaltado
         if self.pdf_doc.highlight_text(self.current_page, pdf_rect):
             # Re-renderizar para mostrar el resaltado
             self.render_page()
@@ -670,6 +984,15 @@ class PDFPageView(QGraphicsView):
             self.clear_selection()
             # Notificar que el documento fue modificado
             self.documentModified.emit()
+            
+            # Mostrar mensaje informativo si es PDF de imagen
+            if is_image_pdf and not blocks:
+                # Tooltip breve para no molestar al usuario
+                QToolTip.showText(
+                    self.mapToGlobal(self.rect().center()),
+                    "📷 Resaltado aplicado sobre PDF escaneado",
+                    self
+                )
         else:
             self.clear_selection()
 
@@ -683,9 +1006,14 @@ class PDFPageView(QGraphicsView):
         blocks = self.pdf_doc.find_text_in_rect(self.current_page, pdf_rect)
         text_to_delete = ' '.join([b.text for b in blocks]) if blocks else ""
         
+        # Detectar si es un PDF de imagen
+        is_image_pdf = self.pdf_doc.is_image_based_pdf()
+        
         # Preparar mensaje para el diálogo
         if text_to_delete.strip():
             info_text = f'<span style="color: #ff5555; font-size: 14px;">Texto: "{text_to_delete[:100]}{"..." if len(text_to_delete) > 100 else ""}"</span>'
+        elif is_image_pdf:
+            info_text = '<span style="color: #ffa500; font-size: 13px;">📷 PDF escaneado - Se borrará el área seleccionada</span>'
         else:
             info_text = '<span style="color: #888; font-size: 13px;">Área seleccionada (sin texto detectado)</span>'
         
@@ -806,19 +1134,24 @@ class PDFPageView(QGraphicsView):
     
     def handle_edit_click(self, scene_pos: QPointF):
         """Maneja un click en modo edición - permite añadir texto en cualquier posición."""
+        print(f"=== handle_edit_click ===")
         if not self.pdf_doc:
+            print("  No hay pdf_doc")
             return
         
         # Convertir a coordenadas PDF
         pdf_x = scene_pos.x() / self.zoom_level
         pdf_y = scene_pos.y() / self.zoom_level
         pdf_point = (pdf_x, pdf_y)
+        print(f"  Punto PDF: ({pdf_x:.1f}, {pdf_y:.1f})")
         
         # Buscar texto en esa posición
         block = self.pdf_doc.find_text_at_point(self.current_page, pdf_point)
+        print(f"  Block encontrado: {block}")
         
         if block:
             # Hay texto existente - mostrar diálogo de edición
+            print(f"  Texto existente: '{block.text}'")
             new_text, ok = QInputDialog.getText(
                 self,
                 'Editar texto',
@@ -826,19 +1159,35 @@ class PDFPageView(QGraphicsView):
                 text=block.text
             )
             
+            print(f"  Diálogo: ok={ok}, new_text='{new_text}'")
             if ok and new_text != block.text:
-                if self.pdf_doc.edit_text(
+                print(f"  Llamando edit_text...")
+                result = self.pdf_doc.edit_text(
                     self.current_page,
                     block.rect,
                     new_text,
                     block.font_name,
                     block.font_size,
                     block.color
-                ):
+                )
+                print(f"  edit_text retornó: {result}")
+                if result:
+                    # Registrar el texto como editable para poder moverlo
+                    view_rect = self.pdf_to_view_rect(block.rect)
+                    print(f"  Llamando _add_editable_text...")
+                    self._add_editable_text(
+                        view_rect,
+                        new_text,
+                        font_size=block.font_size or 12,
+                        color=block.color or (0, 0, 0),
+                        pdf_rect=block.rect
+                    )
+                    print(f"  Datos guardados: {len(self.editable_texts_data.get(self.current_page, []))} textos")
                     self.render_page()
                     self.documentModified.emit()
         else:
             # No hay texto - crear texto nuevo en esta posición
+            print(f"  No hay texto, mostrando diálogo para añadir nuevo")
             new_text, ok = QInputDialog.getText(
                 self,
                 'Añadir texto',
@@ -846,45 +1195,63 @@ class PDFPageView(QGraphicsView):
                 text=""
             )
             
+            print(f"  Diálogo: ok={ok}, new_text='{new_text}'")
             if ok and new_text.strip():
                 # Crear un rectángulo pequeño en la posición del click
                 rect = fitz.Rect(pdf_x, pdf_y - 15, pdf_x + len(new_text) * 8, pdf_y + 5)
-                if self.pdf_doc.add_text_to_page(
+                print(f"  Llamando add_text_to_page con rect={rect}")
+                result = self.pdf_doc.add_text_to_page(
                     self.current_page,
                     rect,
                     new_text,
                     font_size=12,
                     color=(0, 0, 0)
-                ):
+                )
+                print(f"  add_text_to_page retornó: {result}")
+                if result:
+                    # Registrar el texto como editable para poder moverlo
+                    view_rect = self.pdf_to_view_rect(rect)
+                    print(f"  Llamando _add_editable_text...")
+                    self._add_editable_text(
+                        view_rect,
+                        new_text,
+                        font_size=12,
+                        color=(0, 0, 0),
+                        pdf_rect=rect
+                    )
+                    print(f"  Datos guardados: {len(self.editable_texts_data.get(self.current_page, []))} textos")
                     self.render_page()
                     self.documentModified.emit()
     
     def handle_highlight_click(self, scene_pos: QPointF):
-        """Maneja un click en modo highlight - permite eliminar resaltados existentes."""
+        """Maneja un click en modo highlight - permite eliminar resaltados con UN SOLO CLIC."""
         if not self.pdf_doc:
             return
         
-        # Convertir a coordenadas PDF
+        # Convertir a coordenadas PDF visuales
         pdf_x = scene_pos.x() / self.zoom_level
         pdf_y = scene_pos.y() / self.zoom_level
-        pdf_point = (pdf_x, pdf_y)
         
-        # Buscar resaltado en esa posición
-        existing_highlights = self.pdf_doc.get_highlight_annotations(self.current_page)
+        print(f"handle_highlight_click - Punto visual: ({pdf_x:.1f}, {pdf_y:.1f})")
         
-        highlight_at_point = None
-        for hl in existing_highlights:
-            if hl['rect'].contains(fitz.Point(pdf_x, pdf_y)):
-                highlight_at_point = hl
-                break
+        # Transformar el punto a coordenadas internas
+        visual_rect = fitz.Rect(pdf_x, pdf_y, pdf_x + 1, pdf_y + 1)
+        transformed_rect = self.pdf_doc.transform_rect_for_page(self.current_page, visual_rect, from_visual=True)
+        internal_point = (transformed_rect.x0, transformed_rect.y0)
         
-        if highlight_at_point:
+        print(f"handle_highlight_click - Punto interno: {internal_point}")
+        
+        # Buscar highlight en esa posición
+        found_highlights = self.pdf_doc.get_highlights_at_point(self.current_page, internal_point)
+        
+        if found_highlights:
+            print(f"handle_highlight_click - ¡Encontrado highlight!")
             # Hay un resaltado - preguntar si quiere eliminarlo
             msg = QMessageBox(self)
             msg.setWindowTitle('Eliminar resaltado')
             msg.setIcon(QMessageBox.Question)
             msg.setText('<b>¿Eliminar este resaltado?</b>')
-            msg.setInformativeText('El resaltado se eliminará permanentemente.')
+            msg.setInformativeText('El resaltado se eliminará.')
             
             btn_remove = msg.addButton('🗑️ Eliminar', QMessageBox.DestructiveRole)
             btn_cancel = msg.addButton('Cancelar', QMessageBox.RejectRole)
@@ -914,9 +1281,17 @@ class PDFPageView(QGraphicsView):
             msg.exec_()
             
             if msg.clickedButton() == btn_remove:
-                if self.pdf_doc.remove_highlight_at_point(self.current_page, pdf_point):
+                # Eliminar usando undo
+                if self.pdf_doc.remove_last_highlight(self.current_page):
                     self.render_page()
                     self.documentModified.emit()
+                    QToolTip.showText(
+                        self.mapToGlobal(self.rect().center()),
+                        "✅ Resaltado eliminado",
+                        self,
+                        QRect(),
+                        1500
+                    )
 
     def clear_selection(self):
         """Limpia la selección actual."""
@@ -970,6 +1345,7 @@ class PDFPageView(QGraphicsView):
         if self.current_selection and self.pdf_doc:
             pdf_rect = self.view_to_pdf_rect(self.current_selection)
             blocks = self.pdf_doc.find_text_in_rect(self.current_page, pdf_rect)
+            is_image_pdf = self.pdf_doc.is_image_based_pdf()
             
             if blocks and blocks[0].text.strip():
                 # Hay texto existente - editar
@@ -1001,23 +1377,44 @@ class PDFPageView(QGraphicsView):
                         self.documentModified.emit()
             else:
                 # No hay texto - añadir texto nuevo (para PDFs de imagen)
+                if is_image_pdf:
+                    dialog_title = 'Añadir texto (PDF escaneado)'
+                    dialog_msg = '📷 Este es un PDF escaneado.\nEl texto se añadirá sobre la imagen.\n\nEscribe el texto:'
+                else:
+                    dialog_title = 'Añadir texto'
+                    dialog_msg = 'Escribe el texto a añadir en esta área:'
+                
                 new_text, ok = QInputDialog.getText(
                     self,
-                    'Añadir texto',
-                    'Escribe el texto a añadir en esta área:',
+                    dialog_title,
+                    dialog_msg,
                     text=""
                 )
                 
                 if ok and new_text.strip():
-                    # Aquí sí se guarda snapshot (solo una operación)
-                    if self.pdf_doc.add_text_to_page(
-                        self.current_page,
-                        pdf_rect,
-                        new_text,
-                        font_size=12,
-                        color=(0, 0, 0),
-                        save_snapshot=True
-                    ):
+                    # Para PDFs de imagen, primero borrar el área
+                    if is_image_pdf:
+                        self.pdf_doc._save_snapshot()
+                        self.pdf_doc.erase_area(self.current_page, pdf_rect, color=(1, 1, 1), save_snapshot=False)
+                        success = self.pdf_doc.add_text_to_page(
+                            self.current_page,
+                            pdf_rect,
+                            new_text,
+                            font_size=12,
+                            color=(0, 0, 0),
+                            save_snapshot=False
+                        )
+                    else:
+                        success = self.pdf_doc.add_text_to_page(
+                            self.current_page,
+                            pdf_rect,
+                            new_text,
+                            font_size=12,
+                            color=(0, 0, 0),
+                            save_snapshot=True
+                        )
+                    
+                    if success:
                         self.render_page()
                         self.documentModified.emit()
             
@@ -1034,3 +1431,549 @@ class PDFPageView(QGraphicsView):
             if blocks:
                 text = ' '.join([b.text for b in blocks])
                 QApplication.clipboard().setText(text)
+    
+    # =====================================================
+    # Funciones para manejar textos editables
+    # =====================================================
+    
+    def _find_text_at_position(self, scene_pos: QPointF):
+        """Busca un texto editable en la posición dada, ignorando textos vacíos."""
+        print(f"_find_text_at_position: buscando en {scene_pos}")
+        print(f"  Textos editables en lista: {len(self.editable_text_items)}")
+        for i, text_item in enumerate(self.editable_text_items):
+            # Ignorar textos vacíos
+            if not text_item.text or not text_item.text.strip():
+                print(f"  Item {i}: ignorado (texto vacío)")
+                continue
+            # Usar sceneBoundingRect() para obtener el rect en coordenadas de escena
+            scene_rect = text_item.sceneBoundingRect()
+            print(f"  Item {i}: scene_rect={scene_rect}, text='{text_item.text}'")
+            if scene_rect.contains(scene_pos):
+                print(f"  ¡Encontrado!")
+                return text_item
+        print(f"  No encontrado en lista de editables")
+        return None
+    
+    def _find_pdf_text_at_position(self, scene_pos: QPointF):
+        """Busca cualquier texto del PDF en la posición dada."""
+        if not self.pdf_doc:
+            return None
+        
+        # Convertir a coordenadas PDF
+        pdf_x = scene_pos.x() / self.zoom_level
+        pdf_y = scene_pos.y() / self.zoom_level
+        pdf_point = (pdf_x, pdf_y)
+        
+        print(f"_find_pdf_text_at_position: buscando en PDF punto ({pdf_x:.1f}, {pdf_y:.1f})")
+        
+        # Buscar texto en esa posición usando find_text_at_point
+        block = self.pdf_doc.find_text_at_point(self.current_page, pdf_point)
+        
+        if block:
+            print(f"  Encontrado texto del PDF: '{block.text}'")
+            return block
+        
+        print(f"  No hay texto del PDF en esa posición")
+        return None
+    
+    def _convert_pdf_text_to_editable(self, block):
+        """Convierte un bloque de texto del PDF en un EditableTextItem.
+        
+        IMPORTANTE: Esta función NO borra el texto original del PDF.
+        El texto solo se borra cuando:
+        1. Se mueve el texto (en _update_text_in_pdf)
+        2. Se edita el contenido (en _edit_text_content)
+        
+        Esto permite "capturar" texto para arrastrarlo sin borrarlo
+        inmediatamente, evitando pérdida de datos si el usuario cancela.
+        """
+        if not block:
+            return None
+        
+        # No convertir textos vacíos
+        if not block.text or not block.text.strip():
+            print(f"_convert_pdf_text_to_editable: ignorando texto vacío")
+            return None
+        
+        print(f"_convert_pdf_text_to_editable: convirtiendo '{block.text}'")
+        
+        # Obtener el rectángulo del texto
+        pdf_rect = block.rect
+        view_rect = self.pdf_to_view_rect(pdf_rect)
+        
+        # Detectar si el texto original es negrita basándose en el nombre de fuente
+        # Las fuentes bold suelen tener "Bold", "bold", "Heavy", "Black" en el nombre
+        font_name = getattr(block, 'font_name', '') or ''
+        is_bold = any(bold_marker in font_name.lower() for bold_marker in ['bold', 'heavy', 'black', 'demi'])
+        
+        # Detectar también por flags (bit 4 indica bold en PyMuPDF)
+        flags = getattr(block, 'flags', 0) or 0
+        if flags & (1 << 4):  # Bit 4 = superscript/bold indicator
+            is_bold = True
+        
+        print(f"  font_name: {font_name}, is_bold detectado: {is_bold}")
+        
+        # Crear el texto editable (el texto original del PDF permanece intacto)
+        # Se borrará solo cuando se confirme un movimiento o edición
+        text_item = self._add_editable_text(
+            view_rect,
+            block.text,
+            font_size=block.font_size or 12,
+            color=block.color or (0, 0, 0),
+            pdf_rect=pdf_rect,
+            is_from_pdf=True,  # Marcar que viene del PDF y aún no ha sido modificado
+            font_name=font_name,
+            is_bold=is_bold
+        )
+        
+        return text_item
+    
+    def _select_text_item(self, text_item: EditableTextItem):
+        """Selecciona un texto editable."""
+        # Deseleccionar el anterior
+        if self.selected_text_item and self.selected_text_item != text_item:
+            self.selected_text_item.set_selected(False)
+        
+        # Seleccionar el nuevo
+        text_item.set_selected(True)
+        self.selected_text_item = text_item
+    
+    def _deselect_all_texts(self):
+        """Deselecciona todos los textos editables."""
+        if self.selected_text_item:
+            self.selected_text_item.set_selected(False)
+            self.selected_text_item = None
+    
+    def _add_editable_text(self, view_rect: QRectF, text: str, font_size: float = 12, 
+                           color: tuple = (0, 0, 0), pdf_rect=None, is_from_pdf: bool = False,
+                           font_name: str = "helv", is_bold: bool = False):
+        """
+        Añade un texto editable y lo registra en los datos.
+        
+        Args:
+            view_rect: Rectángulo en coordenadas de vista
+            text: Contenido del texto
+            font_size: Tamaño de fuente
+            color: Color RGB
+            pdf_rect: Rectángulo en coordenadas de PDF
+            is_from_pdf: True si el texto fue capturado del PDF y aún no se ha borrado
+            font_name: Nombre de la fuente (ej: "helv", "hebo" para bold)
+            is_bold: Si el texto es negrita
+        """
+        # NO agregar textos vacíos
+        if not text or not text.strip():
+            print(f"_add_editable_text: ignorando texto vacío")
+            return None
+        
+        print(f"=== _add_editable_text ===")
+        print(f"  view_rect: {view_rect}")
+        print(f"  text: '{text}'")
+        print(f"  pdf_rect: {pdf_rect}")
+        print(f"  is_from_pdf: {is_from_pdf}")
+        print(f"  font_name: {font_name}, is_bold: {is_bold}")
+        
+        # Guardar los datos del texto (no el objeto gráfico)
+        text_data = {
+            'text': text,
+            'font_size': font_size,
+            'color': color,
+            'pdf_rect': pdf_rect,
+            'view_rect': view_rect,
+            'original_pdf_rect': pdf_rect if is_from_pdf else None,  # Guardar posición original
+            'needs_erase': is_from_pdf,  # Marcar si necesita borrar el texto original del PDF
+            'font_name': font_name,
+            'is_bold': is_bold
+        }
+        
+        if self.current_page not in self.editable_texts_data:
+            self.editable_texts_data[self.current_page] = []
+        self.editable_texts_data[self.current_page].append(text_data)
+        
+        # Crear y añadir el item gráfico
+        text_item = self._create_text_item_from_data(text_data)
+        self.editable_text_items.append(text_item)
+        self.scene.addItem(text_item)
+        
+        print(f"  Datos guardados: {len(self.editable_texts_data.get(self.current_page, []))} textos")
+        
+        return text_item
+    
+    def _create_text_item_from_data(self, text_data: dict) -> EditableTextItem:
+        """Crea un EditableTextItem a partir de datos guardados."""
+        text_item = EditableTextItem(
+            text_data['view_rect'],
+            text_data['text'],
+            text_data['font_size'],
+            text_data['color'],
+            self.current_page,
+            font_name=text_data.get('font_name', 'helv'),
+            is_bold=text_data.get('is_bold', False)
+        )
+        text_item.pdf_rect = text_data['pdf_rect']
+        text_item.original_pdf_rect = text_data.get('original_pdf_rect')
+        text_item.needs_erase = text_data.get('needs_erase', False)
+        text_item.data_index = len(self.editable_texts_data.get(self.current_page, [])) - 1
+        return text_item
+    
+    def _edit_text_content(self, text_item: EditableTextItem):
+        """Abre un diálogo para editar el contenido del texto con opciones de formato."""
+        # Obtener valores actuales
+        current_text = text_item.text
+        current_font_size = text_item.font_size
+        current_is_bold = getattr(text_item, 'is_bold', False)
+        
+        # Abrir diálogo personalizado
+        dialog = TextEditDialog(
+            text=current_text,
+            font_size=current_font_size,
+            is_bold=current_is_bold,
+            title='Editar texto',
+            parent=self
+        )
+        
+        if dialog.exec_() == QDialog.Accepted:
+            values = dialog.get_values()
+            new_text = values['text'].strip()
+            new_font_size = values['font_size']
+            new_is_bold = values['is_bold']
+            
+            # Si el texto está vacío, ELIMINAR el texto del PDF y el item
+            if not new_text:
+                print("_edit_text_content: texto vacío, eliminando del PDF")
+                self._remove_empty_text_item(text_item)
+                self.documentModified.emit()
+                return
+            
+            # Verificar si hay cambios
+            text_changed = new_text != text_item.text
+            size_changed = new_font_size != text_item.font_size
+            bold_changed = new_is_bold != current_is_bold
+            
+            if not (text_changed or size_changed or bold_changed):
+                print("_edit_text_content: sin cambios, ignorando")
+                return
+            
+            print(f"_edit_text_content: aplicando cambios")
+            print(f"  Texto: '{text_item.text}' -> '{new_text}'")
+            print(f"  Tamaño: {text_item.font_size} -> {new_font_size}")
+            print(f"  Negrita: {current_is_bold} -> {new_is_bold}")
+            
+            # Actualizar propiedades del item
+            text_item.text = new_text
+            text_item.font_size = new_font_size
+            text_item.is_bold = new_is_bold
+            # Determinar el nombre de fuente según negrita
+            text_item.font_name = "hebo" if new_is_bold else "helv"
+            
+            # Determinar qué rectángulo borrar
+            needs_erase = getattr(text_item, 'needs_erase', False)
+            original_pdf_rect = getattr(text_item, 'original_pdf_rect', None)
+            
+            # Si el texto viene del PDF y nunca se ha modificado, borrar el original
+            if needs_erase and original_pdf_rect:
+                rect_to_erase = original_pdf_rect
+                print(f"  Borrando texto original del PDF")
+            else:
+                rect_to_erase = text_item.pdf_rect
+                print(f"  Borrando texto existente")
+            
+            # Actualizar el texto en el PDF
+            if rect_to_erase and self.pdf_doc:
+                print(f"  rect_to_erase: {rect_to_erase}")
+                print(f"  text_item.pdf_rect (donde se pondrá): {text_item.pdf_rect}")
+                
+                self.pdf_doc._save_snapshot()
+                self.pdf_doc.erase_area(
+                    self.current_page, 
+                    rect_to_erase, 
+                    color=(1, 1, 1), 
+                    save_snapshot=False
+                )
+                self.pdf_doc.add_text_to_page(
+                    self.current_page,
+                    text_item.pdf_rect,  # Poner el nuevo texto en la posición actual
+                    new_text,
+                    font_size=new_font_size,
+                    color=text_item.text_color,
+                    is_bold=new_is_bold,
+                    save_snapshot=False
+                )
+                
+                # IMPORTANTE: Recalcular el pdf_rect basándose en el nuevo texto
+                old_rect = text_item.pdf_rect
+                # Estimar el nuevo ancho (aproximadamente 0.6 * font_size por carácter)
+                char_width = new_font_size * 0.6
+                new_width = max(len(new_text) * char_width, old_rect.width)
+                # Crear nuevo rectángulo con el mismo origen pero ancho ajustado
+                import fitz
+                text_item.pdf_rect = fitz.Rect(
+                    old_rect.x0,
+                    old_rect.y0,
+                    old_rect.x0 + new_width,
+                    old_rect.y1
+                )
+                print(f"  Nuevo pdf_rect ajustado: {text_item.pdf_rect}")
+                
+                # Marcar que ya no necesita borrar el original
+                text_item.needs_erase = False
+                text_item.original_pdf_rect = None
+                
+                # Actualizar los datos guardados
+                self._update_text_data(text_item)
+                
+                self.render_page()
+                self.documentModified.emit()
+    
+    def _update_text_in_pdf(self, text_item: EditableTextItem):
+        """Actualiza la posición del texto en el PDF después de moverlo.
+        
+        Esta función maneja dos casos:
+        1. Texto que viene del PDF (needs_erase=True): borra el texto original del PDF
+           y lo añade en la nueva posición
+        2. Texto que ya fue procesado (needs_erase=False): borra la posición anterior
+           (donde lo pusimos nosotros) y lo mueve a la nueva posición
+        """
+        if not text_item or not self.pdf_doc:
+            print("_update_text_in_pdf: faltan datos necesarios")
+            return
+        
+        # IMPORTANTE: No procesar textos vacíos
+        if not text_item.text or not text_item.text.strip():
+            print("_update_text_in_pdf: ignorando texto vacío")
+            # Eliminar el item vacío de la escena y de los datos
+            self._remove_empty_text_item(text_item)
+            return
+        
+        # Usar sceneBoundingRect() para obtener la posición real en la escena
+        scene_rect = text_item.sceneBoundingRect()
+        # Convertir QRectF de escena a QRectF para view_to_pdf_rect
+        new_view_rect = QRectF(scene_rect.x(), scene_rect.y(), scene_rect.width(), scene_rect.height())
+        new_pdf_rect = self.view_to_pdf_rect(new_view_rect)
+        
+        # Determinar qué rectángulo borrar
+        needs_erase = getattr(text_item, 'needs_erase', False)
+        original_pdf_rect = getattr(text_item, 'original_pdf_rect', None)
+        
+        if needs_erase and original_pdf_rect:
+            # Primera vez que se mueve un texto capturado del PDF
+            # Borrar la posición ORIGINAL del texto del PDF
+            rect_to_erase = original_pdf_rect
+            print(f"_update_text_in_pdf: (PRIMERA VEZ - borrando texto original del PDF)")
+        elif text_item.pdf_rect:
+            # Texto que ya movimos antes - borrar la posición anterior
+            rect_to_erase = text_item.pdf_rect
+            print(f"_update_text_in_pdf: (MOVIMIENTO SUBSECUENTE)")
+        else:
+            print("_update_text_in_pdf: No hay rectángulo para borrar")
+            return
+        
+        print(f"  Texto: '{text_item.text}'")
+        print(f"  rect_to_erase: {rect_to_erase}")
+        print(f"  new_pdf_rect: {new_pdf_rect}")
+        print(f"  needs_erase: {needs_erase}")
+        
+        self.pdf_doc._save_snapshot()
+        
+        # Borrar el texto de la posición que corresponda
+        self.pdf_doc.erase_area(
+            self.current_page, 
+            rect_to_erase, 
+            color=(1, 1, 1), 
+            save_snapshot=False
+        )
+        
+        # Añadir el texto en la nueva posición
+        success = self.pdf_doc.add_text_to_page(
+            self.current_page,
+            new_pdf_rect,
+            text_item.text,
+            font_size=text_item.font_size,
+            color=text_item.text_color,
+            is_bold=getattr(text_item, 'is_bold', False),
+            save_snapshot=False
+        )
+        
+        print(f"  add_text_to_page retornó: {success}")
+        
+        if success:
+            # Actualizar el rectángulo a la nueva posición
+            text_item.pdf_rect = new_pdf_rect
+            # Marcar que ya no necesita borrar el original (ya lo hicimos)
+            text_item.needs_erase = False
+            text_item.original_pdf_rect = None
+            self._update_text_data(text_item)
+            self.render_page()
+            self.documentModified.emit()
+        else:
+            print("  Error al mover el texto en el PDF")
+    
+    def _remove_empty_text_item(self, text_item: EditableTextItem):
+        """Elimina un item de texto vacío de la escena y de los datos, borrando el texto original del PDF si es necesario."""
+        print(f"_remove_empty_text_item: eliminando item vacío")
+        
+        # IMPORTANTE: Si el item viene del PDF y necesita borrado, borrar el texto original PRIMERO
+        needs_erase = getattr(text_item, 'needs_erase', False)
+        original_pdf_rect = getattr(text_item, 'original_pdf_rect', None)
+        
+        if needs_erase and original_pdf_rect:
+            print(f"  Borrando texto original del PDF en: {original_pdf_rect}")
+            try:
+                # Guardar snapshot para undo
+                if hasattr(self.parent(), 'pdf_handler') and hasattr(self.parent().pdf_handler, 'save_snapshot'):
+                    self.parent().pdf_handler.save_snapshot()
+                
+                # Borrar el área original del PDF usando redacción
+                if hasattr(self.parent(), 'pdf_handler'):
+                    self.parent().pdf_handler.erase_area(
+                        self.current_page,
+                        original_pdf_rect,
+                        use_redaction=True
+                    )
+                    # Refrescar documento para que los cambios sean visibles
+                    self.parent().pdf_handler._refresh_document()
+                    print(f"  Texto original borrado exitosamente")
+            except Exception as e:
+                print(f"  Error al borrar texto original: {e}")
+        
+        # Eliminar de la lista de items gráficos
+        if text_item in self.editable_text_items:
+            self.editable_text_items.remove(text_item)
+        
+        # Eliminar de la escena
+        if text_item.scene():
+            self.scene.removeItem(text_item)
+        
+        # Eliminar de los datos guardados usando data_index
+        data_index = getattr(text_item, 'data_index', None)
+        page_data = self.editable_texts_data.get(self.current_page, [])
+        
+        if data_index is not None and 0 <= data_index < len(page_data):
+            del page_data[data_index]
+            # Reindexar los items restantes
+            for i, item in enumerate(self.editable_text_items):
+                if hasattr(item, 'data_index') and item.data_index > data_index:
+                    item.data_index -= 1
+            print(f"  Eliminado registro en índice {data_index}")
+        
+        # Deseleccionar si estaba seleccionado
+        if self.selected_text_item == text_item:
+            self.selected_text_item = None
+        
+        # Renderizar la página para mostrar los cambios
+        self._render_current_page()
+    
+    def _update_text_data(self, text_item: EditableTextItem):
+        """Actualiza los datos guardados del texto usando el índice directo."""
+        page_data = self.editable_texts_data.get(self.current_page, [])
+        
+        # Usar data_index si está disponible (método más confiable)
+        data_index = getattr(text_item, 'data_index', None)
+        
+        if data_index is not None and 0 <= data_index < len(page_data):
+            # Actualización directa por índice
+            data = page_data[data_index]
+            data['text'] = text_item.text
+            data['pdf_rect'] = text_item.pdf_rect
+            data['view_rect'] = text_item.rect()
+            data['font_size'] = text_item.font_size
+            data['font_name'] = getattr(text_item, 'font_name', 'helv')
+            data['is_bold'] = getattr(text_item, 'is_bold', False)
+            data['needs_erase'] = getattr(text_item, 'needs_erase', False)
+            data['original_pdf_rect'] = getattr(text_item, 'original_pdf_rect', None)
+            print(f"_update_text_data: actualizado índice {data_index} -> '{text_item.text}'")
+            return
+        
+        # Fallback: buscar por posición PDF si no hay índice válido
+        for i, data in enumerate(page_data):
+            data_rect = data.get('pdf_rect')
+            item_rect = text_item.pdf_rect
+            
+            if (data_rect and item_rect and 
+                abs(data_rect.x0 - item_rect.x0) < 5 and 
+                abs(data_rect.y0 - item_rect.y0) < 5):
+                data['text'] = text_item.text
+                data['pdf_rect'] = text_item.pdf_rect
+                data['view_rect'] = text_item.rect()
+                data['font_size'] = text_item.font_size
+                data['font_name'] = getattr(text_item, 'font_name', 'helv')
+                data['is_bold'] = getattr(text_item, 'is_bold', False)
+                data['needs_erase'] = getattr(text_item, 'needs_erase', False)
+                data['original_pdf_rect'] = getattr(text_item, 'original_pdf_rect', None)
+                text_item.data_index = i  # Actualizar el índice para futuras operaciones
+                print(f"_update_text_data: encontrado por posición, índice {i}")
+                return
+        
+        print(f"_update_text_data: ADVERTENCIA - no se encontró el registro para '{text_item.text}'")
+    
+    def _clean_empty_texts(self, page_num: int = None):
+        """
+        Elimina los registros de textos vacíos de editable_texts_data.
+        
+        Args:
+            page_num: Página específica a limpiar, o None para limpiar todas
+        """
+        if page_num is not None:
+            # Limpiar solo una página
+            if page_num in self.editable_texts_data:
+                original_count = len(self.editable_texts_data[page_num])
+                self.editable_texts_data[page_num] = [
+                    data for data in self.editable_texts_data[page_num]
+                    if data.get('text') and data.get('text').strip()
+                ]
+                removed = original_count - len(self.editable_texts_data[page_num])
+                if removed > 0:
+                    print(f"_clean_empty_texts: eliminados {removed} textos vacíos de página {page_num}")
+        else:
+            # Limpiar todas las páginas
+            for pnum in list(self.editable_texts_data.keys()):
+                self._clean_empty_texts(pnum)
+    
+    def _restore_editable_texts_for_page(self):
+        """Restaura los items editables para la página actual después de re-renderizar."""
+        # Primero limpiar textos vacíos de los datos
+        self._clean_empty_texts(self.current_page)
+        
+        # Limpiar la lista de items gráficos (ya fueron eliminados por scene.clear())
+        self.editable_text_items = []
+        self.selected_text_item = None
+        
+        # Recrear los items gráficos desde los datos guardados
+        page_data = self.editable_texts_data.get(self.current_page, [])
+        print(f"=== _restore_editable_texts_for_page ===")
+        print(f"  Página: {self.current_page}")
+        print(f"  Datos guardados: {len(page_data)} textos")
+        
+        for i, text_data in enumerate(page_data):
+            # Doble verificación: ignorar textos vacíos
+            text_content = text_data.get('text', '')
+            if not text_content or not text_content.strip():
+                print(f"  Ignorando texto vacío en índice {i}")
+                continue
+            
+            # Recalcular view_rect desde pdf_rect (por si cambió el zoom)
+            if text_data.get('pdf_rect'):
+                view_rect = self.pdf_to_view_rect(text_data['pdf_rect'])
+                text_data['view_rect'] = view_rect
+            else:
+                view_rect = text_data.get('view_rect', QRectF(0, 0, 100, 20))
+            
+            print(f"  Restaurando texto {i}: '{text_data['text']}' en {view_rect}")
+            print(f"    needs_erase: {text_data.get('needs_erase', False)}")
+            
+            text_item = EditableTextItem(
+                view_rect,
+                text_data['text'],
+                text_data['font_size'],
+                text_data['color'],
+                self.current_page
+            )
+            text_item.pdf_rect = text_data['pdf_rect']
+            # Restaurar también los nuevos campos
+            text_item.original_pdf_rect = text_data.get('original_pdf_rect')
+            text_item.needs_erase = text_data.get('needs_erase', False)
+            text_item.data_index = i  # Asignar índice para poder actualizar datos después
+            
+            self.editable_text_items.append(text_item)
+            self.scene.addItem(text_item)
+        
+        print(f"  Items en lista después de restaurar: {len(self.editable_text_items)}")

@@ -353,7 +353,17 @@ class PDFDocument:
         return results
     
     def highlight_text(self, page_num: int, rect: fitz.Rect, color: Tuple[float, float, float] = (1, 1, 0)) -> bool:
-        """Resalta texto en un área específica."""
+        """
+        Resalta un área específica del PDF usando Shape (sin anotaciones para evitar duplicados).
+        
+        Args:
+            page_num: Número de página
+            rect: Área a resaltar (en coordenadas visuales)
+            color: Color del resaltado (RGB 0-1)
+            
+        Returns:
+            True si se resaltó correctamente
+        """
         page = self.get_page(page_num)
         if not page:
             return False
@@ -362,20 +372,74 @@ class PDFDocument:
             # Guardar snapshot antes de modificar
             self._save_snapshot()
             
-            # Crear anotación de resaltado
-            highlight = page.add_highlight_annot(rect)
-            highlight.set_colors(stroke=color)
-            highlight.update()
+            rotation = page.rotation
+            print(f"highlight_text - Rect visual: {rect}, Rotación: {rotation}°")
+            
+            # Transformar coordenadas de visual a mediabox
+            transformed_rect = self.transform_rect_for_page(page_num, rect, from_visual=True)
+            print(f"highlight_text - Rect transformado: {transformed_rect}")
+            
+            # Usar SOLO Shape para dibujar (sin anotaciones que causan duplicados)
+            shape = page.new_shape()
+            shape.draw_rect(transformed_rect)
+            shape.finish(
+                color=None,
+                fill=color,
+                fill_opacity=0.3
+            )
+            shape.commit(overlay=True)
+            
+            # Guardar información del highlight en memoria para poder detectarlo después
+            if not hasattr(self, '_highlights'):
+                self._highlights = {}
+            if page_num not in self._highlights:
+                self._highlights[page_num] = []
+            
+            self._highlights[page_num].append({
+                'visual_rect': rect,
+                'internal_rect': transformed_rect,
+                'color': color
+            })
             
             self.modified = True
+            print(f"Highlight aplicado (solo Shape, sin anotación)")
             return True
+                
         except Exception as e:
             print(f"Error al resaltar: {e}")
+            import traceback
+            traceback.print_exc()
             return False
+    
+    def get_highlights_at_point(self, page_num: int, point: Tuple[float, float]) -> List[dict]:
+        """
+        Busca highlights en un punto específico (coordenadas internas).
+        """
+        if not hasattr(self, '_highlights') or page_num not in self._highlights:
+            return []
+        
+        pt = fitz.Point(point)
+        found = []
+        for hl in self._highlights[page_num]:
+            if hl['internal_rect'].contains(pt):
+                found.append(hl)
+        return found
+    
+    def remove_last_highlight(self, page_num: int) -> bool:
+        """
+        Elimina el último highlight de la página usando undo.
+        """
+        if hasattr(self, '_highlights') and page_num in self._highlights and self._highlights[page_num]:
+            # Quitar de la lista
+            self._highlights[page_num].pop()
+            # Usar undo para quitar el Shape
+            return self.undo()
+        return False
     
     def get_highlight_annotations(self, page_num: int) -> List[dict]:
         """
         Obtiene todas las anotaciones de resaltado de una página.
+        Busca tanto Highlight (tipo 8) como Square/Rect (tipo 4) con relleno amarillo.
         
         Args:
             page_num: Número de página
@@ -392,13 +456,31 @@ class PDFDocument:
             annots = page.annots()
             if annots:  # Verificar que no sea None
                 for annot in annots:
-                    if annot.type[0] == 8:  # 8 = Highlight annotation
+                    annot_type = annot.type[0]
+                    # Tipo 8 = Highlight annotation tradicional
+                    # Tipo 4 = Square/Rect annotation (lo que usamos para resaltar PDFs escaneados)
+                    if annot_type == 8:
                         highlights.append({
                             'rect': annot.rect,
                             'color': annot.colors.get('stroke', (1, 1, 0)),
-                            'xref': annot.xref,  # Referencia única para eliminar
-                            'content': annot.info.get('content', '')
+                            'xref': annot.xref,
+                            'content': annot.info.get('content', ''),
+                            'type': 'highlight'
                         })
+                    elif annot_type == 4:  # Square annotation - usado para resaltar
+                        # Verificar que tiene color de relleno amarillento (es un highlight)
+                        fill_color = annot.colors.get('fill', None)
+                        if fill_color and len(fill_color) >= 3:
+                            # Amarillo o cercano: R alto, G alto, B bajo
+                            if fill_color[0] > 0.7 and fill_color[1] > 0.7 and fill_color[2] < 0.5:
+                                highlights.append({
+                                    'rect': annot.rect,
+                                    'color': fill_color,
+                                    'xref': annot.xref,
+                                    'content': annot.info.get('content', ''),
+                                    'type': 'rect_highlight'
+                                })
+                                print(f"Encontrado rect_highlight: {annot.rect}")
         except Exception as e:
             print(f"Error obteniendo resaltados: {e}")
         
@@ -407,10 +489,11 @@ class PDFDocument:
     def remove_highlight_at_point(self, page_num: int, point: Tuple[float, float]) -> bool:
         """
         Elimina una anotación de resaltado en un punto específico.
+        Detecta tanto Highlight (tipo 8) como Square/Rect (tipo 4) amarillos.
         
         Args:
             page_num: Número de página
-            point: Coordenadas (x, y) del punto
+            point: Coordenadas (x, y) del punto (en coordenadas visuales)
             
         Returns:
             True si se eliminó algún resaltado
@@ -421,17 +504,34 @@ class PDFDocument:
         
         try:
             pt = fitz.Point(point)
+            print(f"remove_highlight_at_point - Buscando en punto: {pt}")
+            
             annots = page.annots()
-            if annots:  # Verificar que no sea None
+            if annots:
                 for annot in annots:
-                    if annot.type[0] == 8:  # Highlight annotation
+                    annot_type = annot.type[0]
+                    is_highlight = False
+                    
+                    # Tipo 8 = Highlight annotation tradicional
+                    if annot_type == 8:
+                        is_highlight = True
+                    # Tipo 4 = Square/Rect annotation amarillo
+                    elif annot_type == 4:
+                        fill_color = annot.colors.get('fill', None)
+                        if fill_color and len(fill_color) >= 3:
+                            if fill_color[0] > 0.7 and fill_color[1] > 0.7 and fill_color[2] < 0.5:
+                                is_highlight = True
+                    
+                    if is_highlight:
+                        # Las anotaciones usan coordenadas visuales
                         if annot.rect.contains(pt):
-                            # Guardar snapshot antes de modificar
+                            print(f"remove_highlight_at_point - Encontrado y eliminando: {annot.rect}")
                             self._save_snapshot()
-                            # Eliminar la anotación
                             page.delete_annot(annot)
                             self.modified = True
                             return True
+            
+            print(f"remove_highlight_at_point - No se encontró resaltado en el punto")
         except Exception as e:
             print(f"Error eliminando resaltado: {e}")
         
@@ -440,6 +540,7 @@ class PDFDocument:
     def remove_highlight_in_rect(self, page_num: int, rect: fitz.Rect) -> bool:
         """
         Elimina todas las anotaciones de resaltado que intersectan con un rectángulo.
+        Detecta tanto Highlight (tipo 8) como Square/Rect (tipo 4) amarillos.
         
         Args:
             page_num: Número de página
@@ -460,9 +561,21 @@ class PDFDocument:
             annots = page.annots()
             if annots:  # Verificar que no sea None
                 for annot in annots:
-                    if annot.type[0] == 8:  # Highlight annotation
-                        if rect.intersects(annot.rect):
-                            annots_to_remove.append(annot)
+                    annot_type = annot.type[0]
+                    is_highlight = False
+                    
+                    # Tipo 8 = Highlight annotation tradicional
+                    if annot_type == 8:
+                        is_highlight = True
+                    # Tipo 4 = Square/Rect annotation amarillo
+                    elif annot_type == 4:
+                        fill_color = annot.colors.get('fill', None)
+                        if fill_color and len(fill_color) >= 3:
+                            if fill_color[0] > 0.7 and fill_color[1] > 0.7 and fill_color[2] < 0.5:
+                                is_highlight = True
+                    
+                    if is_highlight and rect.intersects(annot.rect):
+                        annots_to_remove.append(annot)
             
             if annots_to_remove:
                 # Guardar snapshot antes de modificar
@@ -505,16 +618,16 @@ class PDFDocument:
             print(f"Error al eliminar texto: {e}")
             return False
     
-    def erase_area(self, page_num: int, rect: fitz.Rect, color: Tuple[float, float, float] = (1, 1, 1), save_snapshot: bool = True) -> bool:
+    def erase_area(self, page_num: int, rect: fitz.Rect, color: Tuple[float, float, float] = (1, 1, 1), save_snapshot: bool = True, use_redaction: bool = True) -> bool:
         """
-        Borra un área del PDF dibujando un rectángulo sobre ella.
-        Funciona tanto para texto como para imágenes.
+        Borra un área del PDF.
         
         Args:
             page_num: Número de página
-            rect: Área a borrar
+            rect: Área a borrar (en coordenadas visuales/de pixmap)
             color: Color de relleno (por defecto blanco)
             save_snapshot: Si True, guarda snapshot para undo (por defecto True)
+            use_redaction: Si True, usa redacción para eliminar texto realmente (por defecto True)
         
         Returns:
             True si se borró correctamente
@@ -528,17 +641,68 @@ class PDFDocument:
             if save_snapshot:
                 self._save_snapshot()
             
-            # Dibujar un rectángulo sólido sobre el área
-            shape = page.new_shape()
-            shape.draw_rect(rect)
-            shape.finish(color=color, fill=color)
-            shape.commit()
+            # CRUCIAL: Transformar coordenadas si la página tiene rotación
+            # Las coordenadas que recibimos son "visuales" (del pixmap)
+            # Necesitamos convertirlas a coordenadas internas del PDF
+            transformed_rect = self.transform_rect_for_page(page_num, rect, from_visual=True)
             
-            self.modified = True
-            return True
+            print(f"erase_area - Rect original (visual): {rect}")
+            print(f"erase_area - Rect transformado (interno): {transformed_rect}")
+            
+            # Detectar si es un PDF de imagen
+            is_image_pdf = self.is_image_based_pdf()
+            
+            # Para PDFs de texto: usar redacción para ELIMINAR realmente el texto
+            # Esto evita que find_text_at_point encuentre el texto "borrado"
+            if use_redaction and not is_image_pdf:
+                try:
+                    redact = page.add_redact_annot(transformed_rect, fill=color)
+                    page.apply_redactions()
+                    self._refresh_document()
+                    self.modified = True
+                    print(f"Área borrada con redacción (texto eliminado): {transformed_rect}")
+                    return True
+                except Exception as e:
+                    print(f"Redacción falló: {e}, usando shape como fallback")
+            
+            # Para PDFs de imagen o como fallback: usar shape
+            try:
+                shape = page.new_shape()
+                shape.draw_rect(transformed_rect)
+                shape.finish(color=color, fill=color)
+                shape.commit()
+                self.modified = True
+                print(f"Área cubierta con shape: {transformed_rect}")
+                return True
+            except Exception as e:
+                print(f"Shape falló: {e}")
+            
+            return False
         except Exception as e:
             print(f"Error al borrar área: {e}")
             return False
+    
+    def _refresh_document(self):
+        """
+        Refresca el documento en memoria para que los cambios sean visibles.
+        Necesario después de apply_redactions() para actualizar la visualización.
+        """
+        if not self.doc:
+            return
+        
+        try:
+            # Guardar el documento a bytes
+            pdf_bytes = self.doc.tobytes(garbage=0)
+            
+            # Cerrar el documento actual
+            self.doc.close()
+            
+            # Reabrir desde los bytes
+            self.doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+            
+            print("Documento refrescado para mostrar cambios")
+        except Exception as e:
+            print(f"Error refrescando documento: {e}")
     
     def is_image_based_pdf(self) -> bool:
         """
@@ -882,65 +1046,283 @@ class PDFDocument:
         page = self.get_page(page_num)
         if page:
             return (page.rect.width, page.rect.height)
-        return None    
-    def add_text_to_page(self, page_num: int, rect: fitz.Rect, text: str, 
-                         font_size: float = 12, color: Tuple[float, float, float] = (0, 0, 0),
-                         save_snapshot: bool = True) -> bool:
+        return None
+    
+    def get_page_info(self, page_num: int) -> Optional[dict]:
         """
-        Añade texto a una página (útil para PDFs de imagen).
+        Obtiene información completa de la página incluyendo rotación y matrices.
+        Esto es crucial para la conversión correcta de coordenadas.
+        """
+        page = self.get_page(page_num)
+        if not page:
+            return None
+        
+        return {
+            'rect': page.rect,  # Rectángulo de la página (visual, post-rotación)
+            'mediabox': page.mediabox,  # MediaBox original (sin rotación)
+            'cropbox': page.cropbox,  # CropBox (área visible)
+            'rotation': page.rotation,  # Rotación en grados (0, 90, 180, 270)
+            'transformation_matrix': page.transformation_matrix,  # Matriz de transformación
+            'derotation_matrix': page.derotation_matrix,  # Matriz para deshacer rotación
+        }
+    
+    def transform_rect_for_page(self, page_num: int, rect: fitz.Rect, from_visual: bool = True) -> fitz.Rect:
+        """
+        Transforma un rectángulo entre coordenadas visuales y coordenadas internas de página.
+        
+        IMPORTANTE: 
+        - Las coordenadas visuales son las del pixmap/page.rect (post-rotación)
+        - Las coordenadas internas son las del mediabox (pre-rotación, originales del PDF)
         
         Args:
             page_num: Número de página
-            rect: Área donde colocar el texto
+            rect: Rectángulo a transformar
+            from_visual: Si True, transforma de coordenadas visuales a internas (mediabox)
+        
+        Returns:
+            Rectángulo transformado
+        """
+        page = self.get_page(page_num)
+        if not page:
+            return rect
+        
+        rotation = page.rotation
+        
+        # Si no hay rotación, las coordenadas son las mismas
+        if rotation == 0:
+            return rect
+        
+        # Dimensiones del mediabox (coordenadas originales del PDF)
+        mediabox = page.mediabox
+        mb_width = mediabox.width   # Ancho original
+        mb_height = mediabox.height  # Alto original
+        
+        # Dimensiones visuales (page.rect, post-rotación)
+        visual_width = page.rect.width
+        visual_height = page.rect.height
+        
+        print(f"Transformando rect: {rect}")
+        print(f"Rotación de página: {rotation}°")
+        print(f"MediaBox (original): {mb_width:.1f} x {mb_height:.1f}")
+        print(f"Visual (rotado): {visual_width:.1f} x {visual_height:.1f}")
+        
+        x0, y0, x1, y1 = rect.x0, rect.y0, rect.x1, rect.y1
+        
+        if from_visual:
+            # De coordenadas visuales (pixmap) a coordenadas de mediabox (PDF interno)
+            if rotation == 90:
+                # Rotado 90° horario: visual es portrait de un landscape original
+                # x_mediabox = y_visual
+                # y_mediabox = visual_width - x_visual
+                new_x0 = y0
+                new_y0 = visual_width - x1
+                new_x1 = y1
+                new_y1 = visual_width - x0
+            elif rotation == 180:
+                # Rotado 180°: mismo aspect ratio pero invertido
+                new_x0 = visual_width - x1
+                new_y0 = visual_height - y1
+                new_x1 = visual_width - x0
+                new_y1 = visual_height - y0
+            elif rotation == 270:
+                # Rotado 270° horario (= 90° antihorario): 
+                # El PDF original es landscape (842 x 595), se muestra como portrait (595 x 842)
+                # x_mediabox = visual_height - y_visual
+                # y_mediabox = x_visual
+                new_x0 = visual_height - y1
+                new_y0 = x0
+                new_x1 = visual_height - y0
+                new_y1 = x1
+            else:
+                return rect
+        else:
+            # De coordenadas de mediabox a visuales (inverso)
+            if rotation == 90:
+                new_x0 = mb_height - y1
+                new_y0 = x0
+                new_x1 = mb_height - y0
+                new_y1 = x1
+            elif rotation == 180:
+                new_x0 = mb_width - x1
+                new_y0 = mb_height - y1
+                new_x1 = mb_width - x0
+                new_y1 = mb_height - y0
+            elif rotation == 270:
+                new_x0 = y0
+                new_y0 = mb_width - x1
+                new_x1 = y1
+                new_y1 = mb_width - x0
+            else:
+                return rect
+        
+        # Normalizar (asegurar x0 < x1, y0 < y1)
+        result = fitz.Rect(
+            min(new_x0, new_x1),
+            min(new_y0, new_y1),
+            max(new_x0, new_x1),
+            max(new_y0, new_y1)
+        )
+        
+        print(f"Rect transformado: {result}")
+        return result
+    
+    def add_text_to_page(self, page_num: int, rect: fitz.Rect, text: str, 
+                         font_size: float = 12, color: Tuple[float, float, float] = (0, 0, 0),
+                         save_snapshot: bool = True, is_bold: bool = False) -> bool:
+        """
+        Añade texto a una página usando insert_text (más confiable que insert_textbox).
+        
+        Args:
+            page_num: Número de página
+            rect: Área donde colocar el texto (en coordenadas visuales)
             text: Texto a añadir
             font_size: Tamaño de fuente
             color: Color del texto (RGB 0-1)
-            save_snapshot: Si True, guarda snapshot para undo (por defecto True)
+            save_snapshot: Si True, guarda snapshot para undo
+            is_bold: Si True, usa fuente negrita
         
         Returns:
             True si se añadió correctamente
         """
+        print(f"\n=== ADD_TEXT_TO_PAGE LLAMADO ===")
+        print(f"Texto: '{text}', Rect visual: {rect}, Bold: {is_bold}")
+        
         page = self.get_page(page_num)
         if not page:
+            print("add_text_to_page - ERROR: No se pudo obtener la página")
             return False
         
         try:
-            # Guardar snapshot antes de modificar (si se requiere)
             if save_snapshot:
                 self._save_snapshot()
             
+            rotation = page.rotation
+            print(f"add_text_to_page - Rotación: {rotation}°")
+            
+            # Seleccionar fuente según negrita
+            # helv = Helvetica (normal), hebo = Helvetica-Bold (negrita)
+            font_name = "hebo" if is_bold else "helv"
+            
             # Ajustar tamaño de fuente si el rectángulo es muy pequeño
             rect_height = rect.height
-            if rect_height < font_size + 4:
-                font_size = max(8, rect_height - 4)
+            if rect_height < font_size + 2:
+                font_size = max(8, rect_height - 2)
             
-            # Calcular posición Y: centrar verticalmente en el rectángulo si es pequeño
-            if rect_height < font_size * 2:
-                y_pos = rect.y0 + (rect_height / 2) + (font_size / 3)
+            # Calcular el punto de inserción basado en el rectángulo
+            # El texto se inserta desde la línea base (baseline)
+            # Para que aparezca dentro del rect, el punto Y debe ser rect.y0 + font_size
+            
+            if rotation == 0:
+                # Sin rotación - insertar directamente
+                # Punto: esquina superior izquierda + offset para baseline
+                insert_point = fitz.Point(rect.x0 + 2, rect.y0 + font_size)
+                
+                rc = page.insert_text(
+                    insert_point,
+                    text,
+                    fontsize=font_size,
+                    fontname=font_name,
+                    color=color
+                )
+                print(f"insert_text (sin rotación) punto={insert_point}, font={font_name}, rc={rc}")
+                
+            elif rotation == 270:
+                # Rotación 270°: transformar coordenadas visuales a mediabox
+                visual_height = page.rect.height
+                
+                # Punto visual donde queremos el texto
+                visual_x = rect.x0 + 2
+                visual_y = rect.y0 + font_size
+                
+                # Transformar a coordenadas de mediabox para rotación 270°
+                # mediabox_x = visual_height - visual_y
+                # mediabox_y = visual_x
+                mediabox_x = visual_height - visual_y
+                mediabox_y = visual_x
+                
+                insert_point = fitz.Point(mediabox_x, mediabox_y)
+                
+                rc = page.insert_text(
+                    insert_point,
+                    text,
+                    fontsize=font_size,
+                    fontname=font_name,
+                    color=color,
+                    rotate=270  # Texto horizontal en vista rotada 270°
+                )
+                print(f"insert_text (rot 270) visual=({visual_x}, {visual_y}) -> mediabox={insert_point}, font={font_name}, rc={rc}")
+                
+            elif rotation == 90:
+                # Rotación 90°
+                visual_width = page.rect.width
+                
+                visual_x = rect.x0 + 2
+                visual_y = rect.y0 + font_size
+                
+                # Transformar para rotación 90°
+                mediabox_x = visual_y
+                mediabox_y = visual_width - visual_x
+                
+                insert_point = fitz.Point(mediabox_x, mediabox_y)
+                
+                rc = page.insert_text(
+                    insert_point,
+                    text,
+                    fontsize=font_size,
+                    fontname=font_name,
+                    color=color,
+                    rotate=90
+                )
+                print(f"insert_text (rot 90) font={font_name}, rc={rc}")
+                
+            elif rotation == 180:
+                # Rotación 180°
+                visual_width = page.rect.width
+                visual_height = page.rect.height
+                
+                visual_x = rect.x0 + 2
+                visual_y = rect.y0 + font_size
+                
+                # Transformar para rotación 180°
+                mediabox_x = visual_width - visual_x
+                mediabox_y = visual_height - visual_y
+                
+                insert_point = fitz.Point(mediabox_x, mediabox_y)
+                
+                rc = page.insert_text(
+                    insert_point,
+                    text,
+                    fontsize=font_size,
+                    fontname=font_name,
+                    color=color,
+                    rotate=180
+                )
+                print(f"insert_text (rot 180) font={font_name}, rc={rc}")
+                
             else:
-                y_pos = rect.y0 + font_size + 2
+                # Rotación no estándar - usar método simple
+                insert_point = fitz.Point(rect.x0 + 2, rect.y0 + font_size)
+                rc = page.insert_text(
+                    insert_point,
+                    text,
+                    fontsize=font_size,
+                    fontname=font_name,
+                    color=color
+                )
+                print(f"insert_text (otra rotación) font={font_name}, rc={rc}")
             
-            # Usar insert_text que es más directo y confiable
-            point = fitz.Point(rect.x0 + 2, y_pos)
-            
-            # Insertar texto directamente en la página
-            rc = page.insert_text(
-                point,
-                text,
-                fontsize=font_size,
-                fontname="helv",
-                color=color,
-                render_mode=0  # 0 = fill text
-            )
-            
-            if rc >= 0:
+            if rc > 0:
+                print(f"=== TEXTO INSERTADO CORRECTAMENTE (rc={rc}) ===\n")
                 self.modified = True
                 return True
             else:
+                print(f"=== ERROR: insert_text falló con rc={rc} ===\n")
                 return False
-                
+            
         except Exception as e:
-            print(f"Error al añadir texto: {e}")
+            print(f"add_text_to_page - ERROR: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def edit_or_add_text(self, page_num: int, rect: fitz.Rect, new_text: str,
