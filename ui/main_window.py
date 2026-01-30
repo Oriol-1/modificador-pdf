@@ -21,6 +21,7 @@ from ui.workspace_manager import (
     WorkspaceStatusWidget, PendingPDFsDialog,
     WorkspaceVisualDialog, GroupVisualDialog
 )
+from ui.help_system import HelpDialog, show_help, open_online_manual
 
 
 class DropZoneWidget(QFrame):
@@ -803,7 +804,47 @@ class MainWindow(QMainWindow):
         
         # Menú Ayuda
         help_menu = menubar.addMenu("A&yuda")
-        about_action = help_menu.addAction("Acerca de...")
+        
+        # Ayuda general (F1)
+        help_action = QAction("📘 Manual de Ayuda", self)
+        help_action.setShortcut("F1")
+        help_action.setToolTip("Abrir el manual de ayuda (F1)")
+        help_action.triggered.connect(lambda: show_help(self))
+        help_menu.addAction(help_action)
+        
+        help_menu.addSeparator()
+        
+        # Ayuda contextual por secciones
+        help_open = QAction("📂 Cómo abrir archivos", self)
+        help_open.triggered.connect(lambda: show_help(self, "abrir"))
+        help_menu.addAction(help_open)
+        
+        help_delete = QAction("🗑️ Cómo eliminar contenido", self)
+        help_delete.triggered.connect(lambda: show_help(self, "eliminar"))
+        help_menu.addAction(help_delete)
+        
+        help_edit = QAction("✏️ Cómo editar texto", self)
+        help_edit.triggered.connect(lambda: show_help(self, "editar"))
+        help_menu.addAction(help_edit)
+        
+        help_workspace = QAction("📁 Cómo usar Grupos de Trabajo", self)
+        help_workspace.triggered.connect(lambda: show_help(self, "workspace"))
+        help_menu.addAction(help_workspace)
+        
+        help_shortcuts = QAction("⌨️ Atajos de teclado", self)
+        help_shortcuts.triggered.connect(lambda: show_help(self, "atajos"))
+        help_menu.addAction(help_shortcuts)
+        
+        help_menu.addSeparator()
+        
+        # Manual online
+        online_action = QAction("🌐 Manual Online (Web)", self)
+        online_action.triggered.connect(open_online_manual)
+        help_menu.addAction(online_action)
+        
+        help_menu.addSeparator()
+        
+        about_action = help_menu.addAction("ℹ️ Acerca de...")
         about_action.triggered.connect(self.show_about)
     
     def connect_signals(self):
@@ -1025,6 +1066,10 @@ class MainWindow(QMainWindow):
         
         self.status_label.setText("Guardando...")
         QApplication.processEvents()
+        
+        # IMPORTANTE: Escribir textos overlay pendientes al PDF antes de guardar
+        if hasattr(self.pdf_viewer, 'commit_overlay_texts'):
+            self.pdf_viewer.commit_overlay_texts()
         
         # Verificar si el archivo está en el workspace
         is_from_workspace = (self.original_file_path and 
@@ -1335,6 +1380,10 @@ class MainWindow(QMainWindow):
             
             self.status_label.setText("Guardando...")
             QApplication.processEvents()
+            
+            # IMPORTANTE: Escribir textos overlay pendientes al PDF antes de guardar
+            if hasattr(self.pdf_viewer, 'commit_overlay_texts'):
+                self.pdf_viewer.commit_overlay_texts()
             
             if self.pdf_doc.save_as(file_path):
                 self.current_file = file_path
