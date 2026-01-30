@@ -237,13 +237,21 @@ class PDFDocument:
             return page.get_pixmap(matrix=mat, alpha=False)
         return None
     
-    def get_text_blocks(self, page_num: int) -> List[TextBlock]:
-        """Obtiene todos los bloques de texto de una página con su información de formato."""
+    def get_text_blocks(self, page_num: int, visual_coords: bool = False) -> List[TextBlock]:
+        """
+        Obtiene todos los bloques de texto de una página con su información de formato.
+        
+        Args:
+            page_num: Número de página
+            visual_coords: Si True, transforma las coordenadas internas a visuales
+        """
         page = self.get_page(page_num)
         if not page:
             return []
         
         blocks = []
+        rotation = page.rotation if page else 0
+        
         try:
             text_dict = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)
             
@@ -258,6 +266,11 @@ class PDFDocument:
                             continue
                             
                         rect = fitz.Rect(span["bbox"])
+                        
+                        # Transformar a coordenadas visuales si es necesario
+                        if visual_coords and rotation != 0:
+                            rect = self.transform_rect_for_page(page_num, rect, from_visual=False)
+                        
                         color = span.get("color", 0)
                         # Convertir color entero a RGB
                         if isinstance(color, int):
@@ -284,14 +297,58 @@ class PDFDocument:
         
         return blocks
     
-    def find_text_at_point(self, page_num: int, point: Tuple[float, float]) -> Optional[TextBlock]:
-        """Encuentra el texto en un punto específico."""
-        blocks = self.get_text_blocks(page_num)
+    def find_text_at_point(self, page_num: int, point: Tuple[float, float], use_visual_coords: bool = True) -> Optional[TextBlock]:
+        """
+        Encuentra el texto en un punto específico.
+        
+        Args:
+            page_num: Número de página
+            point: Punto en coordenadas (visuales si use_visual_coords=True)
+            use_visual_coords: Si True, usa coordenadas visuales para la búsqueda
+        
+        Returns:
+            TextBlock con coordenadas visuales Y coordenadas internas (internal_rect)
+        """
         pt = fitz.Point(point)
         
-        for block in blocks:
+        if use_visual_coords:
+            # Obtener bloques con coordenadas visuales transformadas
+            visual_blocks = self.get_text_blocks(page_num, visual_coords=True)
+            # También obtener bloques con coordenadas internas para referencia
+            internal_blocks = self.get_text_blocks(page_num, visual_coords=False)
+        else:
+            # Bloques con coordenadas internas
+            visual_blocks = self.get_text_blocks(page_num, visual_coords=False)
+            internal_blocks = visual_blocks
+        
+        # Buscar en los bloques visuales
+        for i, block in enumerate(visual_blocks):
             if block.rect.contains(pt):
+                # Añadir las coordenadas internas al bloque encontrado
+                if i < len(internal_blocks):
+                    block.internal_rect = internal_blocks[i].rect
+                else:
+                    block.internal_rect = block.rect
                 return block
+        
+        # Si no encontramos con contains, intentar con una búsqueda más tolerante
+        # (útil para textos pequeños o bordes)
+        tolerance = 5
+        for i, block in enumerate(visual_blocks):
+            expanded_rect = fitz.Rect(
+                block.rect.x0 - tolerance,
+                block.rect.y0 - tolerance,
+                block.rect.x1 + tolerance,
+                block.rect.y1 + tolerance
+            )
+            if expanded_rect.contains(pt):
+                # Añadir las coordenadas internas al bloque encontrado
+                if i < len(internal_blocks):
+                    block.internal_rect = internal_blocks[i].rect
+                else:
+                    block.internal_rect = block.rect
+                return block
+        
         return None
     
     def find_text_in_rect(self, page_num: int, rect: fitz.Rect) -> List[TextBlock]:
@@ -618,15 +675,18 @@ class PDFDocument:
             print(f"Error al eliminar texto: {e}")
             return False
     
-    def erase_text_transparent(self, page_num: int, rect: fitz.Rect, save_snapshot: bool = True) -> bool:
+    def erase_text_transparent(self, page_num: int, rect: fitz.Rect, save_snapshot: bool = True, already_internal: bool = False) -> bool:
         """
         Elimina texto de un área sin dejar marca visible (transparente).
         Útil para mover texto en PDFs con texto editable sin dejar rectángulos blancos.
         
         Args:
             page_num: Número de página
-            rect: Área del texto a eliminar (en coordenadas visuales)
+            rect: Área del texto a eliminar
             save_snapshot: Si True, guarda snapshot para undo
+            already_internal: Si True, las coordenadas ya están en formato interno del PDF
+                              (no se aplica transformación). Usar cuando rect viene de
+                              find_text_at_point con internal_rect.
         
         Returns:
             True si se eliminó correctamente
@@ -639,16 +699,31 @@ class PDFDocument:
             if save_snapshot:
                 self._save_snapshot()
             
-            # Transformar coordenadas si hay rotación
-            transformed_rect = self.transform_rect_for_page(page_num, rect, from_visual=True)
+            # Transformar coordenadas si hay rotación Y si no son ya internas
+            if already_internal:
+                transformed_rect = rect
+                print(f"erase_text_transparent - Rect ya interno (sin transformar): {rect}")
+            else:
+                transformed_rect = self.transform_rect_for_page(page_num, rect, from_visual=True)
+                print(f"erase_text_transparent - Rect visual: {rect}")
+                print(f"erase_text_transparent - Rect transformado: {transformed_rect}")
             
-            print(f"erase_text_transparent - Rect visual: {rect}")
-            print(f"erase_text_transparent - Rect transformado: {transformed_rect}")
+            # NO expandir el rect para evitar borrar texto adyacente
+            # El rect debe ser preciso para borrar solo lo necesario
+            print(f"erase_text_transparent - Usando rect preciso: {transformed_rect}")
+            
+            # Verificar qué texto hay en esa área antes de borrar
+            text_in_area = page.get_text("text", clip=transformed_rect)
+            print(f"erase_text_transparent - Texto en área ANTES de borrar: '{text_in_area.strip()}'")
             
             # Usar redacción SIN color de relleno (transparente)
             # fill=False significa sin relleno
             redact = page.add_redact_annot(transformed_rect, fill=False)
             page.apply_redactions()
+            
+            # Verificar qué texto hay después de borrar
+            text_after = page.get_text("text", clip=transformed_rect)
+            print(f"erase_text_transparent - Texto en área DESPUÉS de borrar: '{text_after.strip()}'")
             
             # Refrescar el documento para que los cambios sean visibles
             self._refresh_document()
@@ -753,30 +828,47 @@ class PDFDocument:
         """
         Detecta si el PDF es principalmente basado en imágenes (escaneado).
         
+        Un PDF se considera basado en imágenes si:
+        1. Tiene imágenes que cubren la mayor parte de la página (típico de escaneos)
+        2. Las imágenes son grandes (más de 1000x1000 píxeles)
+        
+        NO se considera PDF de imagen si solo tiene logos, iconos o imágenes pequeñas.
+        
         Returns:
             True si el PDF parece ser escaneado/basado en imágenes
         """
         if not self.doc:
             return False
         
-        total_text_length = 0
-        total_images = 0
-        
         for page_num in range(min(3, self.doc.page_count)):
             page = self.doc[page_num]
+            page_rect = page.rect
+            page_area = page_rect.width * page_rect.height
             
-            # Contar texto
-            text = page.get_text("text")
-            total_text_length += len(text.strip())
+            # Analizar imágenes en la página
+            images = page.get_images(full=True)
             
-            # Contar imágenes
-            images = page.get_images()
-            total_images += len(images)
+            for img in images:
+                try:
+                    xref = img[0]
+                    # Obtener las dimensiones de la imagen
+                    img_info = self.doc.extract_image(xref)
+                    if img_info:
+                        img_width = img_info.get('width', 0)
+                        img_height = img_info.get('height', 0)
+                        
+                        # Una imagen escaneada típicamente tiene alta resolución
+                        # Para A4 a 300 DPI: ~2480 x 3508 píxeles
+                        # Para A4 a 150 DPI: ~1240 x 1754 píxeles
+                        # Usamos un umbral de 1000x1000 para detectar páginas escaneadas
+                        if img_width > 1000 and img_height > 1000:
+                            print(f"is_image_based_pdf: Detectada imagen grande {img_width}x{img_height} - ES PDF de imagen")
+                            return True
+                except Exception:
+                    continue
         
-        # Si hay imágenes pero poco texto, probablemente es escaneado
-        if total_images > 0 and total_text_length < 50:
-            return True
-        
+        # No se encontraron imágenes grandes, es un PDF editable normal
+        print(f"is_image_based_pdf: No hay imágenes grandes - NO es PDF de imagen")
         return False
     
     def get_page_images(self, page_num: int) -> List[dict]:
