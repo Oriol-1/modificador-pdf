@@ -618,6 +618,51 @@ class PDFDocument:
             print(f"Error al eliminar texto: {e}")
             return False
     
+    def erase_text_transparent(self, page_num: int, rect: fitz.Rect, save_snapshot: bool = True) -> bool:
+        """
+        Elimina texto de un área sin dejar marca visible (transparente).
+        Útil para mover texto en PDFs con texto editable sin dejar rectángulos blancos.
+        
+        Args:
+            page_num: Número de página
+            rect: Área del texto a eliminar (en coordenadas visuales)
+            save_snapshot: Si True, guarda snapshot para undo
+        
+        Returns:
+            True si se eliminó correctamente
+        """
+        page = self.get_page(page_num)
+        if not page:
+            return False
+        
+        try:
+            if save_snapshot:
+                self._save_snapshot()
+            
+            # Transformar coordenadas si hay rotación
+            transformed_rect = self.transform_rect_for_page(page_num, rect, from_visual=True)
+            
+            print(f"erase_text_transparent - Rect visual: {rect}")
+            print(f"erase_text_transparent - Rect transformado: {transformed_rect}")
+            
+            # Usar redacción SIN color de relleno (transparente)
+            # fill=False significa sin relleno
+            redact = page.add_redact_annot(transformed_rect, fill=False)
+            page.apply_redactions()
+            
+            # Refrescar el documento para que los cambios sean visibles
+            self._refresh_document()
+            
+            self.modified = True
+            print(f"Texto eliminado transparentemente en: {transformed_rect}")
+            return True
+            
+        except Exception as e:
+            print(f"Error en erase_text_transparent: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
     def erase_area(self, page_num: int, rect: fitz.Rect, color: Tuple[float, float, float] = (1, 1, 1), save_snapshot: bool = True, use_redaction: bool = True) -> bool:
         """
         Borra un área del PDF.

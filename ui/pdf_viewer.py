@@ -1774,13 +1774,24 @@ class PDFPageView(QGraphicsView):
         
         self.pdf_doc._save_snapshot()
         
-        # Borrar el texto de la posición que corresponda
-        self.pdf_doc.erase_area(
-            self.current_page, 
-            rect_to_erase, 
-            color=(1, 1, 1), 
-            save_snapshot=False
-        )
+        # Detectar tipo de PDF para elegir método de borrado
+        is_image_pdf = self.pdf_doc.is_image_based_pdf()
+        
+        if is_image_pdf:
+            # PDF de imagen: usar erase_area (deja marca blanca, necesario para tapar la imagen)
+            self.pdf_doc.erase_area(
+                self.current_page, 
+                rect_to_erase, 
+                color=(1, 1, 1), 
+                save_snapshot=False
+            )
+        else:
+            # PDF con texto editable: usar erase_text_transparent (no deja marca)
+            self.pdf_doc.erase_text_transparent(
+                self.current_page, 
+                rect_to_erase, 
+                save_snapshot=False
+            )
         
         # Añadir el texto en la nueva posición
         success = self.pdf_doc.add_text_to_page(
