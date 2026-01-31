@@ -27,7 +27,8 @@
 ### 2. ✅ Build de Ejecutables
 
 #### Windows (Instalador)
-```
+
+```plaintext
 Comando ejecutado: build_installer.bat
 Estado: ✅ EXITOSO
 Ubicación: C:\...\pdf_editor\dist\ModificadorPDF\Modificador de PDF.exe
@@ -54,7 +55,8 @@ Avisos de compilación (normales):
 **Resultado**: ✅ Ejecutable Windows compilado exitosamente
 
 #### macOS (Pendiente - requiere macOS)
-```
+
+```plaintext
 Estado: ⏳ Requiere máquina macOS para compilar
 Script: build_mac.sh
 Nota: Puede ejecutarse en Mac con: chmod +x build_mac.sh && ./build_mac.sh
@@ -65,7 +67,8 @@ Nota: Puede ejecutarse en Mac con: chmod +x build_mac.sh && ./build_mac.sh
 ### 3. ✅ Validación de Alertas y Bloqueos
 
 #### Windows
-```
+
+```plaintext
 Escenario: Ejecución de PDF_Editor_Pro.exe en Windows 11
 
 Alertas de SmartScreen:
@@ -80,7 +83,8 @@ Resultado: ✅ Sin bloqueos permanentes
 ```
 
 #### macOS
-```
+
+```plaintext
 Escenario: Ejecución en macOS (cuando se compile)
 
 Gatekeeper:
@@ -96,7 +100,8 @@ Resultado: ✅ Sin bloqueos permanentes (usuario puede autorizar)
 ### 4. ✅ Comparación: Versión Instalada vs Portable
 
 #### Funcionalidad Idéntica
-```
+
+```plaintext
 Pruebas realizadas (desde v1.0.0):
 
 ✅ Abrir PDF
@@ -298,7 +303,8 @@ Cambios documentación: ~1,200 líneas
 ```
 
 #### Opción B - Manual (Más control)
-```
+
+```plaintext
 ✅ Desinstalar v1.0.0 manualmente
 ✅ Instalar v1.0.1
 ✅ Recomendado si hay problemas (raro)

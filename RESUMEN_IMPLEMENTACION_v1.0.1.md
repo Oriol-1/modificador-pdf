@@ -131,7 +131,8 @@ Tests impactados: NINGUNO (todos pasan) ✅
 ### P: ¿Se ha incrementado el número de versión y/o build?
 
 #### R: SÍ ✅
-```
+
+```bash
 Archivos actualizados:
 1. version_info.txt: 1.0.0.0 → 1.0.1.0 ✅
 2. main.py: 1.0.0 → 1.0.1 ✅
