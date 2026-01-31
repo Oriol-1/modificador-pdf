@@ -353,7 +353,7 @@ Para USAR LA APP:
 
 ### Documentos a incluir en release
 
-```
+```plaintext
 Raíz:
 ✅ RESUMEN_IMPLEMENTACION_v1.0.1.md
 ✅ GUIA_INSTALACION_UPDATES.md

@@ -455,7 +455,7 @@ Razones:
 
 ## 📞 Documentos Disponibles para Usuarios
 
-```
+```plaintext
 1. GUIA_INSTALACION_UPDATES.md (400+ líneas)
    - Cómo actualizar
    - FAQ completo

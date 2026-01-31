@@ -231,7 +231,7 @@ Conclusión: ✅ RENDIMIENTO ESTABLE
 
 ## 📊 Matriz de Validación Post-Release
 
-### Windows
+### Para Windows
 
 ```plaintext
 ✅ Compilación: EXITOSA
@@ -262,7 +262,8 @@ Conclusión: ✅ RENDIMIENTO ESTABLE
 ### De v1.0.0 a v1.0.1
 
 **Instalación RECOMENDADA** (sin desinstalar):
-```
+
+```plaintext
 1. Cierra aplicación v1.0.0
 2. Ejecuta ModificadorPDF_Setup_v1.0.1.exe
 3. Haz clic en "Siguiente" → "Siguiente" → "Instalar"
@@ -280,7 +281,7 @@ Posibilidad de revertir: Sí (desinstalar v1.0.1, reinstalar v1.0.0) ✅
 
 ## 📁 Archivos Modificados
 
-```
+```plaintext
 8 archivos cambiados:
 ├── pdf_editor/version_info.txt (actualizado versión)
 ├── pdf_editor/main.py (actualizado versión)
@@ -376,6 +377,7 @@ git reset --hard 3abd6f7
 ```
 
 Pero esto es **muy improbable** dado que:
+
 - Cambios son aditivos (no destructivos)
 - Código funcional sin cambios
 - Tests 100% pasando
