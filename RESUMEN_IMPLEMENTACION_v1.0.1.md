@@ -11,7 +11,9 @@
 ## 📋 Tareas Completadas
 
 ### 1. ✅ Incremento de Versión
+
 - **version_info.txt**: (1,0,0,0) → (1,0,1,0) ✅
+
 - **main.py**: "1.0.0" → "1.0.1" ✅
 - **FileVersion**: "1.0.0.0" → "1.0.1.0" ✅
 - **ProductVersion**: "1.0.0.0" → "1.0.1.0" ✅
@@ -81,7 +83,7 @@ Contenido:
 ✅ Análisis de riesgo (BAJO)
 
 Total: 368 líneas de documentación técnica
-```
+```plaintext
 
 ### 5. ✅ Validación Técnica
 
@@ -117,7 +119,8 @@ Guardar PDF | ~500ms | ~500ms | ✅ ESTABLE
 ```
 
 #### Código
-```
+
+```plaintext
 Cambios funcionales: 0 líneas ✅
 Cambios documentación: 1,200+ líneas ✅
 Código obsoleto: NINGUNO ✅

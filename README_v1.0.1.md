@@ -59,7 +59,8 @@
 ```
 
 ### Herramientas de Build
-```
+
+```plaintext
 ✅ pdf_editor/build_portable.bat (NUEVO)
    → Script para crear instalador portátil
 ```
@@ -160,7 +161,8 @@ Riesgo: Prácticamente CERO
 ## 📚 DOCUMENTACIÓN DISPONIBLE
 
 ### Para Usuarios
-```
+
+```plaintext
 1. RESUMEN_IMPLEMENTACION_v1.0.1.md ← COMIENZA AQUÍ
    - Resumen ejecutivo
    - Respuestas a tus preguntas
@@ -178,7 +180,8 @@ Riesgo: Prácticamente CERO
 ```
 
 ### Para Administradores
-```
+
+```plaintext
 1. VALIDACION_v1.0.1.md
    - Checklist de validación
    - Resultados de tests
@@ -207,7 +210,7 @@ Riesgo: Prácticamente CERO
 
 ## 🔗 GIT HISTORY
 
-```
+```plaintext
 Commits desde v1.0.0:
 
 f5102b2 Docs: Índice completo de documentación v1.0.1
@@ -229,6 +232,7 @@ Tags:
 ### DISTRIBUIR v1.0.1 INMEDIATAMENTE
 
 **Razones:**
+
 ✅ Bajo riesgo (cambios documentación + versión)  
 ✅ Usuarios pueden actualizar sin problemas  
 ✅ Documentación exhaustiva incluida  
@@ -264,7 +268,7 @@ Tags:
 
 ## 💾 GARANTÍA DE ACTUALIZACIÓN
 
-```
+```plaintext
 ✅ Garantía: Sus archivos estarán seguros en v1.0.1
 ✅ Garantía: Configuración preservada
 ✅ Garantía: Grupos de trabajo intactos

@@ -126,7 +126,6 @@
 
 ### 8. **manual_web/MANUAL.md**
 
-
 - **Propósito**: Manual de usuario en Markdown
 - **Contenido**: Instrucciones paso a paso para todas las funciones
 - **Ubicación**: `manual_web/`
@@ -168,8 +167,6 @@
 
 ### 13. **manual_web/capturas/** (15 imágenes)
 
-
-
 - **v1.0.0**: Nombres con espacios y typos
 - **v1.0.1**: Nombres limpios (01-inicio.png hasta 15-grupo-completado.png)
 - **Cambios**:
@@ -183,9 +180,7 @@
 
 ## 🔧 Documentación Técnica del Build
 
-
 ### 14. **pdf_editor/version_info.txt**
-
 
 - **Propósito**: Información de versión para Windows
 - **Contenido**: Metadatos del ejecutable
@@ -220,7 +215,6 @@
 ---
 
 ## 📊 Matriz de Documentación
-
 
 ```markdown
 Documento | v1.0.0 | v1.0.1 | Cambio | Audiencia
@@ -357,8 +351,7 @@ Para USAR LA APP:
 ## 📦 Empaquetamiento para Distribución
 
 
-### Documentos a incluir en release:
-
+### Documentos a incluir en release
 
 ```
 Raíz:

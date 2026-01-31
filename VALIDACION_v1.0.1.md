@@ -147,7 +147,8 @@ Pruebas realizadas (desde v1.0.0):
 ### 5. ✅ Estado del Código
 
 #### Sin Código Obsoleto
-```
+
+```plaintext
 Cambios desde v1.0.0 → v1.0.1:
 
 1. Actualización de versión (3 archivos)
@@ -172,7 +173,8 @@ Resultado: ✅ Sin código obsoleto, solo adiciones y mantenimiento
 ```
 
 #### Tests
-```
+
+```plaintext
 Suite de tests: 46 tests
 Resultado: 46/46 PASANDO ✅
 
@@ -181,13 +183,13 @@ Todas las pruebas anteriores siguen siendo válidas:
 - test_workspace.py: 25 tests ✅
 
 Cambios de código no afectan tests: CONFIRMADO ✅
-```
+```plaintext
 
 ---
 
 ### 6. ✅ Rendimiento
 
-```
+```plaintext
 Métrica | v1.0.0 | v1.0.1 | Cambio |
 ---------|--------|--------|--------|
 **Tiempo de inicio** | ~2.5s | ~2.5s | ✅ Igual |
@@ -213,6 +215,7 @@ Conclusión: ✅ RENDIMIENTO ESTABLE
 - Rendimiento idéntico
 
 ### Cambios de Mantenimiento
+
 1. **Incremento de versión** (administrativa)
 2. **Documentación nueva**
    - GUIA_INSTALACION_UPDATES.md (1,000+ líneas)
@@ -228,7 +231,8 @@ Conclusión: ✅ RENDIMIENTO ESTABLE
 ## 📊 Matriz de Validación Post-Release
 
 ### Windows
-```
+
+```plaintext
 ✅ Compilación: EXITOSA
 ✅ Versión mostrada: 1.0.1
 ✅ Funcionamiento: Idéntico a v1.0.0
@@ -239,7 +243,8 @@ Conclusión: ✅ RENDIMIENTO ESTABLE
 ```
 
 ### macOS
-```
+
+```plaintext
 ⏳ Compilación: Pendiente (requiere macOS)
 ⏳ Versión mostrada: Se mostrará 1.0.1
 ⏳ Funcionamiento: Será idéntico a v1.0.0
