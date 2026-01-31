@@ -10,21 +10,24 @@
 ## ✅ Verificaciones Realizadas
 
 ### Tests
+
 - **Total de tests**: 46
 - **Tests pasados**: 46 (100%)
-- **Warnings**: 1 (TestTimer con __init__, no es crítico)
-- **Suite**: 
+- **Warnings**: 1 (TestTimer con `__init__`, no es crítico)
+- **Suite**:
   - `test_pdf_editor.py`: 21 tests ✅
   - `test_workspace.py`: 25 tests ✅
 
 ### Análisis de Código
+
 - ✅ Imports innecesarios eliminados
 - ✅ No hay código duplicado significativo
 - ✅ Estructura modular y limpia
 - ✅ Dependencias optimizadas
 
 ### Dependencias
-```
+
+```text
 PyMuPDF>=1.23.0      (manipulación PDF)
 PyQt5>=5.15.0        (interfaz gráfica)
 pyinstaller>=6.0.0   (empaquetado)
@@ -33,7 +36,7 @@ pytest>=9.0.0        (testing)
 
 ## 📁 Estructura del Proyecto
 
-```
+```text
 pdf_editor/
 ├── core/
 │   ├── __init__.py
@@ -60,20 +63,23 @@ pdf_editor/
 ## 🔄 Control de Versiones
 
 ### Último Commit
-```
+
+```text
 Commit: 3abd6f7
 Mensaje: Versión estable v1.0.0: Código limpio, tests pasando (46/46), imports optimizados
 Cambios: 49 archivos modificados, 10806 inserciones
 ```
 
 ### Tags
-```
+
+```text
 v1.0.0-stable    → Versión estable con todos los tests pasando
 ```
 
 ## 🚀 Características Principales
 
 ✅ Editor PDF avanzado con:
+
 - Eliminación de contenido (borrador/whiteout)
 - Edición de texto preservando tipografía
 - Soporte para PDFs con formularios
@@ -85,6 +91,7 @@ v1.0.0-stable    → Versión estable con todos los tests pasando
 ## 📋 Cambios en esta Versión
 
 ### Correcciones
+
 - ✅ Arreglados 3 tests que fallaban en `test_workspace.py`
 - ✅ Limpiados imports innecesarios en:
   - `core/pdf_handler.py` (removido: `copy`)
@@ -92,6 +99,7 @@ v1.0.0-stable    → Versión estable con todos los tests pasando
 - ✅ Archivo `tests/__init__.py` corregido (cambio de markdown a Python)
 
 ### Limpiezas
+
 - Optimizados imports no usados
 - Consistencia en API de métodos
 - Mejor documentación de tests
@@ -99,12 +107,14 @@ v1.0.0-stable    → Versión estable con todos los tests pasando
 ## 📝 Cómo Usar esta Versión de Referencia
 
 ### Ejecutar la Aplicación
+
 ```powershell
 cd "C:\Users\seto_\OneDrive\Escritorio\curriculum\PROYECTO 2026\modificar pdf"
 .\.venv\Scripts\python.exe pdf_editor/main.py
 ```
 
 ### Ejecutar Tests
+
 ```powershell
 # Todos los tests
 python -m pytest pdf_editor/tests/ -v
@@ -117,6 +127,7 @@ python -m pytest pdf_editor/tests/test_workspace.py -v
 ```
 
 ### Instalar Dependencias
+
 ```powershell
 pip install -r pdf_editor/requirements.txt
 ```
@@ -126,6 +137,7 @@ pip install -r pdf_editor/requirements.txt
 Si algo se rompe en futuras modificaciones:
 
 ### Opción 1: Restaurar a esta Versión (Local)
+
 ```powershell
 # Ver el commit de esta versión
 git log --oneline | grep "v1.0.0"
@@ -138,12 +150,14 @@ git checkout v1.0.0-stable
 ```
 
 ### Opción 2: Restaurar un Archivo Específico
+
 ```powershell
 # Si solo necesitas restaurar un archivo
 git checkout v1.0.0-stable -- pdf_editor/core/pdf_handler.py
 ```
 
 ### Opción 3: Ver Cambios Después de esta Versión
+
 ```powershell
 # Ver qué cambió después del v1.0.0
 git log v1.0.0-stable..HEAD --oneline
@@ -177,14 +191,15 @@ Use este checklist antes de hacer cambios significativos:
    - ¿Es un bug verdadero? → Arreglar y documentar
 
 3. **Commits Claros**: Antes de hacer commit:
-   ```
-   # Buenos commits
-   git commit -m "Arreglar: Eliminar imports no usados en pdf_handler.py"
-   
-   # Malos commits
-   git commit -m "Cambios"
-   git commit -m "arreglos varios"
-   ```
+
+```text
+# Buenos commits
+git commit -m "Arreglar: Eliminar imports no usados en pdf_handler.py"
+
+# Malos commits
+git commit -m "Cambios"
+git commit -m "arreglos varios"
+```
 
 ## 📖 Referencias Rápidas
 
@@ -197,6 +212,7 @@ Use este checklist antes de hacer cambios significativos:
 ## ❓ Soporte
 
 Si necesitas revertir cambios:
+
 1. Primero, identifica qué cambió: `git diff v1.0.0-stable HEAD`
 2. Crea una rama: `git checkout -b fix/revert-issue`
 3. Usa `git revert` o `git reset` según necesites

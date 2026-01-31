@@ -11,7 +11,7 @@
 ## 📊 Estadísticas del Proyecto
 
 | Métrica | Valor |
-|---------|-------|
+| --- | --- |
 | **Código Python** | 2,268 líneas |
 | **Tests Unitarios** | 46 tests |
 | **Tests Pasando** | 46/46 (100%) ✅ |
@@ -121,13 +121,13 @@ PDF Editor Pro (v1.0.0)
 git checkout v1.0.0-stable
 ```
 
-2. **Ver Cambios Posteriores**
+1. **Ver Cambios Posteriores**
 
 ```powershell
 git log v1.0.0-stable..HEAD --oneline
 ```
 
-3. **Revertir Cambios Específicos**
+1. **Revertir Cambios Específicos**
 
 ```powershell
 git revert <commit-hash>
@@ -147,7 +147,7 @@ git revert <commit-hash>
 git checkout -b feature/mi-cambio
 ```
 
-2. **Hacer cambios y probar**
+1. **Hacer cambios y probar**
 
 ```powershell
 # Editar archivos
@@ -155,28 +155,28 @@ git checkout -b feature/mi-cambio
 python -m pytest pdf_editor/tests/ -v
 ```
 
-3. **Commit con mensaje descriptivo**
+1. **Commit con mensaje descriptivo**
 
 ```powershell
 git add .
 git commit -m "Feature: Descripción del cambio"
 ```
 
-4. **Verificar tests nuevamente antes de merge**
+1. **Verificar tests nuevamente antes de merge**
 
 ```powershell
 # DEBE tener resultado: 46/46 tests pasando
 python -m pytest pdf_editor/tests/ -v
 ```
 
-5. **Merge a main**
+1. **Merge a main**
 
 ```powershell
 git checkout main
 git merge feature/mi-cambio
 ```
 
-6. **Crear nuevo tag si es versión release**
+1. **Crear nuevo tag si es versión release**
 
 ```powershell
 git tag -a v1.0.1 -m "v1.0.1: Descripción de cambios"
@@ -202,7 +202,7 @@ Antes de hacer cualquier cambio importante:
 Creados en esta estabilización:
 
 | Archivo | Propósito |
-|---------|-----------|
+| --- | --- |
 | `ESTABLE_v1.0.0.md` | Documentación de versión estable |
 | `GUIA_GIT.md` | Procedimientos de desarrollo |
 | `ESTABLE_RESUMEN.md` | Este archivo |
