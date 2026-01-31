@@ -243,7 +243,7 @@ Conclusión: ✅ RENDIMIENTO ESTABLE
 ✅ Instalación: Sin desinstalar v1.0.0 (segura)
 ```
 
-### macOS
+### Para macOS en Release
 
 ```plaintext
 ⏳ Compilación: Pendiente (requiere macOS)
@@ -340,6 +340,7 @@ Cambios documentación: ~1,200 líneas
 #### APROBADO PARA PRODUCCIÓN
 
 ### Puntos Clave
+
 - ✅ Versión incrementada correctamente
 - ✅ Build Windows exitoso sin errores fatales
 - ✅ Comportamiento idéntico a v1.0.0

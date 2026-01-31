@@ -200,7 +200,7 @@ Conclusión: Código limpio, rendimiento estable ✅
 
 ### P: ¿Qué pasa al reinstalar v1.0.0? ¿Se aplican correctamente los cambios?
 
-#### R: Sí, totalmente seguro. Aquí está la respuesta detallada:
+#### R: Sí, totalmente seguro. Aquí está la respuesta detallada
 
 ---
 
@@ -294,8 +294,10 @@ VENTAJAS:
 ## ⚠️ PUNTOS IMPORTANTES
 
 ### "¿Se romperán mis archivos al actualizar?"
-**NO, absolutamente no:**
-```
+
+#### NO, absolutamente no
+
+```plaintext
 Archivos que SIEMPRE se preservan:
 ✅ PDFs que editaste y guardaste
 ✅ Grupos de trabajo que creaste
@@ -312,7 +314,8 @@ Actualizar la aplicación NO toca esas carpetas
 ```
 
 ### "¿Cuánto tiempo tarda la actualización?"
-```
+
+```plaintext
 Opción 1 (Recomendada): 2-3 minutos
 Opción 2 (Desinstalar): 5-7 minutos
 Opción 3 (Limpia): 10-15 minutos
@@ -322,7 +325,8 @@ Total tiempo: 5-20 minutos máximo
 ```
 
 ### "¿Y si algo sale mal?"
-```
+
+```plaintext
 Es CASI IMPOSIBLE que algo salga mal, pero si sucede:
 
 Plan A - Reinstalar v1.0.0:
@@ -344,7 +348,8 @@ Plan C - Usar versión portable:
 ```
 
 ### "¿Necesito antivirus especial?"
-```
+
+```plaintext
 NO, pero Windows SmartScreen mostrará un aviso:
 - Esto es NORMAL para apps nuevas
 - La aplicación es 100% segura (código verificado)
@@ -356,7 +361,7 @@ NO, pero Windows SmartScreen mostrará un aviso:
 
 ## 🔄 Ejemplo Práctico
 
-```
+```plaintext
 ESCENARIO: Juan tiene v1.0.0, quiere actualizar a v1.0.1
 
 JUAN HACE:
@@ -384,7 +389,7 @@ RIESGO: Prácticamente CERO
 
 ## 📊 Matriz Final de Decisión
 
-```
+```plaintext
 ¿Cuál opción elegir?
 
 ┌─────────────────────────────────────────────────┐
@@ -439,6 +444,7 @@ RECOMENDACIÓN DEFINITIVA: OPCIÓN 1
 ### DISTRIBUIR v1.0.1 INMEDIATAMENTE
 
 Razones:
+
 1. ✅ Bajo riesgo (solo cambios de documentación)
 2. ✅ Usuarios pueden actualizar sin problemas
 3. ✅ Documentación exhaustiva disponible
