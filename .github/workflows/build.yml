@@ -206,7 +206,7 @@ jobs:
           libxcb-render-util0 \
           libxcb-shape0 \
           libegl1 \
-          libgl1-mesa-glx \
+          libgl1 \
           libfuse2 \
           fuse
     
