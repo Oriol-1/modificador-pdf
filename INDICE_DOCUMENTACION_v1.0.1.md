@@ -155,7 +155,7 @@
 ### 12. **manual_web/index.html** ⭐ ACTUALIZADO v1.0.1
 
 - **Propósito**: Manual web interactivo HTML
-- **Contenido**: 
+- **Contenido**:
   - Interfaz visual del manual
   - 14 imágenes embebidas (renombradas en v1.0.1)
   - Navegación con menú sticky
@@ -266,7 +266,7 @@ build_portable.bat | ❌ | ✅ | NUEVO | Build
 
 ## 📈 Estadísticas de Documentación
 
-```
+```plaintext
 Total de documentos: 18
 - Existentes en v1.0.0: 11
 - Nuevos en v1.0.1: 7
@@ -288,7 +288,7 @@ Cobertura:
 
 ## 🔗 Relaciones entre Documentos
 
-```
+```plaintext
 Para ACTUALIZAR:
 1. RESUMEN_IMPLEMENTACION_v1.0.1.md
    ↓

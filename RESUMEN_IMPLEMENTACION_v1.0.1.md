@@ -164,7 +164,7 @@ Conclusión: Sin BLOQUEOS PERMANENTES ✅
 
 ### P: ¿Versión instalada y portable reflejan el mismo comportamiento?
 
-**R: SÍ, 100% idéntico ✅**
+#### R: SÍ, 100% idéntico ✅
 
 ```plaintext
 Código ejecutable: IDÉNTICO
@@ -199,7 +199,8 @@ Conclusión: Código limpio, rendimiento estable ✅
 ```
 
 ### P: ¿Qué pasa al reinstalar v1.0.0? ¿Se aplican correctamente los cambios?
-**R: Sí, totalmente seguro. Aquí está la respuesta detallada:**
+
+#### R: Sí, totalmente seguro. Aquí está la respuesta detallada:
 
 ---
 
@@ -207,7 +208,7 @@ Conclusión: Código limpio, rendimiento estable ✅
 
 ### Opción 1: Actualización RECOMENDADA (Sin desinstalar)
 
-```
+```plaintext
 PASOS:
 1. Cierra la aplicación v1.0.0 completamente
 2. Descarga: ModificadorPDF_Setup_v1.0.1.exe
@@ -234,7 +235,7 @@ VENTAJAS:
 
 ### Opción 2: Actualización SEGURA (Con desinstalación)
 
-```
+```plaintext
 PASOS:
 1. Cierra v1.0.0
 2. Panel de Control → Programas → Desinstalar un programa
@@ -262,7 +263,7 @@ VENTAJAS:
 
 ### Opción 3: Actualización LIMPIA (Borrado completo)
 
-```
+```plaintext
 PASOS:
 1. Sigue Opción 2 completa
 2. Busca carpetas de configuración:
@@ -435,7 +436,7 @@ RECOMENDACIÓN DEFINITIVA: OPCIÓN 1
 
 ## 🚀 ACCIÓN RECOMENDADA
 
-**DISTRIBUIR v1.0.1 INMEDIATAMENTE**
+### DISTRIBUIR v1.0.1 INMEDIATAMENTE
 
 Razones:
 1. ✅ Bajo riesgo (solo cambios de documentación)

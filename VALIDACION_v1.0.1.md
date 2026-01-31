@@ -210,6 +210,7 @@ Conclusión: ✅ RENDIMIENTO ESTABLE
 ## 🎯 Cambios Incluidos en v1.0.1
 
 ### Cambios Funcionales: NINGUNO
+
 - Código de aplicación idéntico a v1.0.0
 - Comportamiento idéntico
 - Rendimiento idéntico
@@ -300,7 +301,8 @@ Cambios documentación: ~1,200 líneas
 ### Para usuarios con v1.0.0
 
 #### Opción A - Recomendada (Automática)
-```
+
+```plaintext
 ✅ Simplemente ejecutar: ModificadorPDF_Setup_v1.0.1.exe
 ✅ El instalador maneja todo automáticamente
 ✅ Seguro y sin riesgos
@@ -316,7 +318,8 @@ Cambios documentación: ~1,200 líneas
 ```
 
 ### Para distribución en equipo
-```
+
+```plaintext
 1. Generar ambas versiones:
    - Instalador (ModificadorPDF_Setup_v1.0.1.exe)
    - Portable (ModificadorPDF_v1.0.1_portable.exe)
@@ -348,10 +351,13 @@ Cambios documentación: ~1,200 líneas
 - ✅ Alertas y bloqueos normales (controlables)
 
 ### Riesgo de Release
+
 **BAJO** - Solo cambios de documentación y versión
 
 ### Recomendación
-**LANZAR v1.0.1 INMEDIATAMENTE**
+
+#### LANZAR v1.0.1 INMEDIATAMENTE
+
 - Bajo riesgo
 - Usuarios pueden actualizar sin preocupaciones
 - Documentación disponible para todas las preguntas
@@ -361,6 +367,7 @@ Cambios documentación: ~1,200 líneas
 ## 📞 Punto de Referencia para Rollback
 
 Si es necesario revertir a v1.0.0:
+
 ```powershell
 git checkout v1.0.0-stable
 # O específicamente:
