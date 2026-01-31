@@ -48,6 +48,9 @@ a = Analysis(
         # Incluir iconos si existen
         (os.path.join(icon_dir, 'app_icon.ico'), 'installer') if os.path.exists(os.path.join(icon_dir, 'app_icon.ico')) else (None, None),
         (os.path.join(icon_dir, 'app_icon.png'), 'installer') if os.path.exists(os.path.join(icon_dir, 'app_icon.png')) else (None, None),
+        # Incluir archivos de licencia
+        ('LICENSE.txt', '.'),
+        ('LICENSE_EN.txt', '.'),
     ],
     hiddenimports=hidden_imports,
     hookspath=[],

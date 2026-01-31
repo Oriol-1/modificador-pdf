@@ -3,14 +3,12 @@ Ventana principal del editor de PDF.
 """
 
 import os
-import shutil
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
-    QFileDialog, QMessageBox, QStatusBar, QLabel, QProgressBar,
-    QApplication, QFrame, QAction
+    QFileDialog, QMessageBox, QStatusBar, QLabel, QApplication, QFrame, QAction
 )
-from PyQt5.QtCore import Qt, QTimer, QMimeData
-from PyQt5.QtGui import QCloseEvent, QDragEnterEvent, QDropEvent, QFont
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QCloseEvent, QDragEnterEvent, QDropEvent
 
 from core.pdf_handler import PDFDocument
 from ui.pdf_viewer import PDFPageView
@@ -18,10 +16,9 @@ from ui.thumbnail_panel import ThumbnailPanel
 from ui.toolbar import EditorToolBar
 from ui.workspace_manager import (
     WorkspaceManager, WorkspaceSetupDialog, 
-    WorkspaceStatusWidget, PendingPDFsDialog,
-    WorkspaceVisualDialog, GroupVisualDialog
+    WorkspaceStatusWidget, WorkspaceVisualDialog
 )
-from ui.help_system import HelpDialog, show_help, open_online_manual
+from ui.help_system import show_help, open_online_manual
 
 
 class DropZoneWidget(QFrame):
@@ -844,6 +841,11 @@ class MainWindow(QMainWindow):
         
         help_menu.addSeparator()
         
+        # Licencia
+        license_action = QAction("📜 Ver Licencia", self)
+        license_action.triggered.connect(self.show_license)
+        help_menu.addAction(license_action)
+        
         about_action = help_menu.addAction("ℹ️ Acerca de...")
         about_action.triggered.connect(self.show_about)
     
@@ -1565,8 +1567,170 @@ class MainWindow(QMainWindow):
             "<li>Sistema de workspace para flujo de trabajo</li>"
             "</ul>"
             "<p>Preserva formularios y estructura del documento.</p>"
-            "<p>© 2024 - Todos los derechos reservados</p>"
+            "<hr>"
+            "<p><b>© 2026 Oriol Alonso Esplugas</b></p>"
+            "<p>Todos los derechos reservados</p>"
+            "<p><small>Gratuito para uso personal. "
+            "Uso comercial requiere autorización.</small></p>"
         )
+    
+    def show_license(self):
+        """Muestra el diálogo de licencia."""
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QPushButton, QHBoxLayout, QComboBox, QLabel
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("📜 Licencia - PDF Editor Pro")
+        dialog.setMinimumSize(700, 500)
+        dialog.setStyleSheet("""
+            QDialog { background-color: #1e1e1e; }
+            QTextEdit { 
+                background-color: #2d2d30; 
+                color: #ffffff; 
+                border: 1px solid #555;
+                font-family: Consolas, monospace;
+                font-size: 11px;
+            }
+            QLabel { color: #ffffff; }
+            QPushButton {
+                background-color: #0078d4;
+                color: white;
+                border: none;
+                padding: 8px 20px;
+                border-radius: 4px;
+            }
+            QPushButton:hover { background-color: #1084d8; }
+            QComboBox {
+                background-color: #3d3d3d;
+                color: white;
+                border: 1px solid #555;
+                padding: 5px 10px;
+                border-radius: 4px;
+            }
+        """)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Selector de idioma
+        lang_layout = QHBoxLayout()
+        lang_label = QLabel("Idioma / Language:")
+        lang_combo = QComboBox()
+        lang_combo.addItem("🇪🇸 Español", "es")
+        lang_combo.addItem("🇬🇧 English", "en")
+        lang_layout.addWidget(lang_label)
+        lang_layout.addWidget(lang_combo)
+        lang_layout.addStretch()
+        layout.addLayout(lang_layout)
+        
+        # Área de texto para la licencia
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+        layout.addWidget(text_edit)
+        
+        # Cargar licencia según idioma
+        def load_license(lang):
+            import sys
+            import os
+            
+            # Determinar la ruta base
+            if getattr(sys, 'frozen', False):
+                # Ejecutable compilado
+                base_path = sys._MEIPASS
+            else:
+                # Desarrollo
+                base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            
+            if lang == "es":
+                license_file = os.path.join(base_path, "LICENSE.txt")
+            else:
+                license_file = os.path.join(base_path, "LICENSE_EN.txt")
+            
+            try:
+                with open(license_file, 'r', encoding='utf-8') as f:
+                    text_edit.setPlainText(f.read())
+            except FileNotFoundError:
+                text_edit.setPlainText(self._get_embedded_license(lang))
+        
+        lang_combo.currentIndexChanged.connect(
+            lambda: load_license(lang_combo.currentData())
+        )
+        
+        # Cargar licencia inicial en español
+        load_license("es")
+        
+        # Botón cerrar
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        close_btn = QPushButton("Cerrar")
+        close_btn.clicked.connect(dialog.accept)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+        
+        dialog.exec_()
+    
+    def _get_embedded_license(self, lang="es"):
+        """Devuelve la licencia embebida en caso de que no se encuentre el archivo."""
+        if lang == "es":
+            return """
+================================================================================
+                    PDF EDITOR PRO - LICENCIA DE USO
+================================================================================
+
+Copyright (c) 2026 Oriol Alonso Esplugas
+Todos los derechos reservados.
+
+LICENCIA PROPIETARIA CON USO PERSONAL GRATUITO
+
+Este software es GRATUITO para uso personal y no comercial.
+
+PROHIBIDO SIN AUTORIZACIÓN:
+- Vender el software
+- Uso comercial o empresarial  
+- Monetizar de cualquier forma
+- Reclamar autoría
+
+Para uso comercial o ventas, contactar:
+- Email: alonsoesplugas@gmail.com
+- GitHub: https://github.com/Oriol-1
+
+Cualquier venta requiere retribución acordada al autor.
+
+EL SOFTWARE SE PROPORCIONA "TAL CUAL", SIN GARANTÍA DE NINGÚN TIPO.
+
+================================================================================
+          PDF Editor Pro © 2026 Oriol Alonso Esplugas
+================================================================================
+"""
+        else:
+            return """
+================================================================================
+                    PDF EDITOR PRO - LICENSE AGREEMENT
+================================================================================
+
+Copyright (c) 2026 Oriol Alonso Esplugas
+All rights reserved.
+
+PROPRIETARY LICENSE WITH FREE PERSONAL USE
+
+This software is FREE for personal and non-commercial use.
+
+PROHIBITED WITHOUT AUTHORIZATION:
+- Selling the software
+- Commercial or business use
+- Monetizing in any way
+- Claiming authorship
+
+For commercial use or sales, contact:
+- Email: alonsoesplugas@gmail.com
+- GitHub: https://github.com/Oriol-1
+
+Any sale requires agreed compensation to the author.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
+
+================================================================================
+          PDF Editor Pro © 2026 Oriol Alonso Esplugas
+================================================================================
+"""
     
     # ==================== MÉTODOS DE WORKSPACE ====================
     

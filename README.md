@@ -150,7 +150,21 @@ pdf_editor/
 
 ## Licencia
 
-Este proyecto es de uso libre para fines educativos y personales.
+PDF Editor Pro © 2026 Oriol Alonso Esplugas - Todos los derechos reservados
+
+Este software es **GRATUITO para uso personal**. Consulta el archivo [LICENSE.txt](LICENSE.txt) para los términos completos.
+
+### Resumen de la licencia
+
+| ✅ Permitido            | ❌ Prohibido sin autorización |
+| ----------------------- | ----------------------------- |
+| Uso personal gratuito   | Vender el software            |
+| Redistribución gratuita | Uso comercial                 |
+| Uso educativo           | Monetización                  |
+
+⚠️ **IMPORTANTE**: Cualquier uso comercial, venta o monetización requiere autorización previa y retribución al autor.
+
+📧 **Contacto**: [GitHub - Oriol-1](https://github.com/Oriol-1)
 
 ---
 
