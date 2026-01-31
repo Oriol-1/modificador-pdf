@@ -249,7 +249,8 @@ git checkout -b feature/nombre-recuperada abc1234
 ## 📝 Plantillas de Commit Recomendadas
 
 ### Para Bugs
-```
+
+```text
 Arreglar: Descripción breve del bug
 
 - Qué estaba mal
@@ -260,7 +261,8 @@ Closes #123 (si tienes un issue tracker)
 ```
 
 ### Para Características Nuevas
-```
+
+```text
 Feature: Descripción de la nueva característica
 
 - Primer aspecto implementado
@@ -271,7 +273,8 @@ Tests: Añadidos X tests nuevos
 ```
 
 ### Para Refactorización
-```
+
+```text
 Refactor: Descripción del cambio estructural
 
 Cambios principales:
@@ -283,7 +286,8 @@ Tests: Todos los 46 tests siguen pasando
 ```
 
 ### Para Documentación
-```
+
+```text
 Docs: Actualizada documentación de X
 
 - Añadido ejemplo de uso
@@ -307,7 +311,7 @@ Antes de hacer push a un servidor remoto:
 ## 🎯 Resumen Rápido
 
 | Tarea | Comando |
-|-------|---------|
+| --- | --- |
 | Ver status | `git status` |
 | Ver cambios | `git diff` |
 | Crear rama | `git checkout -b nombre` |

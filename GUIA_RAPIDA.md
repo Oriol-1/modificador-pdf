@@ -12,18 +12,21 @@
 ## 🚀 Iniciar Rápidamente
 
 ### 1. Ejecutar la Aplicación
+
 ```powershell
 cd "C:\Users\seto_\OneDrive\Escritorio\curriculum\PROYECTO 2026\modificar pdf"
 python pdf_editor/main.py
 ```
 
 ### 2. Ejecutar Tests (verificar que todo funciona)
+
 ```powershell
 python -m pytest pdf_editor/tests/ -v
 # Debe mostrar: 46 passed
 ```
 
 ### 3. Si Algo Se Rompe (Recuperación Rápida)
+
 ```powershell
 # Volver a versión estable
 git checkout v1.0.0-stable
@@ -34,7 +37,7 @@ git checkout v1.0.0-stable
 ## 📚 Documentación Disponible
 
 | Documento | Para |
-|-----------|------|
+| --- | --- |
 | **ESTABLE_v1.0.0.md** | Entender la versión actual |
 | **ESTABLE_RESUMEN.md** | Visión general del proyecto |
 | **GUIA_GIT.md** | Cómo trabajar con Git |
@@ -45,6 +48,7 @@ git checkout v1.0.0-stable
 ## 🔧 Tareas Comunes
 
 ### Hacer un Cambio Pequeño
+
 ```powershell
 # 1. Crear rama
 git checkout -b fix/mi-cambio
@@ -63,6 +67,7 @@ git merge fix/mi-cambio
 ```
 
 ### Agregar Una Característica Nueva
+
 ```powershell
 # 1. Crear rama descriptiva
 git checkout -b feature/nueva-caracteristica
@@ -80,6 +85,7 @@ git merge feature/nueva-caracteristica
 ```
 
 ### Ver Cambios Desde Versión Estable
+
 ```powershell
 # Ver commits
 git log v1.0.0-stable..HEAD --oneline
@@ -107,21 +113,22 @@ python pdf_editor/main.py
 # Si algo falla → Restaura desde v1.0.0-stable
 ```
 
----
-
 ## 🚨 Si Algo Se Rompe
 
 ### Opción 1: Volver Atrás Completamente
+
 ```powershell
 git reset --hard v1.0.0-stable
 ```
 
 ### Opción 2: Ver Qué Cambió
+
 ```powershell
 git diff v1.0.0-stable
 ```
 
 ### Opción 3: Recuperar un Archivo Específico
+
 ```powershell
 git checkout v1.0.0-stable -- pdf_editor/core/pdf_handler.py
 ```
@@ -130,7 +137,7 @@ git checkout v1.0.0-stable -- pdf_editor/core/pdf_handler.py
 
 ## 📊 Estado Actual
 
-```
+```text
 📁 Proyecto Estable v1.0.0
 ├── ✅ Código: Limpio y optimizado
 ├── ✅ Tests: 46/46 pasando
@@ -144,11 +151,13 @@ git checkout v1.0.0-stable -- pdf_editor/core/pdf_handler.py
 ## 🎓 Tips Importantes
 
 1. **Siempre crea rama antes de cambios importantes**
+
    ```powershell
    git checkout -b nombre-descriptivo
    ```
 
 2. **Siempre testa antes de commitear**
+
    ```powershell
    python -m pytest pdf_editor/tests/ -v
    ```
@@ -166,7 +175,7 @@ git checkout v1.0.0-stable -- pdf_editor/core/pdf_handler.py
 ## 🆘 Ayuda Rápida
 
 | Necesito | Comando |
-|----------|---------|
+| --- | --- |
 | Ver status | `git status` |
 | Ver cambios | `git diff` |
 | Crear rama | `git checkout -b nombre` |
@@ -183,6 +192,7 @@ git checkout v1.0.0-stable -- pdf_editor/core/pdf_handler.py
 ## ✨ Resumen
 
 Tu proyecto está:
+
 - ✅ **Estable**: Versión v1.0.0 lista para producción
 - ✅ **Seguro**: Punto de recuperación disponible
 - ✅ **Documentado**: Guías completas disponibles
@@ -193,6 +203,7 @@ Tu proyecto está:
 ---
 
 **Preguntas?** Revisa:
+
 - `ESTABLE_RESUMEN.md` para visión general
 - `GUIA_GIT.md` para procedimientos detallados
 - `ESTABLE_v1.0.0.md` para información técnica específica

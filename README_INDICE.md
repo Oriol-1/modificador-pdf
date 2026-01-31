@@ -9,14 +9,16 @@
 ## 📚 Documentos Disponibles
 
 ### Para Principiantes
+
 | Documento | Contenido | Duración |
-|-----------|----------|----------|
+| --- | --- | --- |
 | [GUIA_RAPIDA.md](GUIA_RAPIDA.md) | Comandos básicos y tareas comunes | 5 min |
 | [ESTABLE_RESUMEN.md](ESTABLE_RESUMEN.md) | Visión general del proyecto estable | 10 min |
 
 ### Para Desarrolladores
+
 | Documento | Contenido | Duración |
-|-----------|----------|----------|
+| --- | --- | --- |
 | [ESTABLE_v1.0.0.md](ESTABLE_v1.0.0.md) | Referencia técnica de la versión estable | 15 min |
 | [GUIA_GIT.md](GUIA_GIT.md) | Procedimientos de Git y workflow recomendado | 20 min |
 
@@ -24,7 +26,7 @@
 
 ## 🗺️ Mapa de Navegación
 
-```
+```text
 ┌─ ¿Quiero iniciar rápido?
 │  └─→ GUIA_RAPIDA.md ✅
 │
@@ -43,22 +45,26 @@
 ## ⚡ Tareas Rápidas
 
 ### Ejecutar la Aplicación
+
 ```powershell
 python pdf_editor/main.py
 ```
 
 ### Ejecutar Tests (verificar todo funciona)
+
 ```powershell
 python -m pytest pdf_editor/tests/ -v
 # Esperado: 46 passed ✅
 ```
 
 ### Recuperar Versión Estable (si algo se rompe)
+
 ```powershell
 git checkout v1.0.0-stable
 ```
 
 ### Ver Cambios Realizados
+
 ```powershell
 git log --oneline
 git diff v1.0.0-stable
@@ -69,7 +75,7 @@ git diff v1.0.0-stable
 ## 📊 Estado del Proyecto
 
 | Métrica | Estado |
-|---------|--------|
+| --- | --- |
 | **Versión** | v1.0.0 ✅ |
 | **Tests** | 46/46 pasando ✅ |
 | **Código** | 2,268 líneas |
@@ -82,9 +88,11 @@ git diff v1.0.0-stable
 ## 🔍 Contenido de Cada Documento
 
 ### GUIA_RAPIDA.md
+
 **Propósito**: Ayudarte a comenzar inmediatamente
 
 **Incluye**:
+
 - Cómo ejecutar la app
 - Cómo ejecutar tests
 - Comandos para tareas comunes
@@ -96,9 +104,11 @@ git diff v1.0.0-stable
 ---
 
 ### ESTABLE_RESUMEN.md
+
 **Propósito**: Visión general del proyecto estable
 
 **Incluye**:
+
 - Estadísticas del proyecto
 - Tareas completadas
 - Arquitectura del proyecto
@@ -111,9 +121,11 @@ git diff v1.0.0-stable
 ---
 
 ### ESTABLE_v1.0.0.md
+
 **Propósito**: Documentación técnica detallada
 
 **Incluye**:
+
 - Estado completo de la versión
 - Verificaciones realizadas
 - Estructura del proyecto
@@ -127,9 +139,11 @@ git diff v1.0.0-stable
 ---
 
 ### GUIA_GIT.md
+
 **Propósito**: Procedimientos de desarrollo y Git workflow
 
 **Incluye**:
+
 - Workflow recomendado (paso a paso)
 - Comandos útiles de Git
 - Plantillas de commits
@@ -169,28 +183,34 @@ Si marcaste todo ✅ → **Estás listo para comenzar!**
 ## 🆘 Preguntas Frecuentes
 
 ### P: ¿Dónde empiezo?
+
 **R**: [GUIA_RAPIDA.md](GUIA_RAPIDA.md) - Es corta y directa
 
 ### P: ¿Cómo recupero la versión estable?
+
 **R**: `git checkout v1.0.0-stable` - Ver más en [ESTABLE_v1.0.0.md](ESTABLE_v1.0.0.md)
 
 ### P: ¿Qué cambios puedo hacer sin romper nada?
+
 **R**: Lee el workflow en [GUIA_GIT.md](GUIA_GIT.md) - Crea una rama y prueba
 
 ### P: ¿Cómo hago un commit?
+
 **R**: Ver sección de commits en [GUIA_GIT.md](GUIA_GIT.md) - Tiene plantillas
 
 ### P: ¿Cómo sé si algo está roto?
+
 **R**: Ejecuta: `python -m pytest pdf_editor/tests/ -v` - Debe mostrar 46 passed
 
 ### P: ¿Puedo deshacer cambios?
+
 **R**: Sí! Ver [GUIA_RAPIDA.md](GUIA_RAPIDA.md) sección "Si Algo Se Rompe"
 
 ---
 
 ## 📈 Estructura del Repositorio
 
-```
+```text
 proyecto/
 ├── pdf_editor/                      # Código fuente
 │   ├── core/                        # Motor PDF
@@ -212,7 +232,7 @@ proyecto/
 ## 🔗 Enlaces Rápidos
 
 | Necesito | Ir A |
-|----------|------|
+| --- | --- |
 | Empezar rápido | [GUIA_RAPIDA.md](GUIA_RAPIDA.md) |
 | Entender el proyecto | [ESTABLE_RESUMEN.md](ESTABLE_RESUMEN.md) |
 | Detalles técnicos | [ESTABLE_v1.0.0.md](ESTABLE_v1.0.0.md) |
@@ -224,6 +244,7 @@ proyecto/
 ## ✨ Resumen
 
 Tu proyecto:
+
 - ✅ Está **estable** y listo para usar
 - ✅ Tiene **documentación completa**
 - ✅ Está **versionado con Git**
