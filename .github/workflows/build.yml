@@ -1,4 +1,4 @@
-# GitHub Actions - Compilación automática para Windows y macOS
+# GitHub Actions - Compilación automática para Windows, macOS y Linux
 # Cada vez que hagas push o release, se generan los instaladores
 
 name: Build Installers
@@ -178,9 +178,185 @@ jobs:
           dist/ModificadorPDF_macOS_Portable.zip
         retention-days: 30
 
+  # ==================== BUILD LINUX ====================
+  build-linux:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout código
+      uses: actions/checkout@v4
+    
+    - name: Configurar Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Instalar dependencias del sistema
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libxcb-xinerama0 \
+          libxcb-cursor0 \
+          libxkbcommon-x11-0 \
+          libxcb-icccm4 \
+          libxcb-image0 \
+          libxcb-keysyms1 \
+          libxcb-randr0 \
+          libxcb-render-util0 \
+          libxcb-shape0 \
+          libegl1 \
+          libgl1-mesa-glx \
+          libfuse2 \
+          fuse
+    
+    - name: Instalar dependencias Python
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install Pillow
+    
+    - name: Generar icono
+      run: python installer/create_icon.py
+    
+    - name: Compilar con PyInstaller
+      run: pyinstaller --clean --noconfirm ModificadorPDF.spec
+    
+    - name: Crear versión portable (tar.gz)
+      run: |
+        cd dist
+        tar -czvf ModificadorPDF_Linux_Portable.tar.gz ModificadorPDF/
+    
+    - name: Crear paquete DEB
+      run: |
+        # Crear estructura de directorios para el .deb
+        mkdir -p deb_package/DEBIAN
+        mkdir -p deb_package/usr/local/bin
+        mkdir -p deb_package/usr/share/applications
+        mkdir -p deb_package/usr/share/icons/hicolor/256x256/apps
+        mkdir -p deb_package/opt/modificador-pdf
+        
+        # Copiar la aplicación compilada
+        cp -r dist/ModificadorPDF/* deb_package/opt/modificador-pdf/
+        
+        # Crear script de ejecución
+        cat > deb_package/usr/local/bin/modificador-pdf << 'EOF'
+        #!/bin/bash
+        cd /opt/modificador-pdf
+        ./ModificadorPDF "$@"
+        EOF
+        chmod +x deb_package/usr/local/bin/modificador-pdf
+        
+        # Crear archivo .desktop
+        cat > deb_package/usr/share/applications/modificador-pdf.desktop << 'EOF'
+        [Desktop Entry]
+        Name=Modificador de PDF
+        Comment=Editor de PDF profesional
+        Exec=/opt/modificador-pdf/ModificadorPDF
+        Icon=modificador-pdf
+        Terminal=false
+        Type=Application
+        Categories=Office;Utility;
+        StartupNotify=true
+        EOF
+        
+        # Copiar icono
+        if [ -f installer/app_icon.png ]; then
+          cp installer/app_icon.png deb_package/usr/share/icons/hicolor/256x256/apps/modificador-pdf.png
+        fi
+        
+        # Obtener tamaño instalado
+        INSTALLED_SIZE=$(du -sk deb_package | cut -f1)
+        
+        # Crear archivo de control
+        cat > deb_package/DEBIAN/control << EOF
+        Package: modificador-pdf
+        Version: 1.1.0
+        Section: utils
+        Priority: optional
+        Architecture: amd64
+        Installed-Size: ${INSTALLED_SIZE}
+        Maintainer: Oriol Alonso Esplugas <alonsoesplugas@gmail.com>
+        Description: PDF Editor Pro - Editor de PDF profesional
+         Aplicación para editar, modificar y manipular archivos PDF.
+         Permite añadir texto, imágenes, firmas y más.
+        EOF
+        
+        # Crear script postinst
+        cat > deb_package/DEBIAN/postinst << 'EOF'
+        #!/bin/bash
+        chmod +x /opt/modificador-pdf/ModificadorPDF
+        update-desktop-database 2>/dev/null || true
+        gtk-update-icon-cache /usr/share/icons/hicolor 2>/dev/null || true
+        EOF
+        chmod 755 deb_package/DEBIAN/postinst
+        
+        # Construir el paquete .deb
+        dpkg-deb --build deb_package dist/ModificadorPDF_Linux_amd64.deb
+    
+    - name: Crear AppImage
+      run: |
+        # Descargar appimagetool
+        wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" -O appimagetool
+        chmod +x appimagetool
+        
+        # Crear estructura AppDir
+        mkdir -p AppDir/usr/bin
+        mkdir -p AppDir/usr/share/applications
+        mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+        
+        # Copiar aplicación
+        cp -r dist/ModificadorPDF/* AppDir/usr/bin/
+        
+        # Crear desktop file
+        cat > AppDir/modificador-pdf.desktop << 'EOF'
+        [Desktop Entry]
+        Name=Modificador de PDF
+        Comment=Editor de PDF profesional
+        Exec=ModificadorPDF
+        Icon=modificador-pdf
+        Terminal=false
+        Type=Application
+        Categories=Office;Utility;
+        EOF
+        cp AppDir/modificador-pdf.desktop AppDir/usr/share/applications/
+        
+        # Copiar icono
+        if [ -f installer/app_icon.png ]; then
+          cp installer/app_icon.png AppDir/modificador-pdf.png
+          cp installer/app_icon.png AppDir/usr/share/icons/hicolor/256x256/apps/modificador-pdf.png
+        else
+          # Crear icono placeholder si no existe
+          convert -size 256x256 xc:blue AppDir/modificador-pdf.png 2>/dev/null || touch AppDir/modificador-pdf.png
+        fi
+        
+        # Crear AppRun
+        cat > AppDir/AppRun << 'EOF'
+        #!/bin/bash
+        SELF=$(readlink -f "$0")
+        HERE=${SELF%/*}
+        export PATH="${HERE}/usr/bin:${PATH}"
+        export LD_LIBRARY_PATH="${HERE}/usr/bin:${LD_LIBRARY_PATH}"
+        exec "${HERE}/usr/bin/ModificadorPDF" "$@"
+        EOF
+        chmod +x AppDir/AppRun
+        
+        # Crear AppImage
+        ARCH=x86_64 ./appimagetool AppDir dist/ModificadorPDF_Linux_x86_64.AppImage || echo "AppImage creation skipped"
+    
+    - name: Subir artefactos Linux
+      uses: actions/upload-artifact@v4
+      with:
+        name: Linux-Installers
+        path: |
+          dist/ModificadorPDF_Linux_Portable.tar.gz
+          dist/ModificadorPDF_Linux_amd64.deb
+          dist/ModificadorPDF_Linux_x86_64.AppImage
+        retention-days: 30
+
   # ==================== CREAR RELEASE ====================
   create-release:
-    needs: [build-windows, build-macos]
+    needs: [build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     
@@ -199,6 +375,13 @@ jobs:
         path: ./release
       continue-on-error: true
     
+    - name: Descargar artefactos Linux
+      uses: actions/download-artifact@v4
+      with:
+        name: Linux-Installers
+        path: ./release
+      continue-on-error: true
+
     - name: Listar archivos descargados
       run: |
         echo "Contenido de ./release:"
