@@ -17,7 +17,8 @@
 - **ProductVersion**: "1.0.0.0" → "1.0.1.0" ✅
 
 ### 2. ✅ Build para Windows
-```
+
+```plaintext
 Status: EXITOSO ✅
 Ubicación: pdf_editor/dist/ModificadorPDF/Modificador de PDF.exe
 Tamaño: ~350 MB
@@ -27,6 +28,7 @@ Bibliotecas: PyQt5, PyMuPDF, PIL, lxml - Todas compiladas ✅
 ```
 
 **Detalles de compilación:**
+
 - ✅ PYZ (archivo comprimido): Creado exitosamente
 - ✅ PKG (paquete): Creado exitosamente  
 - ✅ EXE (ejecutable): Creado con versión incrustada
@@ -34,11 +36,13 @@ Bibliotecas: PyQt5, PyMuPDF, PIL, lxml - Todas compiladas ✅
 - ✅ Información de versión: Embebida en EXE
 
 **Avisos esperados** (sin impacto):
+
 - "Hidden import 'fitz.fitz' not found" - Normal (carga dinámica)
 - "Hidden import 'sip' not found" - Normal (PyQt5 maneja internamente)
 - CPU random generator warnings - Del sistema, sin impacto
 
 ### 3. ✅ Build para macOS
+
 **Estado**: Preparado para ejecutar en Mac  
 **Script**: `build_mac.sh` (listo con incremento de versión)  
 **Comando**: `chmod +x build_mac.sh && ./build_mac.sh`  
@@ -47,7 +51,8 @@ Bibliotecas: PyQt5, PyMuPDF, PIL, lxml - Todas compiladas ✅
 ### 4. ✅ Documentación de Usuario
 
 #### GUIA_INSTALACION_UPDATES.md
-```
+
+```plaintext
 Secciones incluidas:
 ✅ Información sobre actualización v1.0.0 → v1.0.1
 ✅ Cómo actualizar sin desinstalar (recomendado)
@@ -64,7 +69,8 @@ Total: 400+ líneas de documentación clara
 ```
 
 #### VALIDACION_v1.0.1.md
-```
+
+```plaintext
 Contenido:
 ✅ Checklist completo de validación
 ✅ Detalles de compilación
@@ -80,13 +86,15 @@ Total: 368 líneas de documentación técnica
 ### 5. ✅ Validación Técnica
 
 #### Tests
-```
+
+```plaintext
 Suite: 46 tests
 Resultado: 46/46 PASANDO ✅
 ```
 
 #### Comportamiento
-```
+
+```plaintext
 Funcionalidad | v1.0.0 | v1.0.1 | Cambio
 ---|---|---|---
 Edición PDF | ✅ | ✅ | IDÉNTICO
@@ -97,7 +105,8 @@ Manual web | Con espacios | URLs limpias | MEJORADO
 ```
 
 #### Rendimiento
-```
+
+```plaintext
 Métrica | v1.0.0 | v1.0.1 | Cambio
 ---|---|---|---
 Tiempo inicio | ~2.5s | ~2.5s | ✅ ESTABLE
@@ -128,11 +137,24 @@ Archivos actualizados:
 3. Git tag: v1.0.1-release ✅
 
 La aplicación mostrará "v1.0.1" al abrir
+### P: ¿Se ha incrementado el número de versión y/o build?
+
+**R: SÍ ✅**
+
+```plaintext
+Archivos actualizados:
+1. version_info.txt: 1.0.0.0 → 1.0.1.0 ✅
+2. main.py: 1.0.0 → 1.0.1 ✅
+3. Git tag: v1.0.1-release ✅
+
+La aplicación mostrará "v1.0.1" al abrir
 ```
 
 ### P: ¿Los ejecutables se abren sin alertas ni bloqueos?
+
 **R: SÍ, pero con salvedad normal**
-```
+
+```plaintext
 Windows:
 - Primera ejecución: Windows SmartScreen (aviso normal, controlable)
 - Solución: Usuario hace clic en "Más información" → "Ejecutar de todas formas"
@@ -147,8 +169,10 @@ Conclusión: Sin BLOQUEOS PERMANENTES ✅
 ```
 
 ### P: ¿Versión instalada y portable reflejan el mismo comportamiento?
+
 **R: SÍ, 100% idéntico ✅**
-```
+
+```plaintext
 Código ejecutable: IDÉNTICO
 Funcionalidad: IDÉNTICA
 Rendimiento: IDÉNTICO
@@ -163,8 +187,10 @@ Comportamiento funcional: COMPLETAMENTE IDÉNTICO ✅
 ```
 
 ### P: ¿Queda código obsoleto y rendimiento estable?
+
 **R: NO queda código obsoleto, SÍ rendimiento estable**
-```
+
+```plaintext
 Código obsoleto: 0 líneas ✅
 Código muerto: 0 líneas ✅
 Imports innecesarios: 0 (ya optimizados en v1.0.0) ✅

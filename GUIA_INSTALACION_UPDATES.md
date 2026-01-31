@@ -3,6 +3,7 @@
 ## Información sobre la Actualización v1.0.0 → v1.0.1
 
 ### Cambios incluidos en v1.0.1
+
 - ✅ Refactor de imágenes en manual web (nombres limpios, URLs sin espacios)
 - ✅ Actualización de referencias en HTML
 - ✅ Mejora de accesibilidad en alt text
@@ -15,12 +16,13 @@
 
 ### P: ¿Necesito desinstalar v1.0.0 antes de instalar v1.0.1?
 
-**R: Depende del tipo de instalación:**
+#### R: Depende del tipo de instalación
 
-#### 1. **Si tienes la versión INSTALADA (ModificadorPDF_Setup_v1.0.0.exe)**
+##### 1. Si tienes la versión INSTALADA (ModificadorPDF_Setup_v1.0.0.exe)
 
 **Opción A - Recomendado (Sin desinstalar)**
-```
+
+```powershell
 1. Ejecuta directamente: ModificadorPDF_Setup_v1.0.1.exe
 2. El instalador detectará la versión anterior
 3. Selecciona "Reparar" o "Actualizar"
@@ -32,7 +34,8 @@
 ```
 
 **Opción B - Más segura (Con desinstalación)**
-```
+
+```powershell
 1. Panel de Control → Programas → Desinstalar un programa
 2. Busca "Modificador de PDF" o "PDF Editor Pro"
 3. Haz clic en Desinstalar
@@ -44,7 +47,8 @@
 ```
 
 **Opción C - Limpia (Desinstalación completa)**
-```
+
+```powershell
 1. Desinstala como en Opción B
 2. Busca y elimina manualmente (si deseas):
    - C:\Users\[TuUsuario]\AppData\Local\Modificador PDF
@@ -53,10 +57,11 @@
 4. Instala ModificadorPDF_Setup_v1.0.1.exe (instalación fresca)
 ```
 
-#### 2. **Si tienes la versión PORTABLE (ModificadorPDF_v1.0.0_portable.exe)**
+##### 2. Si tienes la versión PORTABLE (ModificadorPDF_v1.0.0_portable.exe)
 
 **Opción A - Recomendado (Simplemente reemplazar)**
-```
+
+```powershell
 1. Descarga ModificadorPDF_v1.0.1_portable.exe
 2. Copia el nuevo ejecutable a la carpeta donde tenías el v1.0.0
 3. ANTES de borrar, copia cualquier carpeta importante:
@@ -67,7 +72,8 @@
 ```
 
 **Opción B - Ultra-segura (Mantener ambas versiones)**
-```
+
+```powershell
 1. Crea dos carpetas separadas:
    - Carpeta_v1.0.0/
    - Carpeta_v1.0.1/
@@ -82,22 +88,25 @@
 
 Después de instalar v1.0.1, verifica:
 
-### 1. **Versión Correcta**
-```
+### 1. Versión Correcta
+
+```plaintext
 Abre la aplicación → Menú (≡) → Acerca de
 Debe mostrar: "PDF Editor Pro v1.0.1"
 ```
 
-### 2. **Archivos Recuperados**
-```
+### 2. Archivos Recuperados
+
+```plaintext
 Si tenías archivos guardados o grupos de trabajo:
 - ✓ Deben estar disponibles en la aplicación
 - ✓ Las rutas deben ser accesibles
 - ✓ No debe haber mensajes de error
 ```
 
-### 3. **Funcionalidad Básica**
-```
+### 3. Funcionalidad Básica
+
+```plaintext
 1. Abre un PDF
 2. Edita contenido (text, highlight, delete)
 3. Guarda los cambios
@@ -105,8 +114,9 @@ Si tenías archivos guardados o grupos de trabajo:
 5. Procesa múltiples PDFs
 ```
 
-### 4. **Windows SmartScreen**
-```
+### 4. Windows SmartScreen
+
+```plaintext
 Si aparece aviso:
 1. Haz clic en "Más información"
 2. Luego en "Ejecutar de todas formas"
@@ -118,17 +128,18 @@ Si aparece aviso:
 ## 🔄 Comparación: Instalada vs Portable
 
 | Aspecto | Versión Instalada | Versión Portable |
-|--------|-------------------|------------------|
-| **Instalación** | Requiere permisos de admin | Sin instalación necesaria |
-| **Ubicación** | `C:\Program Files\...` | Donde descargues el .exe |
-| **Actualización** | Auto-detección de versión | Manual (descargar nuevo .exe) |
-| **Espacio usado** | ~350 MB en disco | ~350 MB (archivo único) |
-| **Archivos guardados** | `AppData\Roaming\...` | Carpeta del .exe |
-| **Desinstalación** | Panel de Control | Solo borrar el .exe |
-| **Portabilidad** | Solo en este PC | Llévalo en USB a cualquier lado |
-| **Permisos de archivo** | Más restricciones | Acceso más directo |
+| --- | --- | --- |
+| Instalación | Requiere permisos de admin | Sin instalación necesaria |
+| Ubicación | `C:\Program Files\...` | Donde descargues el .exe |
+| Actualización | Auto-detección de versión | Manual (descargar nuevo .exe) |
+| Espacio usado | ~350 MB en disco | ~350 MB (archivo único) |
+| Archivos guardados | `AppData\Roaming\...` | Carpeta del .exe |
+| Desinstalación | Panel de Control | Solo borrar el .exe |
+| Portabilidad | Solo en este PC | Llévalo en USB a cualquier lado |
+| Permisos de archivo | Más restricciones | Acceso más directo |
 
-### 📌 **Recomendación:**
+### 📌 Recomendación
+
 - **Usuarios comunes** → Versión instalada (más fácil de actualizar)
 - **Power users / USB portable** → Versión portable (más flexible)
 
@@ -137,6 +148,7 @@ Si aparece aviso:
 ## 🐧 Instalación en macOS
 
 ### Versión Instalada (.dmg)
+
 ```bash
 1. Descarga ModificadorPDF_v1.0.1.dmg
 2. Doble clic para montar
@@ -145,6 +157,7 @@ Si aparece aviso:
 ```
 
 ### Versión Portable (.app)
+
 ```bash
 1. Descarga PDF_Editor_Pro_v1.0.1_portable.app.zip
 2. Descomprime con doble clic
@@ -156,7 +169,8 @@ Si aparece aviso:
 ```
 
 ### ⚠️ Aviso de Gatekeeper en macOS
-```
+
+```plaintext
 Si ves: "No se puede verificar el desarrollador"
 
 Solución:
@@ -171,21 +185,22 @@ Solución:
 ## 🔧 Comparación de Comportamiento v1.0.0 vs v1.0.1
 
 | Función | v1.0.0 | v1.0.1 | Cambio |
-|---------|--------|--------|--------|
-| **Edición de PDF** | ✓ | ✓ | Idéntico |
-| **Eliminación de contenido** | ✓ | ✓ | Idéntico |
-| **Resaltado** | ✓ | ✓ | Idéntico |
-| **Grupos de trabajo** | ✓ | ✓ | Idéntico |
-| **Manual web** | Con espacios en URLs | URLs limpias | ⬆️ Mejorado |
-| **Accesibilidad** | Básica | Mejorada | ⬆️ Mejorado |
-| **Rendimiento** | Estable | Estable | ✅ Mantiene |
-| **Compatibilidad** | Windows/macOS | Windows/macOS | ✅ Igual |
+| --- | --- | --- | --- |
+| Edición de PDF | ✓ | ✓ | Idéntico |
+| Eliminación de contenido | ✓ | ✓ | Idéntico |
+| Resaltado | ✓ | ✓ | Idéntico |
+| Grupos de trabajo | ✓ | ✓ | Idéntico |
+| Manual web | Con espacios en URLs | URLs limpias | ⬆️ Mejorado |
+| Accesibilidad | Básica | Mejorada | ⬆️ Mejorado |
+| Rendimiento | Estable | Estable | ✅ Mantiene |
+| Compatibilidad | Windows/macOS | Windows/macOS | ✅ Igual |
 
 ---
 
 ## 📋 Checklist de Actualización
 
 ### Antes de actualizar
+
 - [ ] Backup de archivos importantes (opcional pero recomendado)
 - [ ] Nota los grupos de trabajo que tienes creados
 - [ ] Cierra la aplicación v1.0.0
@@ -214,20 +229,23 @@ Solución:
 ### Dónde están mis archivos guardados
 
 **Windows:**
-```
+
+```plaintext
 - Archivos editados: Donde los guardaste (Desktop, Documents, etc.)
 - Configuración: C:\Users\[Usuario]\AppData\Roaming\PDF Editor\
 - Grupos de trabajo: C:\Users\[Usuario]\Documents\PDF_Editor_Workspace\
 ```
 
 **macOS:**
-```
+
+```plaintext
 - Archivos editados: Donde los guardaste
 - Configuración: ~/Library/Application Support/PDF Editor/
 - Grupos de trabajo: ~/Documents/PDF_Editor_Workspace/
 ```
 
 ### Hacer backup antes de actualizar
+
 ```powershell
 # Windows PowerShell
 Copy-Item -Path "$env:APPDATA\PDF Editor" -Destination "D:\Backup_PDF_Editor" -Recurse
@@ -245,21 +263,24 @@ cp -r ~/Documents/PDF_Editor_Workspace ~/Desktop/Backup_Workspace
 ## ❌ Si Algo Sale Mal
 
 ### Problema: "El archivo está corrupto"
-```
+
+```plaintext
 1. Desinstala v1.0.1
 2. Ejecuta el archivo instalador nuevamente
 3. Si sigue fallando, descarga de nuevo desde la fuente original
 ```
 
 ### Problema: "No puedo abrir PDFs que antes funcionaban"
-```
+
+```plaintext
 1. Intenta con un PDF diferente
 2. Si solo ese PDF falla, es un problema del archivo, no de la app
 3. Si todos fallan: Reinstala (Opción C arriba)
 ```
 
 ### Problema: "Quiero volver a v1.0.0"
-```
+
+```plaintext
 Windows:
 1. Control Panel → Programas → Desinstalar
 2. Busca "Modificador de PDF"
@@ -277,7 +298,7 @@ macOS:
 
 ## 📞 Resumen Rápido
 
-```
+```plaintext
 La recomendación general es:
 ✓ NO necesitas desinstalar la v1.0.0 antes de instalar la v1.0.1
 ✓ Simplemente ejecuta el nuevo instalador

@@ -11,7 +11,7 @@
 ## 📊 RESUMEN EJECUTIVO
 
 | Aspecto | Estado | Detalles |
-|---------|--------|----------|
+| --- | --- | --- |
 | **Versión incrementada** | ✅ | 1.0.0 → 1.0.1 |
 | **Build Windows** | ✅ | Compilado exitosamente |
 | **Build macOS** | ✅ | Listo para compilar en Mac |
@@ -27,7 +27,8 @@
 ## 📦 ARCHIVOS GENERADOS
 
 ### Ejecutables (Windows)
-```
+
+```plaintext
 ✅ pdf_editor/dist/ModificadorPDF/Modificador de PDF.exe
    - Tamaño: ~350 MB
    - Versión: 1.0.1
@@ -36,7 +37,8 @@
 ```
 
 ### Documentación Nueva (v1.0.1)
-```
+
+```plaintext
 ✅ GUIA_INSTALACION_UPDATES.md (400+ líneas)
    → Cómo actualizar, FAQ, troubleshooting
 
@@ -67,8 +69,10 @@
 ## 🎯 RESPUESTAS A TUS PREGUNTAS
 
 ### ❓ ¿Se ha incrementado el número de versión?
+
 **✅ SÍ - En 3 archivos**
-```
+
+```plaintext
 version_info.txt:  (1,0,0,0) → (1,0,1,0)
 main.py:           1.0.0 → 1.0.1
 FileVersion:       1.0.0.0 → 1.0.1.0
@@ -76,8 +80,10 @@ ProductVersion:    1.0.0.0 → 1.0.1.0
 ```
 
 ### ❓ ¿Se abren sin alertas ni bloqueos?
+
 **✅ SÍ - Con salvedades normales**
-```
+
+```plaintext
 Windows:
 - SmartScreen: Aviso normal (usuario hace clic "Ejecutar de todas formas")
 - Futuras ejecuciones: Sin aviso ✅
@@ -90,8 +96,10 @@ Sin BLOQUEOS PERMANENTES ✅
 ```
 
 ### ❓ ¿Versión instalada = Portable?
+
 **✅ SÍ - 100% idéntico**
-```
+
+```plaintext
 Funcionalidad:     IDÉNTICA ✅
 Rendimiento:       IDÉNTICO ✅
 Interfaz:          IDÉNTICA ✅
@@ -103,8 +111,10 @@ Comportamiento:    IDÉNTICO ✅
 ```
 
 ### ❓ ¿Sin código obsoleto?
+
 **✅ SÍ - 0 líneas obsoletas**
-```
+
+```plaintext
 Cambios funcionales: 0 ✅
 Código muerto: 0 ✅
 Imports innecesarios: 0 ✅
@@ -112,8 +122,10 @@ Tests impactados: 0 (todos pasan) ✅
 ```
 
 ### ❓ ¿Rendimiento estable?
+
 **✅ SÍ - Completamente estable**
-```
+
+```plaintext
 Tiempo inicio:     2.5s (igual)
 Memoria:          250 MB (igual)
 CPU reposo:       <1% (igual)
@@ -124,8 +136,10 @@ Tests:            46/46 pasando ✅
 ```
 
 ### ❓ ¿Actualizar sin desinstalar v1.0.0?
+
 **✅ SÍ - COMPLETAMENTE SEGURO**
-```
+
+```plaintext
 RECOMENDADO:
 1. Ejecuta ModificadorPDF_Setup_v1.0.1.exe
 2. El instalador detecta v1.0.0

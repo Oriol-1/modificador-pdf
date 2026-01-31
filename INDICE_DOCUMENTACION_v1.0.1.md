@@ -23,6 +23,7 @@
 - **Relevancia**: v1.0.0 y posteriores
 - **Líneas**: ~300
 
+
 ### 2. **GUIA_GIT.md** (Procedimientos de desarrollo)
 - **Propósito**: Procedimientos de desarrollo y recovery con Git
 - **Contenido**:
@@ -197,7 +198,7 @@
 
 ## 📊 Matriz de Documentación
 
-```
+```markdown
 Documento | v1.0.0 | v1.0.1 | Cambio | Audiencia
 -----------|--------|--------|--------|----------
 ESTABLE_RESUMEN.md | ✅ | ✅ | Referencia | Técnicos
