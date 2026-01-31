@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Editor Pro - Licencia de Uso</title>
+    <link rel="icon" type="image/png" href="capturas/10_icono_aplicacion.png">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            line-height: 1.7;
+        }
+        
+        /* Header */
+        header {
+            background: linear-gradient(135deg, #0078d4 0%, #005a9e 100%);
+            color: white;
+            padding: 40px 20px;
+            text-align: center;
+        }
+        
+        header h1 {
+            font-size: 2.2rem;
+            margin-bottom: 10px;
+        }
+        
+        header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        /* Language Selector */
+        .lang-selector {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .lang-btn {
+            display: inline-block;
+            background-color: rgba(255,255,255,0.2);
+            color: white;
+            padding: 10px 25px;
+            border-radius: 25px;
+            text-decoration: none;
+            font-size: 1rem;
+            transition: all 0.3s;
+            border: 2px solid transparent;
+        }
+        
+        .lang-btn:hover, .lang-btn.active {
+            background-color: white;
+            color: #0078d4;
+        }
+        
+        .lang-btn.active {
+            border-color: white;
+        }
+        
+        /* Navigation */
+        nav {
+            background-color: #252526;
+            padding: 15px 20px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            border-bottom: 1px solid #333;
+        }
+        
+        nav ul {
+            list-style: none;
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        nav a {
+            color: #ccc;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            transition: all 0.3s;
+        }
+        
+        nav a:hover {
+            background-color: #0078d4;
+            color: white;
+        }
+        
+        /* Main content */
+        main {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        .license-content {
+            display: none;
+        }
+        
+        .license-content.active {
+            display: block;
+        }
+        
+        h2 {
+            color: #0078d4;
+            font-size: 1.6rem;
+            margin: 30px 0 15px 0;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #0078d4;
+        }
+        
+        h3 {
+            color: #4fc3f7;
+            font-size: 1.2rem;
+            margin: 20px 0 10px 0;
+        }
+        
+        p, li {
+            margin-bottom: 10px;
+        }
+        
+        ul {
+            margin: 10px 0 10px 25px;
+        }
+        
+        /* License Box */
+        .license-header {
+            background: linear-gradient(135deg, #252526, #333);
+            border: 1px solid #444;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        
+        .license-header h2 {
+            border: none;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .license-header .subtitle {
+            color: #4CAF50;
+            font-size: 1.1rem;
+            margin-top: 10px;
+        }
+        
+        .copyright {
+            color: #888;
+            font-size: 0.95rem;
+            margin-top: 15px;
+        }
+        
+        /* Contact Box */
+        .contact-box {
+            background-color: #002233;
+            border-left: 4px solid #0078d4;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .contact-box a {
+            color: #4fc3f7;
+            text-decoration: none;
+        }
+        
+        .contact-box a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Summary Boxes */
+        .summary-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+        
+        .summary-box {
+            border-radius: 10px;
+            padding: 25px;
+        }
+        
+        .summary-box.allowed {
+            background-color: #1a3a1a;
+            border: 1px solid #4CAF50;
+        }
+        
+        .summary-box.forbidden {
+            background-color: #3a1a1a;
+            border: 1px solid #f44336;
+        }
+        
+        .summary-box.contact {
+            background-color: #1a2a3a;
+            border: 1px solid #0078d4;
+        }
+        
+        .summary-box h3 {
+            margin-top: 0;
+            font-size: 1.1rem;
+        }
+        
+        .summary-box.allowed h3 {
+            color: #4CAF50;
+        }
+        
+        .summary-box.forbidden h3 {
+            color: #f44336;
+        }
+        
+        .summary-box.contact h3 {
+            color: #0078d4;
+        }
+        
+        .summary-box ul {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .summary-box li {
+            padding: 5px 0;
+            padding-left: 25px;
+            position: relative;
+        }
+        
+        .summary-box.allowed li::before {
+            content: "✅";
+            position: absolute;
+            left: 0;
+        }
+        
+        .summary-box.forbidden li::before {
+            content: "❌";
+            position: absolute;
+            left: 0;
+        }
+        
+        .summary-box.contact li::before {
+            content: "📧";
+            position: absolute;
+            left: 0;
+        }
+        
+        /* Article sections */
+        .article {
+            background-color: #252526;
+            border-radius: 10px;
+            padding: 25px;
+            margin: 25px 0;
+        }
+        
+        .article h2 {
+            margin-top: 0;
+        }
+        
+        /* Footer */
+        footer {
+            background-color: #252526;
+            text-align: center;
+            padding: 30px;
+            margin-top: 50px;
+            border-top: 1px solid #333;
+        }
+        
+        footer p {
+            color: #888;
+            margin: 5px 0;
+        }
+        
+        footer a {
+            color: #4fc3f7;
+            text-decoration: none;
+        }
+        
+        footer a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Back button */
+        .back-btn {
+            display: inline-block;
+            background-color: #333;
+            color: #ccc;
+            padding: 10px 20px;
+            border-radius: 5px;
+            text-decoration: none;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+        }
+        
+        .back-btn:hover {
+            background-color: #0078d4;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>📜 Licencia de Uso</h1>
+        <p>PDF Editor Pro - Términos y Condiciones</p>
+        <div class="lang-selector">
+            <a href="#" class="lang-btn active" onclick="showLanguage('es'); return false;">🇪🇸 Español</a>
+            <a href="#" class="lang-btn" onclick="showLanguage('en'); return false;">🇬🇧 English</a>
+        </div>
+    </header>
+    
+    <nav>
+        <ul>
+            <li><a href="index.html">← Volver al Manual</a></li>
+            <li><a href="#resumen">Resumen</a></li>
+            <li><a href="#licencia-completa">Licencia Completa</a></li>
+            <li><a href="#contacto">Contacto</a></li>
+        </ul>
+    </nav>
+    
+    <main>
+        <!-- ==================== ESPAÑOL ==================== -->
+        <div id="license-es" class="license-content active">
+            <a href="index.html" class="back-btn">← Volver al Manual</a>
+            
+            <div class="license-header">
+                <h2>PDF EDITOR PRO - LICENCIA DE USO</h2>
+                <p class="subtitle">LICENCIA PROPIETARIA CON USO PERSONAL GRATUITO</p>
+                <p class="copyright">Copyright © 2026 Oriol Alonso Esplugas<br>Todos los derechos reservados.</p>
+            </div>
+            
+            <!-- Resumen Visual -->
+            <section id="resumen">
+                <h2>📋 Resumen Ejecutivo</h2>
+                <p><em>Este resumen no es vinculante legalmente. Consulta la licencia completa más abajo.</em></p>
+                
+                <div class="summary-section">
+                    <div class="summary-box allowed">
+                        <h3>✅ PERMITIDO (GRATIS)</h3>
+                        <ul>
+                            <li>Uso personal en tus propios dispositivos</li>
+                            <li>Uso educativo individual</li>
+                            <li>Compartir gratis con amigos y familia</li>
+                            <li>Redistribuir gratuitamente con atribución</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="summary-box forbidden">
+                        <h3>❌ PROHIBIDO SIN AUTORIZACIÓN</h3>
+                        <ul>
+                            <li>Vender el software</li>
+                            <li>Uso comercial o empresarial</li>
+                            <li>Monetizar de cualquier forma</li>
+                            <li>Modificar para vender</li>
+                            <li>Reclamar autoría</li>
+                            <li>Eliminar la licencia o atribución</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="summary-box contact">
+                        <h3>📧 CONTACTO OBLIGATORIO PARA:</h3>
+                        <ul>
+                            <li>Cualquier uso comercial</li>
+                            <li>Vender el software</li>
+                            <li>Incluir en productos de pago</li>
+                            <li>Cualquier monetización</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Contacto -->
+            <section id="contacto">
+                <div class="contact-box">
+                    <h3>📬 Información de Contacto</h3>
+                    <p><strong>Autor/Titular:</strong> Oriol Alonso Esplugas</p>
+                    <p><strong>Correo:</strong> <a href="mailto:alonsoesplugas@gmail.com">alonsoesplugas@gmail.com</a></p>
+                    <p><strong>GitHub:</strong> <a href="https://github.com/Oriol-1" target="_blank">https://github.com/Oriol-1</a></p>
+                    <p><strong>Repositorio:</strong> <a href="https://github.com/Oriol-1/modificador-pdf" target="_blank">https://github.com/Oriol-1/modificador-pdf</a></p>
+                </div>
+            </section>
+            
+            <!-- Licencia Completa -->
+            <section id="licencia-completa">
+                <h2>📖 Licencia Completa</h2>
+                
+                <div class="article">
+                    <h2>Definiciones</h2>
+                    <p><strong>"Software":</strong> PDF Editor Pro y todos sus componentes, incluyendo código fuente, ejecutables, documentación, imágenes, iconos y archivos de configuración.</p>
+                    <p><strong>"Uso Personal":</strong> Utilización del Software por una persona física para sus propias necesidades privadas, sin ningún tipo de contraprestación económica ni beneficio comercial.</p>
+                    <p><strong>"Uso Comercial":</strong> Cualquier uso del Software que implique obtención de beneficio económico, uso en actividades empresariales, uso profesional remunerado, o cualquier forma de monetización.</p>
+                    <p><strong>"Venta":</strong> Cualquier transacción en la que se intercambie el Software por dinero u otra contraprestación de valor.</p>
+                    <p><strong>"Redistribución":</strong> El acto de compartir, distribuir o poner a disposición de terceros el Software.</p>
+                </div>
+                
+                <div class="article">
+                    <h2>Artículo 1: Concesión de Licencia</h2>
+                    <h3>1.1 Uso Personal Gratuito</h3>
+                    <p>Se concede licencia gratuita, no exclusiva e intransferible para usar el Software únicamente para fines personales y no comerciales.</p>
+                    <h3>1.2 Alcance del Uso Personal Permitido</h3>
+                    <ul>
+                        <li>Instalación y uso en dispositivos propios del usuario</li>
+                        <li>Uso para tareas personales y domésticas</li>
+                        <li>Uso educativo individual (estudiantes, autodidactas)</li>
+                        <li>Uso en proyectos personales sin fines de lucro</li>
+                        <li>Compartir gratuitamente con familiares y amigos para su uso personal</li>
+                    </ul>
+                </div>
+                
+                <div class="article">
+                    <h2>Artículo 2: Prohibiciones y Restricciones</h2>
+                    <h3>2.1 Prohibición de Venta</h3>
+                    <p>Queda <strong>TERMINANTEMENTE PROHIBIDO</strong> vender, revender, subastar o transferir el Software a cambio de dinero sin autorización expresa y sin establecer un acuerdo de retribución económica.</p>
+                    <h3>2.2 Prohibición de Uso Comercial</h3>
+                    <ul>
+                        <li>Usar el Software en actividades empresariales o comerciales</li>
+                        <li>Usar el Software para prestar servicios remunerados a terceros</li>
+                        <li>Incluir el Software en productos o servicios de pago</li>
+                        <li>Usar el Software en entornos corporativos con fines lucrativos</li>
+                    </ul>
+                    <h3>2.3 Prohibición de Apropiación</h3>
+                    <ul>
+                        <li>Reclamar autoría del Software</li>
+                        <li>Registrar el Software a nombre propio</li>
+                        <li>Presentar el Software como creación propia</li>
+                        <li>Eliminar la atribución al autor original</li>
+                    </ul>
+                </div>
+                
+                <div class="article">
+                    <h2>Artículo 3: Condiciones para Uso Comercial</h2>
+                    <p>Todo uso comercial, venta o monetización <strong>REQUIERE</strong>:</p>
+                    <ul>
+                        <li>Contactar previamente con el titular de los derechos</li>
+                        <li>Obtener autorización expresa y por escrito</li>
+                        <li>Acordar los términos económicos correspondientes</li>
+                    </ul>
+                    <p><strong>Requisito de Retribución:</strong> Si el Software es vendido bajo autorización, el titular DEBE recibir una retribución por CADA venta realizada.</p>
+                </div>
+                
+                <div class="article">
+                    <h2>Artículo 4: Redistribución Gratuita</h2>
+                    <p>Se permite la redistribución gratuita del Software siempre que:</p>
+                    <ul>
+                        <li>Se incluya íntegramente este archivo de licencia</li>
+                        <li>Se mantenga toda la atribución al autor original</li>
+                        <li>NO se cobre ningún importe por la redistribución</li>
+                        <li>Se indique claramente que el Software es gratuito para uso personal</li>
+                    </ul>
+                </div>
+                
+                <div class="article">
+                    <h2>Artículo 5: Propiedad Intelectual</h2>
+                    <p>El Software es propiedad exclusiva de <strong>Oriol Alonso Esplugas</strong>. Esta licencia NO transfiere ningún derecho de propiedad sobre el Software.</p>
+                    <p>El nombre "PDF Editor Pro" y cualquier logo asociado son propiedad del titular y no pueden usarse sin autorización.</p>
+                </div>
+                
+                <div class="article">
+                    <h2>Artículo 6: Garantías y Responsabilidad</h2>
+                    <p>EL SOFTWARE SE PROPORCIONA "TAL CUAL" (AS IS), SIN GARANTÍA DE NINGÚN TIPO, EXPRESA O IMPLÍCITA.</p>
+                    <p>En ningún caso el autor será responsable de daños directos, indirectos, incidentales o consecuentes derivados del uso del Software.</p>
+                </div>
+                
+                <div class="article">
+                    <h2>Artículo 7: Violación y Consecuencias</h2>
+                    <p>Esta licencia se terminará automáticamente si el usuario incumple cualquiera de sus términos.</p>
+                    <p>El titular se reserva el derecho de emprender acciones legales en caso de violación.</p>
+                </div>
+                
+                <div class="article">
+                    <h2>Artículo 8: Disposiciones Generales</h2>
+                    <p><strong>Ley Aplicable:</strong> Esta licencia se regirá por las leyes de España.</p>
+                    <p><strong>Jurisdicción:</strong> Para cualquier controversia, las partes se someten a los juzgados y tribunales de España.</p>
+                </div>
+            </section>
+        </div>
+        
+        <!-- ==================== ENGLISH ==================== -->
+        <div id="license-en" class="license-content">
+            <a href="index.html" class="back-btn">← Back to Manual</a>
+            
+            <div class="license-header">
+                <h2>PDF EDITOR PRO - LICENSE AGREEMENT</h2>
+                <p class="subtitle">PROPRIETARY LICENSE WITH FREE PERSONAL USE</p>
+                <p class="copyright">Copyright © 2026 Oriol Alonso Esplugas<br>All rights reserved.</p>
+            </div>
+            
+            <!-- Visual Summary -->
+            <section>
+                <h2>📋 Executive Summary</h2>
+                <p><em>This summary is not legally binding. Please refer to the full license below.</em></p>
+                
+                <div class="summary-section">
+                    <div class="summary-box allowed">
+                        <h3>✅ ALLOWED (FREE)</h3>
+                        <ul>
+                            <li>Personal use on your own devices</li>
+                            <li>Individual educational use</li>
+                            <li>Share free with friends and family</li>
+                            <li>Redistribute free with attribution</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="summary-box forbidden">
+                        <h3>❌ PROHIBITED WITHOUT AUTHORIZATION</h3>
+                        <ul>
+                            <li>Sell the software</li>
+                            <li>Commercial or business use</li>
+                            <li>Monetize in any way</li>
+                            <li>Modify to sell</li>
+                            <li>Claim authorship</li>
+                            <li>Remove license or attribution</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="summary-box contact">
+                        <h3>📧 CONTACT REQUIRED FOR:</h3>
+                        <ul>
+                            <li>Any commercial use</li>
+                            <li>Selling the software</li>
+                            <li>Including in paid products</li>
+                            <li>Any monetization</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Contact -->
+            <section>
+                <div class="contact-box">
+                    <h3>📬 Contact Information</h3>
+                    <p><strong>Author/Owner:</strong> Oriol Alonso Esplugas</p>
+                    <p><strong>Email:</strong> <a href="mailto:alonsoesplugas@gmail.com">alonsoesplugas@gmail.com</a></p>
+                    <p><strong>GitHub:</strong> <a href="https://github.com/Oriol-1" target="_blank">https://github.com/Oriol-1</a></p>
+                    <p><strong>Repository:</strong> <a href="https://github.com/Oriol-1/modificador-pdf" target="_blank">https://github.com/Oriol-1/modificador-pdf</a></p>
+                </div>
+            </section>
+            
+            <!-- Full License -->
+            <section>
+                <h2>📖 Full License</h2>
+                
+                <div class="article">
+                    <h2>Definitions</h2>
+                    <p><strong>"Software":</strong> PDF Editor Pro and all its components, including source code, executables, documentation, images, icons, and configuration files.</p>
+                    <p><strong>"Personal Use":</strong> Use of the Software by an individual for their own private needs, without any economic compensation or commercial benefit.</p>
+                    <p><strong>"Commercial Use":</strong> Any use of the Software that involves obtaining economic benefit, use in business activities, paid professional use, or any form of monetization.</p>
+                    <p><strong>"Sale":</strong> Any transaction in which the Software is exchanged for money or other consideration of value.</p>
+                    <p><strong>"Redistribution":</strong> The act of sharing, distributing, or making the Software available to third parties.</p>
+                </div>
+                
+                <div class="article">
+                    <h2>Article 1: License Grant</h2>
+                    <h3>1.1 Free Personal Use</h3>
+                    <p>A free, non-exclusive, and non-transferable license is granted to use the Software solely for personal and non-commercial purposes.</p>
+                    <h3>1.2 Scope of Permitted Personal Use</h3>
+                    <ul>
+                        <li>Installation and use on user's own devices</li>
+                        <li>Use for personal and domestic tasks</li>
+                        <li>Individual educational use (students, self-learners)</li>
+                        <li>Use in personal non-profit projects</li>
+                        <li>Share free with family and friends for their personal use</li>
+                    </ul>
+                </div>
+                
+                <div class="article">
+                    <h2>Article 2: Prohibitions and Restrictions</h2>
+                    <h3>2.1 Prohibition of Sale</h3>
+                    <p>It is <strong>STRICTLY PROHIBITED</strong> to sell, resell, auction, or transfer the Software in exchange for money without express authorization and without establishing a compensation agreement.</p>
+                    <h3>2.2 Prohibition of Commercial Use</h3>
+                    <ul>
+                        <li>Use the Software in business or commercial activities</li>
+                        <li>Use the Software to provide paid services to third parties</li>
+                        <li>Include the Software in paid products or services</li>
+                        <li>Use the Software in corporate environments for profit</li>
+                    </ul>
+                    <h3>2.3 Prohibition of Appropriation</h3>
+                    <ul>
+                        <li>Claim authorship of the Software</li>
+                        <li>Register the Software under your own name</li>
+                        <li>Present the Software as your own creation</li>
+                        <li>Remove attribution to the original author</li>
+                    </ul>
+                </div>
+                
+                <div class="article">
+                    <h2>Article 3: Conditions for Commercial Use</h2>
+                    <p>All commercial use, sale, or monetization <strong>REQUIRES</strong>:</p>
+                    <ul>
+                        <li>Prior contact with the rights holder</li>
+                        <li>Express written authorization</li>
+                        <li>Agreement on corresponding economic terms</li>
+                    </ul>
+                    <p><strong>Compensation Requirement:</strong> If the Software is sold under authorization, the rights holder MUST receive compensation for EACH sale made.</p>
+                </div>
+                
+                <div class="article">
+                    <h2>Article 4: Free Redistribution</h2>
+                    <p>Free redistribution of the Software is permitted provided that:</p>
+                    <ul>
+                        <li>This license file is included in its entirety</li>
+                        <li>All attribution to the original author is maintained</li>
+                        <li>NO fee is charged for redistribution</li>
+                        <li>It is clearly stated that the Software is free for personal use</li>
+                    </ul>
+                </div>
+                
+                <div class="article">
+                    <h2>Article 5: Intellectual Property</h2>
+                    <p>The Software is the exclusive property of <strong>Oriol Alonso Esplugas</strong>. This license does NOT transfer any ownership rights to the Software.</p>
+                    <p>The name "PDF Editor Pro" and any associated logos are the property of the rights holder and may not be used without authorization.</p>
+                </div>
+                
+                <div class="article">
+                    <h2>Article 6: Warranties and Liability</h2>
+                    <p>THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.</p>
+                    <p>In no event shall the author be liable for any direct, indirect, incidental, or consequential damages arising from the use of the Software.</p>
+                </div>
+                
+                <div class="article">
+                    <h2>Article 7: Violation and Consequences</h2>
+                    <p>This license will automatically terminate if the user violates any of its terms.</p>
+                    <p>The rights holder reserves the right to take legal action in case of violation.</p>
+                </div>
+                
+                <div class="article">
+                    <h2>Article 8: General Provisions</h2>
+                    <p><strong>Applicable Law:</strong> This license shall be governed by the laws of Spain.</p>
+                    <p><strong>Jurisdiction:</strong> For any dispute, the parties submit to the courts and tribunals of Spain.</p>
+                </div>
+            </section>
+        </div>
+    </main>
+    
+    <footer>
+        <p><strong>PDF Editor Pro</strong> © 2026 Oriol Alonso Esplugas</p>
+        <p>Todos los derechos reservados | All rights reserved</p>
+        <p>
+            <a href="mailto:alonsoesplugas@gmail.com">alonsoesplugas@gmail.com</a> | 
+            <a href="https://github.com/Oriol-1" target="_blank">GitHub</a>
+        </p>
+    </footer>
+    
+    <script>
+        function showLanguage(lang) {
+            // Hide all license content
+            document.querySelectorAll('.license-content').forEach(el => {
+                el.classList.remove('active');
+            });
+            
+            // Show selected language
+            document.getElementById('license-' + lang).classList.add('active');
+            
+            // Update button states
+            document.querySelectorAll('.lang-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+        }
+    </script>
+</body>
+</html>
