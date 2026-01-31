@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Editor Pro - Manual de Usuario</title>
+    <link rel="icon" type="image/png" href="capturas/10_icono_aplicacion.png">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            line-height: 1.7;
+        }
+        
+        /* Header */
+        header {
+            background: linear-gradient(135deg, #0078d4 0%, #005a9e 100%);
+            color: white;
+            padding: 60px 20px;
+            text-align: center;
+        }
+        
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        
+        header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+        
+        .download-btn {
+            display: inline-block;
+            background-color: #4CAF50;
+            color: white;
+            padding: 15px 40px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 1.1rem;
+            margin-top: 20px;
+            transition: background-color 0.3s;
+        }
+        
+        .download-btn:hover {
+            background-color: #45a049;
+        }
+        
+        /* Navigation */
+        nav {
+            background-color: #252526;
+            padding: 15px 20px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            border-bottom: 1px solid #333;
+        }
+        
+        nav ul {
+            list-style: none;
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        nav a {
+            color: #ccc;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            transition: all 0.3s;
+        }
+        
+        nav a:hover {
+            background-color: #0078d4;
+            color: white;
+        }
+        
+        /* Main content */
+        main {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        section {
+            margin-bottom: 60px;
+            scroll-margin-top: 80px;
+        }
+        
+        h2 {
+            color: #0078d4;
+            font-size: 1.8rem;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #0078d4;
+        }
+        
+        h3 {
+            color: #4fc3f7;
+            font-size: 1.3rem;
+            margin: 25px 0 15px 0;
+        }
+        
+        p {
+            margin-bottom: 15px;
+        }
+        
+        ul, ol {
+            margin: 15px 0 15px 25px;
+        }
+        
+        li {
+            margin: 8px 0;
+        }
+        
+        /* Images */
+        .screenshot {
+            max-width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            margin: 20px 0;
+            border: 1px solid #333;
+        }
+        
+        .screenshot-container {
+            text-align: center;
+            margin: 30px 0;
+        }
+        
+        .screenshot-caption {
+            font-size: 0.9rem;
+            color: #888;
+            margin-top: 10px;
+            font-style: italic;
+        }
+        
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background-color: #252526;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        th {
+            background-color: #0078d4;
+            color: white;
+            padding: 15px;
+            text-align: left;
+        }
+        
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #333;
+        }
+        
+        tr:hover {
+            background-color: #2a2d2e;
+        }
+        
+        /* Alerts */
+        .alert {
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        
+        .alert-warning {
+            background-color: #332b00;
+            border-left: 4px solid #ffc107;
+        }
+        
+        .alert-info {
+            background-color: #002233;
+            border-left: 4px solid #0078d4;
+        }
+        
+        .alert-success {
+            background-color: #1a3a1a;
+            border-left: 4px solid #4CAF50;
+        }
+        
+        /* Code */
+        code {
+            background-color: #333;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-family: 'Consolas', monospace;
+        }
+        
+        kbd {
+            background-color: #444;
+            padding: 4px 8px;
+            border-radius: 4px;
+            border: 1px solid #666;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9rem;
+        }
+        
+        /* Footer */
+        footer {
+            background-color: #252526;
+            text-align: center;
+            padding: 30px 20px;
+            margin-top: 60px;
+            border-top: 1px solid #333;
+        }
+        
+        footer p {
+            color: #888;
+        }
+        
+        footer a {
+            color: #0078d4;
+            text-decoration: none;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 1.8rem;
+            }
+            
+            nav ul {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            h2 {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>📘 PDF Editor Pro</h1>
+        <p>La herramienta profesional para editar y organizar tus documentos PDF</p>
+        <a href="https://github.com/Oriol-1/modificador-pdf/releases" class="download-btn">
+            ⬇️ Descargar Gratis
+        </a>
+    </header>
+    
+    <nav>
+        <ul>
+            <li><a href="#instalacion">Instalación</a></li>
+            <li><a href="#interfaz">Interfaz</a></li>
+            <li><a href="#abrir">Abrir</a></li>
+            <li><a href="#eliminar">Eliminar</a></li>
+            <li><a href="#editar">Editar</a></li>
+            <li><a href="#resaltar">Resaltar</a></li>
+            <li><a href="#grupos">Grupos</a></li>
+            <li><a href="#atajos">Atajos</a></li>
+            <li><a href="#faq">FAQ</a></li>
+        </ul>
+    </nav>
+    
+    <main>
+        <!-- INSTALACIÓN -->
+        <section id="instalacion">
+            <h2>📥 Instalación</h2>
+            
+            <h3>Paso 1: Descargar e instalar</h3>
+            <p>Descarga el instalador <code>ModificadorPDF_Setup_v1.0.0.exe</code> y ejecútalo.</p>
+            
+            <div class="screenshot-container">
+                <img src="capturas/10_icono_aplicacion.png" alt="Icono de la aplicación" class="screenshot" style="max-width: 150px;">
+                <p class="screenshot-caption">Icono de la aplicación en el escritorio</p>
+            </div>
+            
+            <h3>Paso 2: Aviso de Windows SmartScreen</h3>
+            <p>Al ejecutar por primera vez, Windows mostrará un aviso de seguridad. Esto es normal para aplicaciones nuevas sin certificado digital.</p>
+            
+            <div class="screenshot-container">
+                <img src="capturas/11_smartscreen_aviso.png" alt="Aviso SmartScreen" class="screenshot" style="max-width: 500px;">
+                <p class="screenshot-caption">Aviso inicial de Windows SmartScreen</p>
+            </div>
+            
+            <p><strong>¿Qué hacer?</strong></p>
+            <ol>
+                <li>Haz clic en <strong>"Más información"</strong></li>
+                <li>Aparecerá el botón <strong>"Ejecutar de todas formas"</strong></li>
+                <li>Haz clic en él para continuar</li>
+            </ol>
+            
+            <div class="screenshot-container">
+                <img src="capturas/14_smartscreen_ejecutar.png" alt="SmartScreen - Ejecutar" class="screenshot" style="max-width: 500px;">
+                <p class="screenshot-caption">Clic en "Ejecutar de todas formas"</p>
+            </div>
+            
+            <div class="alert alert-warning">
+                ⚠️ <strong>Nota:</strong> Este aviso aparece porque la aplicación no tiene un certificado de firma digital (costoso). El software es completamente seguro.
+            </div>
+        </section>
+        
+        <!-- INTERFAZ -->
+        <section id="interfaz">
+            <h2>🖥️ Interfaz Principal</h2>
+            
+            <p>Al abrir la aplicación, verás la pantalla de bienvenida:</p>
+            
+            <div class="screenshot-container">
+                <img src="capturas/01_inicio.png" alt="Pantalla de inicio" class="screenshot">
+                <p class="screenshot-caption">Pantalla de bienvenida - Arrastra un PDF o haz clic en Abrir</p>
+            </div>
+            
+            <h3>Elementos de la interfaz</h3>
+            <table>
+                <tr>
+                    <th>Zona</th>
+                    <th>Descripción</th>
+                </tr>
+                <tr>
+                    <td><strong>Barra superior</strong></td>
+                    <td>Todas las herramientas y acciones disponibles</td>
+                </tr>
+                <tr>
+                    <td><strong>Área central</strong></td>
+                    <td>Zona de arrastrar y soltar PDFs</td>
+                </tr>
+                <tr>
+                    <td><strong>Barra inferior</strong></td>
+                    <td>Información de estado y zoom</td>
+                </tr>
+            </table>
+        </section>
+        
+        <!-- ABRIR ARCHIVOS -->
+        <section id="abrir">
+            <h2>📂 Abrir Archivos</h2>
+            
+            <p>Haz clic en <strong>"Abrir"</strong> en la barra de herramientas. Aparecerá un diálogo con dos opciones:</p>
+            
+            <div class="screenshot-container">
+                <img src="capturas/13_opciones_apertura.png" alt="Opciones de apertura" class="screenshot" style="max-width: 500px;">
+                <p class="screenshot-caption">Elige entre archivo individual o grupo de trabajo</p>
+            </div>
+            
+            <table>
+                <tr>
+                    <th>Opción</th>
+                    <th>Cuándo usarla</th>
+                </tr>
+                <tr>
+                    <td>📄 <strong>Abrir UN PDF para editar</strong></td>
+                    <td>Cuando solo necesitas modificar un archivo</td>
+                </tr>
+                <tr>
+                    <td>📁 <strong>Crear GRUPO DE TRABAJO</strong></td>
+                    <td>Cuando tienes varios PDFs que procesar en lote</td>
+                </tr>
+            </table>
+            
+            <h3>PDF abierto en el editor</h3>
+            
+            <div class="screenshot-container">
+                <img src="capturas/02_pdf_abierto.png" alt="PDF abierto" class="screenshot">
+                <p class="screenshot-caption">Vista del editor con un PDF cargado</p>
+            </div>
+        </section>
+        
+        <!-- ELIMINAR -->
+        <section id="eliminar">
+            <h2>🗑️ Eliminar Contenido</h2>
+            
+            <p>La herramienta <strong>ELIMINAR</strong> borra permanentemente contenido del PDF.</p>
+            
+            <h3>Cómo usar:</h3>
+            <ol>
+                <li>Haz clic en el botón <strong>ELIMINAR</strong> (azul) en la barra de herramientas</li>
+                <li>Arrastra el ratón sobre el área que quieres borrar</li>
+                <li>El contenido dentro del rectángulo será eliminado</li>
+            </ol>
+            
+            <div class="screenshot-container">
+                <img src="capturas/09_eliminar_contenido.png" alt="Eliminar contenido" class="screenshot">
+                <p class="screenshot-caption">Selecciona el área a eliminar arrastrando el ratón</p>
+            </div>
+            
+            <div class="alert alert-warning">
+                ⚠️ <strong>Importante:</strong> El borrado es permanente una vez guardas. Puedes usar <kbd>Ctrl</kbd>+<kbd>Z</kbd> para deshacer antes de guardar.
+            </div>
+        </section>
+        
+        <!-- EDITAR -->
+        <section id="editar">
+            <h2>✏️ Editar Texto</h2>
+            
+            <p>La herramienta <strong>EDITAR</strong> permite modificar el texto existente.</p>
+            
+            <h3>Cómo usar:</h3>
+            <ol>
+                <li>Haz clic en el botón <strong>EDITAR</strong> en la barra de herramientas</li>
+                <li>Haz clic sobre cualquier texto del documento</li>
+                <li>Aparecerá el diálogo de edición</li>
+            </ol>
+            
+            <div class="screenshot-container">
+                <img src="capturas/04_editar_texto.png" alt="Editar texto" class="screenshot">
+                <p class="screenshot-caption">Diálogo de edición de texto con opciones de formato</p>
+            </div>
+            
+            <p><strong>Opciones disponibles:</strong></p>
+            <ul>
+                <li>Cambiar el contenido del texto</li>
+                <li>Ajustar el tamaño de letra (puntos)</li>
+                <li>Aplicar negrita</li>
+            </ul>
+        </section>
+        
+        <!-- RESALTAR -->
+        <section id="resaltar">
+            <h2>🖍️ Resaltar Texto</h2>
+            
+            <p>La herramienta <strong>RESALTAR</strong> marca el texto con fondo amarillo, como un subrayador.</p>
+            
+            <div class="screenshot-container">
+                <img src="capturas/12_resaltar_texto.png" alt="Texto resaltado" class="screenshot">
+                <p class="screenshot-caption">Texto resaltado en amarillo</p>
+            </div>
+        </section>
+        
+        <!-- GRUPOS DE TRABAJO -->
+        <section id="grupos">
+            <h2>📁 Grupos de Trabajo</h2>
+            
+            <p>Si tienes <strong>muchos PDFs</strong> que necesitan el mismo tratamiento, el <strong>Grupo de Trabajo</strong> te permite procesarlos de forma organizada.</p>
+            
+            <h3>Paso 1: Crear el Grupo</h3>
+            
+            <div class="screenshot-container">
+                <img src="capturas/03_crear_grupo.png" alt="Crear grupo" class="screenshot" style="max-width: 600px;">
+                <p class="screenshot-caption">Configuración del grupo de trabajo</p>
+            </div>
+            
+            <h3>Paso 2: Elegir ubicación</h3>
+            
+            <div class="screenshot-container">
+                <img src="capturas/06_cambiar_ubicacion.png" alt="Cambiar ubicación" class="screenshot" style="max-width: 600px;">
+                <p class="screenshot-caption">Puedes cambiar dónde se guardarán los archivos</p>
+            </div>
+            
+            <h3>Paso 3: Estructura de carpetas</h3>
+            <p>Al crear el grupo, se generan <strong>3 carpetas automáticamente</strong>:</p>
+            
+            <div class="screenshot-container">
+                <img src="capturas/08_estructura_carpetas.png" alt="Estructura carpetas" class="screenshot" style="max-width: 600px;">
+                <p class="screenshot-caption">Las tres carpetas del sistema de organización</p>
+            </div>
+            
+            <table>
+                <tr>
+                    <th>Carpeta</th>
+                    <th>Contenido</th>
+                </tr>
+                <tr>
+                    <td>📁 <strong>Origen</strong></td>
+                    <td>PDFs pendientes de procesar</td>
+                </tr>
+                <tr>
+                    <td>📁 <strong>Modificado - Sí</strong></td>
+                    <td>PDFs ya editados y guardados</td>
+                </tr>
+                <tr>
+                    <td>📁 <strong>Modificado - No</strong></td>
+                    <td>Copia de seguridad de los originales</td>
+                </tr>
+            </table>
+            
+            <h3>Flujo automático al guardar</h3>
+            
+            <div class="screenshot-container">
+                <img src="capturas/05_guardado_exitoso.png" alt="Guardado exitoso" class="screenshot">
+                <p class="screenshot-caption">El sistema te muestra cómo se organizan los archivos</p>
+            </div>
+            
+            <div class="alert alert-success">
+                ✅ <strong>Beneficio:</strong> Siempre tienes una copia de seguridad del archivo original en "Modificado - No".
+            </div>
+            
+            <h3>Grupo completado</h3>
+            
+            <div class="screenshot-container">
+                <img src="capturas/15_grupo_completado.png" alt="Grupo completado" class="screenshot">
+                <p class="screenshot-caption">Vista del grupo con todos los archivos procesados</p>
+            </div>
+        </section>
+        
+        <!-- ATAJOS -->
+        <section id="atajos">
+            <h2>⌨️ Atajos de Teclado</h2>
+            
+            <table>
+                <tr>
+                    <th>Atajo</th>
+                    <th>Acción</th>
+                </tr>
+                <tr>
+                    <td><kbd>Ctrl</kbd> + <kbd>O</kbd></td>
+                    <td>Abrir archivo</td>
+                </tr>
+                <tr>
+                    <td><kbd>Ctrl</kbd> + <kbd>S</kbd></td>
+                    <td>Guardar cambios</td>
+                </tr>
+                <tr>
+                    <td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd></td>
+                    <td>Guardar como...</td>
+                </tr>
+                <tr>
+                    <td><kbd>Ctrl</kbd> + <kbd>W</kbd></td>
+                    <td>Cerrar PDF actual</td>
+                </tr>
+                <tr>
+                    <td><kbd>Ctrl</kbd> + <kbd>Z</kbd></td>
+                    <td>Deshacer</td>
+                </tr>
+                <tr>
+                    <td><kbd>Ctrl</kbd> + <kbd>Y</kbd></td>
+                    <td>Rehacer</td>
+                </tr>
+                <tr>
+                    <td><kbd>Ctrl</kbd> + <kbd>+</kbd></td>
+                    <td>Acercar zoom</td>
+                </tr>
+                <tr>
+                    <td><kbd>Ctrl</kbd> + <kbd>-</kbd></td>
+                    <td>Alejar zoom</td>
+                </tr>
+                <tr>
+                    <td><kbd>F1</kbd></td>
+                    <td>Abrir ayuda</td>
+                </tr>
+            </table>
+        </section>
+        
+        <!-- FAQ -->
+        <section id="faq">
+            <h2>❓ Preguntas Frecuentes</h2>
+            
+            <h3>¿Por qué Windows dice que la aplicación es desconocida?</h3>
+            <p>Es normal. Las aplicaciones nuevas sin certificado digital muestran este aviso. Simplemente haz clic en "Más información" y luego "Ejecutar de todas formas".</p>
+            
+            <h3>¿Puedo recuperar un archivo original después de editarlo?</h3>
+            <p>¡Sí! Si usaste un <strong>Grupo de Trabajo</strong>, el original siempre está en la carpeta <strong>"Modificado - No"</strong>.</p>
+            
+            <h3>¿Qué pasa si cierro sin guardar?</h3>
+            <p>La aplicación te preguntará si quieres guardar los cambios antes de cerrar.</p>
+            
+            <h3>¿Puedo editar PDFs protegidos con contraseña?</h3>
+            <p>Sí, el programa te pedirá la contraseña al abrir el archivo.</p>
+        </section>
+    </main>
+    
+    <footer>
+        <p>PDF Editor Pro v1.0.0 - Desarrollado con ❤️</p>
+        <p>
+            <a href="https://github.com/Oriol-1/modificador-pdf">Ver en GitHub</a>
+        </p>
+    </footer>
+</body>
+</html>

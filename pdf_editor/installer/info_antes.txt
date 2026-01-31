@@ -1,0 +1,15 @@
+INFORMACIÓN IMPORTANTE SOBRE WINDOWS SMARTSCREEN
+================================================
+
+Si al ejecutar este instalador apareció un mensaje de Windows SmartScreen diciendo "Windows protegió su PC", sigue estos pasos:
+
+1. Haz clic en "Más información"
+2. Haz clic en "Ejecutar de todas formas"
+
+¿Por qué aparece este mensaje?
+------------------------------
+Este mensaje aparece porque la aplicación no tiene un certificado de firma digital comercial (que cuesta entre $70-300/año). 
+
+La aplicación es completamente segura y de código abierto. Puedes revisar el código fuente en GitHub.
+
+El programa NO contiene virus, malware ni software malicioso.
