@@ -70,7 +70,7 @@
 
 ### ❓ ¿Se ha incrementado el número de versión?
 
-**✅ SÍ - En 3 archivos**
+#### ✅ SÍ - En 3 archivos
 
 ```plaintext
 version_info.txt:  (1,0,0,0) → (1,0,1,0)
@@ -81,7 +81,7 @@ ProductVersion:    1.0.0.0 → 1.0.1.0
 
 ### ❓ ¿Se abren sin alertas ni bloqueos?
 
-**✅ SÍ - Con salvedades normales**
+#### ✅ SÍ - Con salvedades normales
 
 ```plaintext
 Windows:
@@ -97,7 +97,7 @@ Sin BLOQUEOS PERMANENTES ✅
 
 ### ❓ ¿Versión instalada = Portable?
 
-**✅ SÍ - 100% idéntico**
+#### ✅ SÍ - 100% idéntico
 
 ```plaintext
 Funcionalidad:     IDÉNTICA ✅
@@ -112,7 +112,7 @@ Comportamiento:    IDÉNTICO ✅
 
 ### ❓ ¿Sin código obsoleto?
 
-**✅ SÍ - 0 líneas obsoletas**
+#### ✅ SÍ - 0 líneas obsoletas
 
 ```plaintext
 Cambios funcionales: 0 ✅
@@ -123,7 +123,7 @@ Tests impactados: 0 (todos pasan) ✅
 
 ### ❓ ¿Rendimiento estable?
 
-**✅ SÍ - Completamente estable**
+#### ✅ SÍ - Completamente estable
 
 ```plaintext
 Tiempo inicio:     2.5s (igual)
@@ -137,7 +137,7 @@ Tests:            46/46 pasando ✅
 
 ### ❓ ¿Actualizar sin desinstalar v1.0.0?
 
-**✅ SÍ - COMPLETAMENTE SEGURO**
+#### ✅ SÍ - COMPLETAMENTE SEGURO
 
 ```plaintext
 RECOMENDADO:

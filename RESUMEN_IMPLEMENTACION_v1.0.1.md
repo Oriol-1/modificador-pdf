@@ -129,19 +129,9 @@ Tests impactados: NINGUNO (todos pasan) ✅
 ## 🎯 Respuesta a Preguntas del Usuario
 
 ### P: ¿Se ha incrementado el número de versión y/o build?
-**R: SÍ ✅**
+
+#### R: SÍ ✅
 ```
-Archivos actualizados:
-1. version_info.txt: 1.0.0.0 → 1.0.1.0 ✅
-2. main.py: 1.0.0 → 1.0.1 ✅
-3. Git tag: v1.0.1-release ✅
-
-La aplicación mostrará "v1.0.1" al abrir
-### P: ¿Se ha incrementado el número de versión y/o build?
-
-**R: SÍ ✅**
-
-```plaintext
 Archivos actualizados:
 1. version_info.txt: 1.0.0.0 → 1.0.1.0 ✅
 2. main.py: 1.0.0 → 1.0.1 ✅
@@ -152,7 +142,7 @@ La aplicación mostrará "v1.0.1" al abrir
 
 ### P: ¿Los ejecutables se abren sin alertas ni bloqueos?
 
-**R: SÍ, pero con salvedad normal**
+#### R: SÍ, pero con salvedad normal
 
 ```plaintext
 Windows:
@@ -181,14 +171,14 @@ Errores/warnings: IDÉNTICOS
 
 La única diferencia:
 - Instalada: Accesos directos, entrada en desinstalar, ubicación fija
-- Portable: Ejecutable único, ubicación flexible
+#### R: SÍ, 100% idéntico ✅co, ubicación flexible
 
 Comportamiento funcional: COMPLETAMENTE IDÉNTICO ✅
 ```
 
 ### P: ¿Queda código obsoleto y rendimiento estable?
 
-**R: NO queda código obsoleto, SÍ rendimiento estable**
+#### R: NO queda código obsoleto, SÍ rendimiento estable
 
 ```plaintext
 Código obsoleto: 0 líneas ✅

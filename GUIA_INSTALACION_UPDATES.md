@@ -20,7 +20,7 @@
 
 ##### 1. Si tienes la versión INSTALADA (ModificadorPDF_Setup_v1.0.0.exe)
 
-**Opción A - Recomendado (Sin desinstalar)**
+#### Opción A - Recomendado (Sin desinstalar)
 
 ```powershell
 1. Ejecuta directamente: ModificadorPDF_Setup_v1.0.1.exe
@@ -33,7 +33,7 @@
 5. Listo - ¡Sin perder nada!
 ```
 
-**Opción B - Más segura (Con desinstalación)**
+#### Opción B - Más segura (Con desinstalación)
 
 ```powershell
 1. Panel de Control → Programas → Desinstalar un programa
@@ -46,7 +46,7 @@
 6. Instala ModificadorPDF_Setup_v1.0.1.exe
 ```
 
-**Opción C - Limpia (Desinstalación completa)**
+#### Opción C - Limpia (Desinstalación completa)
 
 ```powershell
 1. Desinstala como en Opción B
@@ -59,7 +59,7 @@
 
 ##### 2. Si tienes la versión PORTABLE (ModificadorPDF_v1.0.0_portable.exe)
 
-**Opción A - Recomendado (Simplemente reemplazar)**
+#### Opción A - Recomendado (Simplemente reemplazar)
 
 ```powershell
 1. Descarga ModificadorPDF_v1.0.1_portable.exe
@@ -71,7 +71,7 @@
 5. ¡Usa el nuevo v1.0.1!
 ```
 
-**Opción B - Ultra-segura (Mantener ambas versiones)**
+#### Opción B - Ultra-segura (Mantener ambas versiones)
 
 ```powershell
 1. Crea dos carpetas separadas:
@@ -206,11 +206,13 @@ Solución:
 - [ ] Cierra la aplicación v1.0.0
 
 ### Durante la instalación
+
 - [ ] Ejecuta el instalador con permisos de administrador
 - [ ] Permite que complete la instalación
 - [ ] NO interrumpas el proceso
 
 ### Después de instalar
+
 - [ ] Abre la aplicación
 - [ ] Verifica que aparezca v1.0.1
 - [ ] Abre un PDF de prueba
@@ -218,6 +220,7 @@ Solución:
 - [ ] Prueba editar, eliminar y resaltar
 
 ### Troubleshooting
+
 - Si no ves tus archivos → Busca en `C:\Users\[Usuario]\AppData\Roaming\PDF Editor`
 - Si falla al abrir PDF → Intenta con otro PDF más pequeño
 - Si sigue fallando → Reinstala desde cero (Opción C arriba)
@@ -230,19 +233,15 @@ Solución:
 
 **Windows:**
 
-```plaintext
 - Archivos editados: Donde los guardaste (Desktop, Documents, etc.)
 - Configuración: C:\Users\[Usuario]\AppData\Roaming\PDF Editor\
 - Grupos de trabajo: C:\Users\[Usuario]\Documents\PDF_Editor_Workspace\
-```
 
 **macOS:**
 
-```plaintext
 - Archivos editados: Donde los guardaste
 - Configuración: ~/Library/Application Support/PDF Editor/
 - Grupos de trabajo: ~/Documents/PDF_Editor_Workspace/
-```
 
 ### Hacer backup antes de actualizar
 
@@ -308,6 +307,6 @@ La recomendación general es:
 
 ---
 
-**Última actualización**: 31 de enero de 2026  
-**Versiones cubiertas**: v1.0.0 → v1.0.1  
+**Última actualización**: 31 de enero de 2026
+**Versiones cubiertas**: v1.0.0 → v1.0.1
 **Plataformas**: Windows 10/11, macOS 10.13+

@@ -14,7 +14,7 @@
 ### 1. ✅ Incremento de Versión
 
 | Archivo | v1.0.0 | v1.0.1 | Estado |
-|---------|--------|--------|--------|
+| --- | --- | --- | --- |
 | `version_info.txt` | (1, 0, 0, 0) | (1, 0, 1, 0) | ✅ Actualizado |
 | `main.py` - ApplicationVersion | "1.0.0" | "1.0.1" | ✅ Actualizado |
 | `version_info.txt` - FileVersion | "1.0.0.0" | "1.0.1.0" | ✅ Actualizado |
