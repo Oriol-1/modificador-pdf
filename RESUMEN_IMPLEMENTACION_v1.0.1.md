@@ -417,7 +417,7 @@ RECOMENDACIÓN DEFINITIVA: OPCIÓN 1
 ## ✅ RESUMEN EJECUTIVO
 
 | Aspecto | Respuesta |
-|---------|-----------|
+| --- | --- |
 | **¿Versión incrementada?** | ✅ SÍ (1.0.1) |
 | **¿Build exitoso?** | ✅ SÍ (Windows compilado) |
 | **¿Sin alertas permanentes?** | ✅ SÍ (SmartScreen controlable) |
