@@ -107,6 +107,7 @@ Crear estructura `TextChangeReport` para documentar todos los cambios realizados
 - [ ] Tests: serialización, campos requeridos
 
 **Aceptación**:
+
 - ✅ Captura todos los cambios
 - ✅ `as_dict()` serializa sin errores
 - ✅ Fácil de mostrar en UI (tabla)
@@ -129,6 +130,7 @@ Crear estructura `TextChangeReport` para documentar todos los cambios realizados
 Diálogo mejorado para edición de texto con validación en tiempo real y opciones para texto que no cabe.
 
 **Requerimientos**:
+
 - [ ] Crear `ui/text_editor_dialog.py`
 - [ ] Componentes:
   - QTextEdit para input
@@ -146,6 +148,7 @@ Diálogo mejorado para edición de texto con validación en tiempo real y opcion
 - [ ] Tests: `tests/test_text_editor_dialog.py`
 
 **Aceptación**:
+
 - ✅ Preview muestra cómo se vería el texto
 - ✅ Valida "cabe/no cabe" sin lag
 - ✅ Ofrece opciones [A][B][C] si no cabe
@@ -166,6 +169,7 @@ Diálogo mejorado para edición de texto con validación en tiempo real y opcion
 
 **Descripción**:
 Al hacer Ctrl+V, detectar si clipboard contiene HTML/RTF con bold/italic y mapear a estilos.
+
 
 **Requerimientos**:
 - [ ] Método `handle_paste_with_styles()` en `ui/pdf_viewer.py`
@@ -233,6 +237,7 @@ Muestra tabla de cambios (TextChangeReport) antes de guardar PDF.
 Tests unitarios exhaustivos para FontManager (80%+ cobertura).
 
 **Requerimientos**:
+
 - [ ] Crear `tests/test_font_manager.py`
 - [ ] Test `detect_font_*` para Arial, Times, Courier, custom fonts
 - [ ] Test `smart_fallback()` para fuentes conocidas y desconocidas
@@ -261,6 +266,7 @@ Tests unitarios exhaustivos para FontManager (80%+ cobertura).
 PDFs de ejemplo para testing de detección de fuentes y bold.
 
 **Requerimientos**:
+
 - [ ] Crear `tests/fixtures/test_pdfs/simple_fonts.pdf`
   - Párrafos con Arial 12pt, Times 12pt, Courier 12pt
 - [ ] Crear `tests/fixtures/test_pdfs/custom_fonts.pdf`
@@ -321,6 +327,7 @@ Tests de flujo completo (Gherkin) que cubren escenarios reales de usuario.
 Tests específicos para copy/paste con HTML y RTF.
 
 **Requerimientos**:
+
 - [ ] Crear `tests/test_clipboard.py`
 - [ ] Mock clipboard con texto plano
 - [ ] Mock clipboard con HTML: `<b>importante</b>`
@@ -329,7 +336,9 @@ Tests específicos para copy/paste con HTML y RTF.
 - [ ] Verificar que extrae estilos correctamente
 - [ ] Verificar que dialog abre con estilos pre-llenados
 
+
 **Aceptación**:
+
 - ✅ Detecta bold en HTML
 - ✅ Detecta italic en HTML
 - ✅ Detecta bold en RTF

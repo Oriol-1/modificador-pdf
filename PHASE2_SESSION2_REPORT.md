@@ -121,27 +121,33 @@ Características implementadas:
 
 ### 🎯 SIGUIENTES PASOS
 
-**Inmediatos** (5-10 min):1. ✅ Ajustar los 4 tests fallando en PHASE2-102
+**Inmediatos** (5-10 min):
+
+1. ✅ Ajustar los 4 tests fallando en PHASE2-102
    - Mejorar mocking de search_text() para retornar lista de tuplas
    - Verificar que page_count() se llama correctamente
    - Validar que modified flag se establece en el flujo
 
-**Corto plazo** (30-45 min):2. ⏳ PHASE2-103: ChangeReport Class
+**Corto plazo** (30-45 min):
+
+2. ⏳ PHASE2-103: ChangeReport Class
    - Crear `core/change_report.py`
    - Implementar tracking de cambios (fuente, posición, contenido)
    - Crear tests complementarios
 
-1. ⏳ PHASE2-201: Enhanced Dialog
+3. ⏳ PHASE2-201: Enhanced Dialog
    - Extender `ui/main_window.py` con diálogos mejorados
    - Integrar FontManager en UI
    - Crear selectores de fuente con preview
 
-**Largo plazo** (1-2 horas):4. ⏳ PHASE2-202: Copy/Paste with Styles
+**Largo plazo** (1-2 horas):
+
+4. ⏳ PHASE2-202: Copy/Paste with Styles
    - Implementar clipboard handler
    - Preservar estilos durante copy/paste
    - Integración con Qt clipboard
 
-1. ⏳ PHASE2-203: Summary Dialog
+5. ⏳ PHASE2-203: Summary Dialog
    - Diálogo de resumen de cambios
    - Análisis de métricas (fuentes usadas, cambios por página)
    - Validación de consistencia

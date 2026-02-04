@@ -45,7 +45,7 @@ class FontManager:
         "Arial": "helv",
         "Times New Roman": "times",
         "Courier": "cour",
-        # ... (ver tabla en PROMPT_MEJORADO_v2.md línea 380) [c]: See reference link
+        # ... (ver tabla en PROMPT_MEJORADO_v2.md línea 380)
     }
 
     def detect_font(self, span: dict) -> FontDescriptor:
@@ -534,12 +534,12 @@ def test_paste_rtf_with_formatting():
 
 ### Sprint 1 (Semana 1-2)
 
-**Semana 1: Backend (Tareas 1.1-1.3)**
+### Semana 1: Backend (Tareas 1.1-1.3)
 
 - Lunes-Miércoles: Backend Task 1.1 (FontManager)
 - Jueves-Viernes: Backend Task 1.2 + 1.3
 
-**Semana 2: Inicio Frontend + QA paralelo**
+### Semana 2: Inicio Frontend + QA paralelo
 
 - Lunes-Miércoles: Frontend Task 2.1 (Dialog)
 - Martes-Viernes: QA Task 3.1-3.2 (tests unitarios + fixtures)
@@ -547,12 +547,12 @@ def test_paste_rtf_with_formatting():
 
 ### Sprint 2 (Semana 3-4)
 
-**Semana 3: Frontend + Integración**
+### Semana 3: Frontend + Integración
 
 - Lunes-Martes: Frontend Task 2.2 (copy/paste)
 - Miércoles-Viernes: Frontend Task 2.3 + integración con Backend
 
-**Semana 4: Testing final + Bug fixes**
+### Semana 4: Testing final + Bug fixes
 
 - Lunes-Miércoles: QA Task 3.3-3.4 (integration tests)
 - Jueves-Viernes: Bug fixes, documentación, release prep
