@@ -163,7 +163,7 @@ macOS:
 
 Para crear un release con instalables:
 
-#### Compilar en Windows
+### Compilar en Windows
 
 ```bash
 # Portable
@@ -173,7 +173,7 @@ Para crear un release con instalables:
 .\build_installer.bat
 ```
 
-#### Compilar en Linux
+### Compilar en Linux
 
 ```bash
 # AppImage
@@ -186,7 +186,7 @@ Para crear un release con instalables:
 ./build_portable_linux.sh
 ```
 
-#### Compilar en macOS
+### Compilar en macOS
 
 ```bash
 ./build_mac.sh
