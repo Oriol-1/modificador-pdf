@@ -5,14 +5,12 @@ PHASE2-203: Summary Dialog
 Muestra análisis de métricas, fuentes usadas y cambios por página.
 """
 
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QWidget, QTableWidget, QTableWidgetItem,
-    QHeaderView, QGroupBox, QTextEdit, QProgressBar,
-    QScrollArea, QFrame
+    QHeaderView, QTextEdit, QFrame
 )
-from PyQt5.QtGui import QFont, QColor
 from PyQt5.QtCore import Qt
 
 from core.change_report import ChangeReport, ChangeType, get_change_report
@@ -33,13 +31,13 @@ class StatWidget(QFrame):
         parent=None
     ):
         super().__init__(parent)
-        self.setStyleSheet(f"""
-            StatWidget {{
+        self.setStyleSheet("""
+            StatWidget {
                 background-color: #2d2d30;
                 border: 1px solid #555;
                 border-radius: 8px;
                 padding: 10px;
-            }}
+            }
         """)
         
         layout = QVBoxLayout(self)

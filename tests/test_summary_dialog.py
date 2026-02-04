@@ -13,8 +13,7 @@ import pytest
 from PyQt5.QtWidgets import QApplication
 
 from core.change_report import (
-    ChangeReport, ChangeType, ChangePosition, FontInfo, Change,
-    reset_change_report
+    ChangeReport, reset_change_report
 )
 
 

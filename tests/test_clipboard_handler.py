@@ -9,7 +9,6 @@ Cobertura:
 
 import pytest
 from datetime import datetime
-from unittest.mock import MagicMock, patch
 
 from PyQt5.QtWidgets import QApplication
 
