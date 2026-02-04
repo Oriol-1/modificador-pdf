@@ -3,5 +3,15 @@ from .main_window import MainWindow
 from .pdf_viewer import PDFPageView
 from .thumbnail_panel import ThumbnailPanel
 from .toolbar import EditorToolBar
+from .graphics_items import (
+    SelectionRect, DeletePreviewRect, FloatingLabel, 
+    HighlightRect, TextEditDialog, EditableTextItem
+)
+from .coordinate_utils import CoordinateConverter
 
-__all__ = ['MainWindow', 'PDFPageView', 'ThumbnailPanel', 'EditorToolBar']
+__all__ = [
+    'MainWindow', 'PDFPageView', 'ThumbnailPanel', 'EditorToolBar',
+    'SelectionRect', 'DeletePreviewRect', 'FloatingLabel',
+    'HighlightRect', 'TextEditDialog', 'EditableTextItem',
+    'CoordinateConverter'
+]

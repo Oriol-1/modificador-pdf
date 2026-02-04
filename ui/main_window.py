@@ -1072,9 +1072,17 @@ class MainWindow(QMainWindow):
         self.status_label.setText("Guardando...")
         QApplication.processEvents()
         
+        # CRÍTICO: Sincronizar todos los textos editables con los datos antes de comprometerse
+        print("\n=== INICIANDO GUARDADO ===")
+        if hasattr(self.pdf_viewer, 'sync_all_text_items_to_data'):
+            self.pdf_viewer.sync_all_text_items_to_data()
+        
         # IMPORTANTE: Escribir textos overlay pendientes al PDF antes de guardar
         if hasattr(self.pdf_viewer, 'commit_overlay_texts'):
-            self.pdf_viewer.commit_overlay_texts()
+            commit_result = self.pdf_viewer.commit_overlay_texts()
+            print(f"commit_overlay_texts resultado: {commit_result}")
+            if not commit_result:
+                print("⚠️ ADVERTENCIA: commit_overlay_texts retornó False")
         
         # Verificar si el archivo está en el workspace
         is_from_workspace = (self.original_file_path and 
@@ -1386,6 +1394,10 @@ class MainWindow(QMainWindow):
             self.status_label.setText("Guardando...")
             QApplication.processEvents()
             
+            # CRÍTICO: Sincronizar todos los textos editables con los datos antes de comprometerse
+            if hasattr(self.pdf_viewer, 'sync_all_text_items_to_data'):
+                self.pdf_viewer.sync_all_text_items_to_data()
+            
             # IMPORTANTE: Escribir textos overlay pendientes al PDF antes de guardar
             if hasattr(self.pdf_viewer, 'commit_overlay_texts'):
                 self.pdf_viewer.commit_overlay_texts()
@@ -1461,6 +1473,10 @@ class MainWindow(QMainWindow):
         """Deshace la última acción."""
         if self.pdf_doc.undo():
             current_page = self.pdf_viewer.current_page
+            # Los overlays se restauran automáticamente via callback en pdf_doc.undo()
+            # Solo necesitamos limpiar los items visuales para que se recreen
+            self.pdf_viewer.editable_text_items = []
+            self.pdf_viewer.selected_text_item = None
             self.pdf_viewer.render_page()
             self.thumbnail_panel.refresh_thumbnail(current_page)
             self.update_undo_redo_state()
@@ -1470,6 +1486,10 @@ class MainWindow(QMainWindow):
         """Rehace la última acción."""
         if self.pdf_doc.redo():
             current_page = self.pdf_viewer.current_page
+            # Los overlays se restauran automáticamente via callback en pdf_doc.redo()
+            # Solo necesitamos limpiar los items visuales para que se recreen
+            self.pdf_viewer.editable_text_items = []
+            self.pdf_viewer.selected_text_item = None
             self.pdf_viewer.render_page()
             self.thumbnail_panel.refresh_thumbnail(current_page)
             self.update_undo_redo_state()

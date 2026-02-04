@@ -5,9 +5,7 @@ Visor de páginas PDF con soporte para zoom, scroll y selección de texto.
 from PyQt5.QtWidgets import (
     QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
     QGraphicsRectItem, QMenu, QAction, QInputDialog, QMessageBox,
-    QGraphicsTextItem, QGraphicsDropShadowEffect, QToolTip,
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
-    QSpinBox, QCheckBox, QDialogButtonBox, QGroupBox
+    QToolTip, QDialog
 )
 from PyQt5.QtCore import Qt, QRectF, pyqtSignal, QPointF, QTimer, QRect
 from PyQt5.QtGui import (
@@ -16,242 +14,12 @@ from PyQt5.QtGui import (
 )
 import fitz
 
-
-class SelectionRect(QGraphicsRectItem):
-    """Rectángulo de selección visual mejorado."""
-    
-    def __init__(self, rect=QRectF(), mode='select'):
-        super().__init__(rect)
-        self.mode = mode
-        self.update_style()
-        self.setZValue(100)
-    
-    def update_style(self):
-        if self.mode == 'delete':
-            # Rojo para eliminación
-            self.setPen(QPen(QColor(255, 80, 80), 2, Qt.SolidLine))
-            self.setBrush(QBrush(QColor(255, 0, 0, 40)))
-        elif self.mode == 'highlight':
-            # Amarillo para resaltado
-            self.setPen(QPen(QColor(255, 200, 0), 2, Qt.SolidLine))
-            self.setBrush(QBrush(QColor(255, 255, 0, 60)))
-        else:
-            # Azul para selección normal
-            self.setPen(QPen(QColor(0, 120, 215), 2, Qt.DashLine))
-            self.setBrush(QBrush(QColor(0, 120, 215, 40)))
-    
-    def set_mode(self, mode):
-        self.mode = mode
-        self.update_style()
-
-
-class DeletePreviewRect(QGraphicsRectItem):
-    """Rectángulo de previsualización de borrado con animación."""
-    
-    def __init__(self, rect=QRectF()):
-        super().__init__(rect)
-        self.setPen(QPen(QColor(255, 50, 50), 3, Qt.SolidLine))
-        self.setBrush(QBrush(QColor(255, 0, 0, 80)))
-        self.setZValue(90)
-        
-        # Efecto de sombra
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(15)
-        shadow.setColor(QColor(255, 0, 0, 150))
-        shadow.setOffset(0, 0)
-        self.setGraphicsEffect(shadow)
-
-
-class FloatingLabel(QGraphicsTextItem):
-    """Etiqueta flotante para mostrar información."""
-    
-    def __init__(self, text="", parent=None):
-        super().__init__(text, parent)
-        self.setDefaultTextColor(QColor(255, 255, 255))
-        font = QFont("Segoe UI", 10, QFont.Bold)
-        self.setFont(font)
-        self.setZValue(200)
-    
-    def set_background(self, color):
-        pass  # Se maneja en paint
-
-
-class HighlightRect(QGraphicsRectItem):
-    """Rectángulo de resaltado."""
-    
-    def __init__(self, rect=QRectF(), color=QColor(255, 255, 0, 100)):
-        super().__init__(rect)
-        self.setPen(QPen(Qt.NoPen))
-        self.setBrush(QBrush(color))
-        self.setZValue(50)
-
-
-class TextEditDialog(QDialog):
-    """
-    Diálogo personalizado para editar texto con opciones de formato.
-    """
-    def __init__(self, text: str = "", font_size: int = 12, is_bold: bool = False, 
-                 title: str = "Editar texto", parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(title)
-        self.setMinimumWidth(400)
-        
-        layout = QVBoxLayout(self)
-        
-        # Grupo de texto
-        text_group = QGroupBox("Contenido")
-        text_layout = QVBoxLayout(text_group)
-        
-        self.text_edit = QLineEdit(text)
-        self.text_edit.setPlaceholderText("Escribe el texto aquí...")
-        self.text_edit.selectAll()
-        text_layout.addWidget(self.text_edit)
-        layout.addWidget(text_group)
-        
-        # Grupo de formato
-        format_group = QGroupBox("Formato")
-        format_layout = QHBoxLayout(format_group)
-        
-        # Tamaño de fuente
-        size_layout = QHBoxLayout()
-        size_label = QLabel("Tamaño:")
-        self.size_spin = QSpinBox()
-        self.size_spin.setRange(6, 72)
-        self.size_spin.setValue(int(font_size))
-        self.size_spin.setSuffix(" pt")
-        size_layout.addWidget(size_label)
-        size_layout.addWidget(self.size_spin)
-        format_layout.addLayout(size_layout)
-        
-        # Checkbox para negrita
-        self.bold_check = QCheckBox("Negrita")
-        self.bold_check.setChecked(is_bold)
-        format_layout.addWidget(self.bold_check)
-        
-        format_layout.addStretch()
-        layout.addWidget(format_group)
-        
-        # Botones
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-        
-        # Foco inicial en el texto
-        self.text_edit.setFocus()
-    
-    def get_values(self):
-        """Retorna los valores del diálogo."""
-        return {
-            'text': self.text_edit.text(),
-            'font_size': self.size_spin.value(),
-            'is_bold': self.bold_check.isChecked()
-        }
-
-
-class EditableTextItem(QGraphicsRectItem):
-    """
-    Representa un texto editable añadido al PDF.
-    Permite seleccionar, mover y editar el texto.
-    
-    Para PDFs de imagen: el texto se muestra visualmente como capa superpuesta
-    y solo se escribe al PDF cuando se "confirma" (al guardar o deseleccionar).
-    """
-    
-    def __init__(self, rect: QRectF, text: str, font_size: float = 12, 
-                 color: tuple = (0, 0, 0), page_num: int = 0, 
-                 font_name: str = "helv", is_bold: bool = False, parent=None):
-        super().__init__(rect, parent)
-        self.text = text
-        self.font_size = font_size
-        self.text_color = color
-        self.page_num = page_num
-        self.font_name = font_name  # Nombre de la fuente
-        self.is_bold = is_bold  # Si es negrita
-        self.pdf_rect = None  # Se establece después de añadir al PDF
-        
-        # NUEVO: Flags para manejo en PDFs de imagen
-        self.is_overlay = False  # True = solo visual, no escrito al PDF aún
-        self.pending_write = False  # True = necesita escribirse al PDF
-        
-        # Estado visual
-        self.is_selected = False
-        self.is_hovered = False
-        
-        # Configuración visual base (invisible hasta hover/select)
-        self._update_visual()
-        self.setZValue(150)
-        self.setAcceptHoverEvents(True)
-        self.setCursor(QCursor(Qt.PointingHandCursor))
-        
-        # Flags para interacción
-        self.setFlag(QGraphicsRectItem.ItemIsSelectable, True)
-        self.setFlag(QGraphicsRectItem.ItemIsMovable, True)
-        self.setFlag(QGraphicsRectItem.ItemSendsGeometryChanges, True)
-    
-    def _update_visual(self):
-        """Actualiza el estilo visual según el estado."""
-        if self.is_selected:
-            # Seleccionado: borde azul sólido
-            self.setPen(QPen(QColor(0, 120, 215), 2, Qt.SolidLine))
-            self.setBrush(QBrush(QColor(0, 120, 215, 30)))
-        elif self.is_hovered:
-            # Hover: borde azul punteado
-            self.setPen(QPen(QColor(0, 120, 215), 1, Qt.DashLine))
-            self.setBrush(QBrush(QColor(0, 120, 215, 15)))
-        else:
-            # Normal: invisible
-            self.setPen(QPen(Qt.NoPen))
-            self.setBrush(QBrush(Qt.NoBrush))
-    
-    def set_selected(self, selected: bool):
-        """Establece el estado de selección."""
-        self.is_selected = selected
-        self._update_visual()
-    
-    def hoverEnterEvent(self, event):
-        """Mouse entra en el área."""
-        self.is_hovered = True
-        self._update_visual()
-        super().hoverEnterEvent(event)
-    
-    def hoverLeaveEvent(self, event):
-        """Mouse sale del área."""
-        self.is_hovered = False
-        self._update_visual()
-        super().hoverLeaveEvent(event)
-    
-    def paint(self, painter, option, widget=None):
-        """Dibuja el item. Si es overlay, también dibuja el texto."""
-        # Primero dibujar el rectángulo base (bordes de selección)
-        super().paint(painter, option, widget)
-        
-        # Si es overlay, dibujar el texto visualmente
-        if self.is_overlay and self.text:
-            rect = self.rect()
-            
-            # NO dibujar fondo blanco - el texto original ya fue borrado del PDF
-            # (antes se dibujaba fondo si había original_pdf_rect, pero eso causaba problemas)
-            
-            # Configurar fuente - usar el tamaño original del texto
-            font = QFont("Helvetica", int(self.font_size))
-            if self.is_bold:
-                font.setBold(True)
-            painter.setFont(font)
-            
-            # Configurar color
-            r, g, b = self.text_color
-            # Convertir de 0-1 a 0-255 si es necesario
-            if max(r, g, b) <= 1:
-                r, g, b = int(r * 255), int(g * 255), int(b * 255)
-            painter.setPen(QColor(r, g, b))
-            
-            # Dibujar texto - usar TextDontClip para evitar recortes
-            # Y ajustar el rectángulo para que el texto quepa
-            text_flags = Qt.AlignLeft | Qt.AlignVCenter | Qt.TextDontClip
-            painter.drawText(rect, text_flags, self.text)
+# Importar elementos gráficos y utilidades desde módulos separados
+from .graphics_items import (
+    SelectionRect, DeletePreviewRect, FloatingLabel, HighlightRect,
+    TextEditDialog, EditableTextItem
+)
+from .coordinate_utils import CoordinateConverter
 
 
 class PDFPageView(QGraphicsView):
@@ -339,6 +107,9 @@ class PDFPageView(QGraphicsView):
         self.page_transform_matrix = None
         self.page_derotation_matrix = None
         
+        # Convertidor de coordenadas
+        self.coord_converter = CoordinateConverter(self.zoom_level, self.page_rotation)
+        
         # Items gráficos
         self.page_item = None
         self.selection_rect = None
@@ -380,6 +151,11 @@ class PDFPageView(QGraphicsView):
         
         self.pdf_doc = pdf_doc
         if pdf_doc and pdf_doc.is_open():
+            # Conectar callbacks para el sistema de undo con overlays
+            pdf_doc.set_overlay_callbacks(
+                self.get_overlay_state,
+                self.restore_overlay_state
+            )
             self.load_page(0)
     
     def clear_all_state(self):
@@ -404,6 +180,13 @@ class PDFPageView(QGraphicsView):
         self.highlight_items = []
         
         # Limpiar textos editables
+        self.clear_editable_texts_data()
+        
+        # Reiniciar página
+        self.current_page = 0
+    
+    def clear_editable_texts_data(self):
+        """Limpia los datos de textos editables (usado al hacer undo/redo)."""
         self.editable_texts_data = {}
         self.editable_text_items = []
         self.selected_text_item = None
@@ -411,9 +194,17 @@ class PDFPageView(QGraphicsView):
         self.drag_start_pos = None
         self.drag_original_rect = None
         self.text_was_moved = False
-        
-        # Reiniciar página
-        self.current_page = 0
+    
+    def get_overlay_state(self) -> dict:
+        """Obtiene una copia del estado actual de overlays para el sistema de undo."""
+        import copy
+        return copy.deepcopy(self.editable_texts_data)
+    
+    def restore_overlay_state(self, state: dict):
+        """Restaura el estado de overlays desde un snapshot del sistema de undo."""
+        import copy
+        self.editable_texts_data = copy.deepcopy(state) if state else {}
+        # Nota: los items visuales se recrearán al renderizar la página
     
     def load_page(self, page_num: int):
         """Carga y muestra una página específica."""
@@ -456,6 +247,9 @@ class PDFPageView(QGraphicsView):
             self.page_transform_matrix = None
             self.page_derotation_matrix = None
         
+        # Actualizar convertidor de coordenadas
+        self.coord_converter.update(zoom_level=self.zoom_level, page_rotation=self.page_rotation)
+        
         # Renderizar página
         pixmap = self.pdf_doc.render_page(self.current_page, self.zoom_level)
         if not pixmap:
@@ -464,16 +258,6 @@ class PDFPageView(QGraphicsView):
         # Guardar tamaño del pixmap para conversión de coordenadas
         self.pixmap_width = pixmap.width
         self.pixmap_height = pixmap.height
-        
-        # Debug información de página
-        print(f"=== Renderizando página ===")
-        print(f"PDF page rect: {self.pdf_page_width:.1f} x {self.pdf_page_height:.1f}")
-        print(f"Pixmap size: {self.pixmap_width} x {self.pixmap_height}")
-        print(f"Page rotation: {self.page_rotation}°")
-        if self.page_mediabox:
-            print(f"MediaBox: {self.page_mediabox}")
-        if self.page_cropbox:
-            print(f"CropBox: {self.page_cropbox}")
         
         # Convertir a QImage
         img = QImage(
@@ -587,6 +371,7 @@ class PDFPageView(QGraphicsView):
             return
         
         self.zoom_level = max(self.min_zoom, min(zoom, self.max_zoom))
+        self.coord_converter.update(zoom_level=self.zoom_level)
         self.render_page()
         self.zoomChanged.emit(self.zoom_level)
     
@@ -680,15 +465,9 @@ class PDFPageView(QGraphicsView):
         # Manejar arrastre de texto editable
         if self.dragging_text and self.selected_text_item and self.drag_start_pos:
             delta = scene_pos - self.drag_start_pos
-            current_rect = self.selected_text_item.rect()
-            new_rect = QRectF(
-                current_rect.x() + delta.x(),
-                current_rect.y() + delta.y(),
-                current_rect.width(),
-                current_rect.height()
-            )
-            print(f"Moviendo texto: delta=({delta.x():.1f}, {delta.y():.1f}), nuevo rect={new_rect}")
-            self.selected_text_item.setRect(new_rect)
+            # Mover el item usando setPos() en lugar de modificar el rect
+            new_pos = self.selected_text_item.pos() + delta
+            self.selected_text_item.setPos(new_pos)
             self.drag_start_pos = scene_pos
             self.text_was_moved = True  # Marcar que hubo movimiento real
             event.accept()
@@ -854,63 +633,28 @@ class PDFPageView(QGraphicsView):
     def view_to_pdf_rect(self, view_rect: QRectF) -> fitz.Rect:
         """
         Convierte un rectángulo de coordenadas de vista (pixmap) a coordenadas de PDF.
-        
-        IMPORTANTE: PyMuPDF maneja las coordenadas de página internamente considerando
-        la rotación. Las coordenadas de page.rect ya están en el sistema "visual".
-        Por lo tanto, solo necesitamos escalar por el zoom.
+        Usa CoordinateConverter internamente.
         """
-        # El pixmap es el PDF renderizado con zoom, así que dividimos por zoom
-        x0 = view_rect.x() / self.zoom_level
-        y0 = view_rect.y() / self.zoom_level
-        x1 = view_rect.right() / self.zoom_level
-        y1 = view_rect.bottom() / self.zoom_level
-        
-        # Debug info
-        print(f"=== Conversión de coordenadas ===")
-        print(f"View rect: ({view_rect.x():.1f}, {view_rect.y():.1f}) -> ({view_rect.right():.1f}, {view_rect.bottom():.1f})")
-        print(f"Zoom: {self.zoom_level}")
-        print(f"Rotación página: {self.page_rotation}°")
-        print(f"PDF rect (escalado): ({x0:.1f}, {y0:.1f}) -> ({x1:.1f}, {y1:.1f})")
-        
-        # Crear el rectángulo - PyMuPDF maneja la rotación internamente
-        pdf_rect = fitz.Rect(x0, y0, x1, y1)
-        
-        print(f"PDF rect final: {pdf_rect}")
-        return pdf_rect
+        return self.coord_converter.view_to_pdf_rect(view_rect, debug=True)
     
     def pdf_to_view_rect(self, pdf_rect: fitz.Rect) -> QRectF:
         """
         Convierte un rectángulo de coordenadas de PDF a coordenadas de vista.
-        Operación inversa a view_to_pdf_rect.
+        Usa CoordinateConverter internamente.
         """
-        # Simplemente aplicar el zoom
-        x0 = pdf_rect.x0 * self.zoom_level
-        y0 = pdf_rect.y0 * self.zoom_level
-        x1 = pdf_rect.x1 * self.zoom_level
-        y1 = pdf_rect.y1 * self.zoom_level
-        
-        return QRectF(x0, y0, x1 - x0, y1 - y0)
+        return self.coord_converter.pdf_to_view_rect(pdf_rect)
     
     def edit_selection(self, pdf_rect: fitz.Rect, blocks=None):
         """Edita o añade texto en el área seleccionada. Funciona para PDFs con texto e imágenes."""
-        print(f"=== EDIT_SELECTION INICIADO ===")
-        print(f"pdf_rect: {pdf_rect}")
-        print(f"blocks: {blocks}")
-        
         if not self.pdf_doc:
-            print("No hay pdf_doc, saliendo")
             self.clear_selection()
             return
         
         # Detectar tipo de PDF para mensajes contextuales
         is_image_pdf = self.pdf_doc.is_image_based_pdf()
-        print(f"is_image_pdf: {is_image_pdf}")
-        
         has_text = blocks and blocks[0].text.strip() if blocks else False
-        print(f"has_text: {has_text}")
         
         if has_text:
-            print(">>> FLUJO: Editar texto existente")
             # Hay texto existente - editar
             original_text = ' '.join([b.text for b in blocks])
             
@@ -922,14 +666,12 @@ class PDFPageView(QGraphicsView):
             )
             
             if ok and new_text.strip():
-                print(f">>> Texto editado: '{new_text}'")
                 block = blocks[0]
                 font_size = block.font_size or 12
                 color = block.color or (0, 0, 0)
                 
                 if is_image_pdf:
                     # PDF de imagen: NO modificar directamente, usar OVERLAY
-                    print(">>> PDF de imagen: usando sistema de overlay")
                     view_rect = self.pdf_to_view_rect(pdf_rect)
                     text_item = self._add_editable_text(
                         view_rect,
@@ -943,17 +685,14 @@ class PDFPageView(QGraphicsView):
                         text_item.is_overlay = True
                         text_item.pending_write = True
                         self._update_text_data(text_item)
-                        print(f">>> Overlay creado: '{new_text}'")
                     self.documentModified.emit()
                 else:
                     # PDF normal: editar directamente
                     # Guardar snapshot UNA SOLA VEZ antes de ambas operaciones
                     self.pdf_doc._save_snapshot()
                     # Borrar el texto original SIN guardar snapshot adicional
-                    print(">>> Borrando área...")
                     self.pdf_doc.erase_text_transparent(self.current_page, pdf_rect, save_snapshot=False)
                     # Añadir nuevo texto SIN guardar snapshot adicional
-                    print(f">>> Añadiendo texto con font_size={font_size}...")
                     success = self.pdf_doc.add_text_to_page(
                         self.current_page,
                         pdf_rect,
@@ -962,7 +701,6 @@ class PDFPageView(QGraphicsView):
                         color=color,
                         save_snapshot=False
                     )
-                    print(f">>> add_text_to_page retornó: {success}")
                     if success:
                         # Registrar el texto como editable para poder moverlo
                         # IMPORTANTE: is_from_pdf=True porque el texto YA está en el PDF
@@ -978,7 +716,6 @@ class PDFPageView(QGraphicsView):
                         self.render_page()
                         self.documentModified.emit()
         else:
-            print(">>> FLUJO: Añadir texto nuevo (no hay texto)")
             # No hay texto - añadir texto nuevo en el área seleccionada
             # Mensaje contextual según tipo de PDF
             if is_image_pdf:
@@ -996,12 +733,9 @@ class PDFPageView(QGraphicsView):
             )
             
             if ok and new_text.strip():
-                print(f"=== EDIT_SELECTION: Texto ingresado: '{new_text}' ===")
-                
                 if is_image_pdf:
                     # PDF de imagen: crear texto como OVERLAY (capa visual independiente)
                     # NO se escribe al PDF hasta que se guarde o se confirme
-                    print("Es PDF de imagen, creando texto como overlay...")
                     view_rect = self.pdf_to_view_rect(pdf_rect)
                     text_item = self._add_editable_text(
                         view_rect, 
@@ -1017,11 +751,9 @@ class PDFPageView(QGraphicsView):
                         text_item.pending_write = True
                         # IMPORTANTE: Actualizar los datos guardados con los flags de overlay
                         self._update_text_data(text_item)
-                        print(f"Texto overlay creado y datos actualizados: '{new_text}'")
                     self.documentModified.emit()
                 else:
                     # PDF normal - añadir texto directamente al PDF
-                    print("PDF normal, añadiendo texto directamente...")
                     success = self.pdf_doc.add_text_to_page(
                         self.current_page,
                         pdf_rect,
@@ -1030,7 +762,6 @@ class PDFPageView(QGraphicsView):
                         color=(0, 0, 0),
                         save_snapshot=True
                     )
-                    print(f"add_text_to_page retornó: {success}")
                     
                     if success:
                         # Registrar el texto como editable
@@ -1165,11 +896,9 @@ class PDFPageView(QGraphicsView):
                 # Verificar que el item aún es válido
                 try:
                     if text_item and text_item in self.editable_text_items:
-                        print(f"delete_selection: eliminando texto editable '{text_item.text}'")
                         self._delete_text_item(text_item, is_empty=False, skip_render=True)
                 except RuntimeError:
                     # El objeto ya fue eliminado, continuar
-                    print(f"delete_selection: item ya eliminado, saltando")
                     continue
             
             # Luego borrar el área del PDF (para texto del PDF o imágenes)
@@ -1258,29 +987,38 @@ class PDFPageView(QGraphicsView):
         # El efecto visual se logra con el re-render de la página
     
     def handle_edit_click(self, scene_pos: QPointF):
-        """Maneja un click en modo edición - permite añadir texto en cualquier posición."""
-        print(f"=== handle_edit_click ===")
+        """Maneja un click en modo edición - permite añadir texto en cualquier posición.
+        
+        Para PDFs de imagen, funciona igual que para PDFs editables:
+        1. Primero busca textos overlay/editables existentes (añadidos por el usuario)
+        2. Si no hay overlay, busca texto del PDF (si existe)
+        3. Si no hay nada, permite añadir texto nuevo
+        """
         if not self.pdf_doc:
-            print("  No hay pdf_doc")
+            return
+        
+        # PRIMERO: Buscar en textos editables/overlay existentes
+        # Esto es crucial para PDFs de imagen donde el usuario ya añadió texto
+        existing_editable = self._find_text_at_position(scene_pos)
+        if existing_editable:
+            # Ya existe un texto editable aquí - editarlo con _edit_text_content
+            self._select_text_item(existing_editable)
+            self._edit_text_content(existing_editable)
             return
         
         # Convertir a coordenadas PDF
         pdf_x = scene_pos.x() / self.zoom_level
         pdf_y = scene_pos.y() / self.zoom_level
         pdf_point = (pdf_x, pdf_y)
-        print(f"  Punto PDF: ({pdf_x:.1f}, {pdf_y:.1f})")
         
-        # Buscar texto en esa posición
+        # SEGUNDO: Buscar texto del PDF (solo funciona si el PDF tiene texto real)
         block = self.pdf_doc.find_text_at_point(self.current_page, pdf_point)
-        print(f"  Block encontrado: {block}")
         
         if block:
             # Hay texto existente - mostrar diálogo de edición
-            print(f"  Texto existente: '{block.text}'")
             
             # Detectar si es PDF de imagen
             is_image_pdf = self.pdf_doc.is_image_based_pdf()
-            print(f"  Es PDF de imagen: {is_image_pdf}")
             
             new_text, ok = QInputDialog.getText(
                 self,
@@ -1289,12 +1027,10 @@ class PDFPageView(QGraphicsView):
                 text=block.text
             )
             
-            print(f"  Diálogo: ok={ok}, new_text='{new_text}'")
             if ok and new_text != block.text:
                 if is_image_pdf:
                     # PDF de imagen: NO modificar el PDF directamente
                     # Crear un overlay que tape el texto original y muestre el nuevo
-                    print(f"  PDF de imagen: creando overlay para edición...")
                     view_rect = self.pdf_to_view_rect(block.rect)
                     text_item = self._add_editable_text(
                         view_rect,
@@ -1309,11 +1045,9 @@ class PDFPageView(QGraphicsView):
                         text_item.is_overlay = True
                         text_item.pending_write = True
                         self._update_text_data(text_item)
-                        print(f"  Texto overlay creado: '{new_text}'")
                     self.documentModified.emit()
                 else:
                     # PDF normal: editar directamente
-                    print(f"  Llamando edit_text...")
                     result = self.pdf_doc.edit_text(
                         self.current_page,
                         block.rect,
@@ -1322,11 +1056,9 @@ class PDFPageView(QGraphicsView):
                         block.font_size,
                         block.color
                     )
-                    print(f"  edit_text retornó: {result}")
                     if result:
                         # Registrar el texto como editable para poder moverlo
                         view_rect = self.pdf_to_view_rect(block.rect)
-                        print(f"  Llamando _add_editable_text...")
                         self._add_editable_text(
                             view_rect,
                             new_text,
@@ -1334,12 +1066,10 @@ class PDFPageView(QGraphicsView):
                             color=block.color or (0, 0, 0),
                             pdf_rect=block.rect
                         )
-                        print(f"  Datos guardados: {len(self.editable_texts_data.get(self.current_page, []))} textos")
                         self.render_page()
                         self.documentModified.emit()
         else:
             # No hay texto - crear texto nuevo en esta posición
-            print(f"  No hay texto, mostrando diálogo para añadir nuevo")
             new_text, ok = QInputDialog.getText(
                 self,
                 'Añadir texto',
@@ -1347,19 +1077,26 @@ class PDFPageView(QGraphicsView):
                 text=""
             )
             
-            print(f"  Diálogo: ok={ok}, new_text='{new_text}'")
             if ok and new_text.strip():
-                # Crear un rectángulo pequeño en la posición del click
-                rect = fitz.Rect(pdf_x, pdf_y - 15, pdf_x + len(new_text) * 8, pdf_y + 5)
+                # Crear un rectángulo con tamaño CORRECTO basado en QFontMetrics
+                # CRÍTICO: Para PDFs de imagen, el tamaño debe ser exacto o habrá fragmentación
+                view_pos = scene_pos  # Posición en vista donde hacer clic
+                view_rect = self._calculate_text_rect_for_view(
+                    new_text,
+                    font_size=12,
+                    is_bold=False,
+                    base_position=view_pos
+                )
+                
+                # Convertir a coordenadas PDF
+                rect = self.view_to_pdf_rect(view_rect)
                 
                 # Detectar si es PDF de imagen
                 is_image_pdf = self.pdf_doc.is_image_based_pdf()
-                print(f"  Es PDF de imagen: {is_image_pdf}")
                 
                 if is_image_pdf:
                     # PDF de imagen: crear texto como OVERLAY (capa visual)
                     # NO escribir al PDF hasta que se guarde
-                    print(f"  Creando texto como overlay...")
                     view_rect = self.pdf_to_view_rect(rect)
                     text_item = self._add_editable_text(
                         view_rect,
@@ -1374,11 +1111,9 @@ class PDFPageView(QGraphicsView):
                         text_item.is_overlay = True
                         text_item.pending_write = True
                         self._update_text_data(text_item)
-                        print(f"  Texto overlay creado: '{new_text}'")
                     self.documentModified.emit()
                 else:
                     # PDF normal: escribir directamente al PDF
-                    print(f"  Llamando add_text_to_page con rect={rect}")
                     result = self.pdf_doc.add_text_to_page(
                         self.current_page,
                         rect,
@@ -1386,12 +1121,10 @@ class PDFPageView(QGraphicsView):
                         font_size=12,
                         color=(0, 0, 0)
                     )
-                    print(f"  add_text_to_page retornó: {result}")
                     if result:
                         # Registrar el texto como editable para poder moverlo
                         # IMPORTANTE: is_from_pdf=True porque el texto YA está en el PDF
                         view_rect = self.pdf_to_view_rect(rect)
-                        print(f"  Llamando _add_editable_text...")
                         self._add_editable_text(
                             view_rect,
                             new_text,
@@ -1400,7 +1133,6 @@ class PDFPageView(QGraphicsView):
                             pdf_rect=rect,
                             is_from_pdf=True  # El texto ya existe en el PDF
                         )
-                        print(f"  Datos guardados: {len(self.editable_texts_data.get(self.current_page, []))} textos")
                         self.render_page()
                         self.documentModified.emit()
     
@@ -1413,20 +1145,17 @@ class PDFPageView(QGraphicsView):
         pdf_x = scene_pos.x() / self.zoom_level
         pdf_y = scene_pos.y() / self.zoom_level
         
-        print(f"handle_highlight_click - Punto visual: ({pdf_x:.1f}, {pdf_y:.1f})")
         
         # Transformar el punto a coordenadas internas
         visual_rect = fitz.Rect(pdf_x, pdf_y, pdf_x + 1, pdf_y + 1)
         transformed_rect = self.pdf_doc.transform_rect_for_page(self.current_page, visual_rect, from_visual=True)
         internal_point = (transformed_rect.x0, transformed_rect.y0)
         
-        print(f"handle_highlight_click - Punto interno: {internal_point}")
         
         # Buscar highlight en esa posición
         found_highlights = self.pdf_doc.get_highlights_at_point(self.current_page, internal_point)
         
         if found_highlights:
-            print(f"handle_highlight_click - ¡Encontrado highlight!")
             # Hay un resaltado - preguntar si quiere eliminarlo
             msg = QMessageBox(self)
             msg.setWindowTitle('Eliminar resaltado')
@@ -1571,7 +1300,6 @@ class PDFPageView(QGraphicsView):
                     
                     if is_image_pdf:
                         # PDF de imagen: usar overlay
-                        print("context_edit: PDF de imagen - usando overlay")
                         view_rect = self.pdf_to_view_rect(pdf_rect)
                         text_item = self._add_editable_text(
                             view_rect,
@@ -1629,7 +1357,6 @@ class PDFPageView(QGraphicsView):
                 if ok and new_text.strip():
                     if is_image_pdf:
                         # PDF de imagen: usar overlay
-                        print("context_edit: añadir texto - PDF de imagen - usando overlay")
                         view_rect = self.pdf_to_view_rect(pdf_rect)
                         text_item = self._add_editable_text(
                             view_rect,
@@ -1688,20 +1415,14 @@ class PDFPageView(QGraphicsView):
     
     def _find_text_at_position(self, scene_pos: QPointF):
         """Busca un texto editable en la posición dada, ignorando textos vacíos."""
-        print(f"_find_text_at_position: buscando en {scene_pos}")
-        print(f"  Textos editables en lista: {len(self.editable_text_items)}")
         for i, text_item in enumerate(self.editable_text_items):
             # Ignorar textos vacíos
             if not text_item.text or not text_item.text.strip():
-                print(f"  Item {i}: ignorado (texto vacío)")
                 continue
             # Usar sceneBoundingRect() para obtener el rect en coordenadas de escena
             scene_rect = text_item.sceneBoundingRect()
-            print(f"  Item {i}: scene_rect={scene_rect}, text='{text_item.text}'")
             if scene_rect.contains(scene_pos):
-                print(f"  ¡Encontrado!")
                 return text_item
-        print(f"  No encontrado en lista de editables")
         return None
     
     def _find_pdf_text_at_position(self, scene_pos: QPointF):
@@ -1714,16 +1435,13 @@ class PDFPageView(QGraphicsView):
         pdf_y = scene_pos.y() / self.zoom_level
         pdf_point = (pdf_x, pdf_y)
         
-        print(f"_find_pdf_text_at_position: buscando en PDF punto ({pdf_x:.1f}, {pdf_y:.1f})")
         
         # Buscar texto en esa posición usando find_text_at_point
         block = self.pdf_doc.find_text_at_point(self.current_page, pdf_point)
         
         if block:
-            print(f"  Encontrado texto del PDF: '{block.text}'")
             return block
         
-        print(f"  No hay texto del PDF en esa posición")
         return None
     
     def _convert_pdf_text_to_editable(self, block):
@@ -1742,10 +1460,8 @@ class PDFPageView(QGraphicsView):
         
         # No convertir textos vacíos
         if not block.text or not block.text.strip():
-            print(f"_convert_pdf_text_to_editable: ignorando texto vacío")
             return None
         
-        print(f"_convert_pdf_text_to_editable: convirtiendo '{block.text}'")
         
         # Obtener el rectángulo del texto (coordenadas visuales para la vista)
         # Expandir ligeramente el rect para asegurar que capture todo el texto
@@ -1763,8 +1479,6 @@ class PDFPageView(QGraphicsView):
         # IMPORTANTE: Usar el rect original (sin expandir) para el borrado
         internal_rect = getattr(block, 'internal_rect', pdf_rect)
         
-        print(f"  pdf_rect (visual): {pdf_rect}")
-        print(f"  internal_rect (para borrado): {internal_rect}")
         
         # Detectar si el texto original es negrita basándose en el nombre de fuente
         # Las fuentes bold suelen tener "Bold", "bold", "Heavy", "Black" en el nombre
@@ -1776,7 +1490,6 @@ class PDFPageView(QGraphicsView):
         if flags & (1 << 4):  # Bit 4 = superscript/bold indicator
             is_bold = True
         
-        print(f"  font_name: {font_name}, is_bold detectado: {is_bold}")
         
         # Crear el texto editable (el texto original del PDF permanece intacto)
         # Se borrará solo cuando se confirme un movimiento o edición
@@ -1817,6 +1530,50 @@ class PDFPageView(QGraphicsView):
             self.selected_text_item.set_selected(False)
             self.selected_text_item = None
     
+    def _calculate_text_rect_for_view(self, text: str, font_size: float = 12, 
+                                      is_bold: bool = False, base_position: QPointF = None) -> QRectF:
+        """Calcula el rect exacto necesario para mostrar texto basado en QFontMetrics.
+        
+        CRÍTICO para PDFs de imagen: asegura que el rect sea lo suficientemente grande
+        para contener COMPLETAMENTE el texto sin fragmentación.
+        
+        Args:
+            text: Contenido del texto
+            font_size: Tamaño de fuente en puntos
+            is_bold: Si es negrita
+            base_position: Posición superior-izquierda del rect (en coordenadas de vista)
+                          Si None, usa (0, 0)
+        
+        Returns:
+            QRectF con el tamaño exacto necesario
+        """
+        if not text or not text.strip():
+            return QRectF(0, 0, 0, 0)
+        
+        # Crear fuente con los parámetros especificados
+        font = QFont("Helvetica", int(font_size))
+        if is_bold:
+            font.setBold(True)
+        
+        # Obtener métricas exactas
+        metrics = QFontMetrics(font)
+        
+        # Calcular ancho: horizontalAdvance da el ancho exacto del texto
+        text_width = metrics.horizontalAdvance(text)
+        # Agregar padding para márgenes seguros
+        total_width = text_width + 6
+        
+        # Calcular alto: height da la altura de línea
+        text_height = metrics.height()
+        # Agregar padding para márgenes seguros
+        total_height = text_height + 4
+        
+        # Usar posición base o (0, 0)
+        if base_position is None:
+            base_position = QPointF(0, 0)
+        
+        return QRectF(base_position.x(), base_position.y(), total_width, total_height)
+    
     def _add_editable_text(self, view_rect: QRectF, text: str, font_size: float = 12, 
                            color: tuple = (0, 0, 0), pdf_rect=None, is_from_pdf: bool = False,
                            font_name: str = "helv", is_bold: bool = False):
@@ -1835,15 +1592,7 @@ class PDFPageView(QGraphicsView):
         """
         # NO agregar textos vacíos
         if not text or not text.strip():
-            print(f"_add_editable_text: ignorando texto vacío")
             return None
-        
-        print(f"=== _add_editable_text ===")
-        print(f"  view_rect: {view_rect}")
-        print(f"  text: '{text}'")
-        print(f"  pdf_rect: {pdf_rect}")
-        print(f"  is_from_pdf: {is_from_pdf}")
-        print(f"  font_name: {font_name}, is_bold: {is_bold}")
         
         # Guardar los datos del texto (no el objeto gráfico)
         text_data = {
@@ -1869,7 +1618,6 @@ class PDFPageView(QGraphicsView):
         self.editable_text_items.append(text_item)
         self.scene.addItem(text_item)
         
-        print(f"  Datos guardados: {len(self.editable_texts_data.get(self.current_page, []))} textos")
         
         return text_item
     
@@ -1916,7 +1664,6 @@ class PDFPageView(QGraphicsView):
             
             # Si el texto está vacío, ELIMINAR el texto del PDF y el item
             if not new_text:
-                print("_edit_text_content: texto vacío, eliminando del PDF")
                 self._remove_empty_text_item(text_item)
                 self.documentModified.emit()
                 return
@@ -1927,13 +1674,8 @@ class PDFPageView(QGraphicsView):
             bold_changed = new_is_bold != current_is_bold
             
             if not (text_changed or size_changed or bold_changed):
-                print("_edit_text_content: sin cambios, ignorando")
                 return
             
-            print(f"_edit_text_content: aplicando cambios")
-            print(f"  Texto: '{text_item.text}' -> '{new_text}'")
-            print(f"  Tamaño: {text_item.font_size} -> {new_font_size} (size_changed={size_changed})")
-            print(f"  Negrita: {current_is_bold} -> {new_is_bold}")
             
             # Actualizar propiedades del item
             old_text = text_item.text
@@ -1959,14 +1701,23 @@ class PDFPageView(QGraphicsView):
             current_scene_rect = text_item.sceneBoundingRect()
             current_pdf_rect = text_item.pdf_rect
             
+            # Determinar si es overlay ANTES de calcular el rect
+            is_overlay_now = getattr(text_item, 'is_overlay', False)
+            
             if current_pdf_rect:
                 # Obtener posición actual en coordenadas de vista
                 current_view_rect = self.pdf_to_view_rect(current_pdf_rect)
                 
-                # El rectángulo debe ser al menos tan grande como lo que necesita Qt
-                # Usar el máximo entre el tamaño actual y el mínimo requerido
-                new_view_width = max(current_view_rect.width(), min_text_width)
-                new_view_height = max(current_view_rect.height(), min_text_height)
+                # CRÍTICO: Para overlays (PDFs de imagen), SIEMPRE usar el tamaño mínimo
+                # Para evitar fragmentación al arrastrar
+                if is_overlay_now:
+                    # Overlay: usar EXACTAMENTE el tamaño necesario
+                    new_view_width = min_text_width
+                    new_view_height = min_text_height
+                else:
+                    # Editable normal: usar el máximo entre actual y mínimo requerido
+                    new_view_width = max(current_view_rect.width(), min_text_width)
+                    new_view_height = max(current_view_rect.height(), min_text_height)
                 
                 new_view_rect = QRectF(
                     current_view_rect.x(),
@@ -1978,8 +1729,6 @@ class PDFPageView(QGraphicsView):
                 # Convertir a PDF rect
                 new_pdf_rect = self.view_to_pdf_rect(new_view_rect)
                 
-                print(f"  Tamaño Qt mínimo: {min_text_width:.1f}x{min_text_height:.1f}")
-                print(f"  Tamaño view final: {new_view_width:.1f}x{new_view_height:.1f}")
             else:
                 # Si no hay pdf_rect, crear uno nuevo
                 new_view_rect = QRectF(
@@ -1994,18 +1743,15 @@ class PDFPageView(QGraphicsView):
             text_item.setRect(QRectF(0, 0, new_view_rect.width(), new_view_rect.height()))
             text_item.setPos(new_view_rect.x(), new_view_rect.y())
             
-            print(f"  pdf_rect final: {new_pdf_rect}")
             
             # SISTEMA UNIFICADO: SIEMPRE usar overlay para ediciones
             # El texto solo se escribe al PDF cuando se GUARDA el documento
             # Esto evita duplicación y cambios de formato
             
             needs_erase = getattr(text_item, 'needs_erase', False)
-            is_overlay = getattr(text_item, 'is_overlay', False)
             
             # Si el texto viene del PDF original y nunca fue modificado, borrar el original
-            if needs_erase and not is_overlay:
-                print("_edit_text_content: Borrando texto original del PDF")
+            if needs_erase and not is_overlay_now:
                 
                 internal_pdf_rect = getattr(text_item, 'internal_pdf_rect', None)
                 original_pdf_rect = getattr(text_item, 'original_pdf_rect', None)
@@ -2028,12 +1774,10 @@ class PDFPageView(QGraphicsView):
                         save_snapshot=False,
                         already_internal=already_internal
                     )
-                    print(f"  Texto original borrado en: {rect_to_erase}")
             
             # Convertir a overlay (si no lo era)
-            if not is_overlay:
+            if not is_overlay_now:
                 text_item.is_overlay = True
-                print("_edit_text_content: Convertido a overlay")
             
             # Actualizar propiedades
             text_item.pending_write = True
@@ -2044,7 +1788,7 @@ class PDFPageView(QGraphicsView):
             self._update_text_data(text_item)
             
             # Re-renderizar para mostrar el PDF actualizado (sin el texto original)
-            if needs_erase and not is_overlay:
+            if needs_erase and not is_overlay_now:
                 self.render_page()
             else:
                 # Solo forzar repintado del item
@@ -2065,12 +1809,10 @@ class PDFPageView(QGraphicsView):
         2. Borrar contenido de otros textos al mover
         """
         if not text_item or not self.pdf_doc:
-            print("_update_text_in_pdf: faltan datos necesarios")
             return
         
         # IMPORTANTE: No procesar textos vacíos
         if not text_item.text or not text_item.text.strip():
-            print("_update_text_in_pdf: ignorando texto vacío")
             self._remove_empty_text_item(text_item)
             return
         
@@ -2082,14 +1824,9 @@ class PDFPageView(QGraphicsView):
         is_overlay = getattr(text_item, 'is_overlay', False)
         needs_erase = getattr(text_item, 'needs_erase', False)
         
-        print(f"=== _update_text_in_pdf ===")
-        print(f"  Texto: '{text_item.text}'")
-        print(f"  is_overlay: {is_overlay}, needs_erase: {needs_erase}")
-        print(f"  Nueva posición PDF calculada: {new_pdf_rect}")
         
         # CASO 1: Ya es un overlay - solo actualizar posición, MANTENER tamaño
         if is_overlay:
-            print(f"  -> OVERLAY: solo actualización de posición (manteniendo tamaño)")
             
             # Mantener el tamaño original, solo cambiar la posición
             old_pdf_rect = text_item.pdf_rect
@@ -2102,7 +1839,6 @@ class PDFPageView(QGraphicsView):
                     new_pdf_rect.y0 + old_pdf_rect.height
                 )
                 text_item.pdf_rect = updated_pdf_rect
-                print(f"  pdf_rect actualizado (tamaño preservado): {updated_pdf_rect}")
             else:
                 text_item.pdf_rect = new_pdf_rect
             
@@ -2114,7 +1850,6 @@ class PDFPageView(QGraphicsView):
         
         # CASO 2: Primera vez que se mueve (viene del PDF y needs_erase=True)
         if needs_erase:
-            print(f"  -> PRIMER MOVIMIENTO: borrar original del PDF y convertir a overlay")
             
             # Obtener el rect correcto para borrar
             internal_pdf_rect = getattr(text_item, 'internal_pdf_rect', None)
@@ -2123,11 +1858,9 @@ class PDFPageView(QGraphicsView):
             if internal_pdf_rect:
                 rect_to_erase = internal_pdf_rect
                 already_internal = True
-                print(f"     Usando internal_pdf_rect: {rect_to_erase}")
             elif original_pdf_rect:
                 rect_to_erase = original_pdf_rect
                 already_internal = False
-                print(f"     Usando original_pdf_rect: {rect_to_erase}")
             else:
                 print(f"     ERROR: No hay rect para borrar")
                 return
@@ -2166,7 +1899,6 @@ class PDFPageView(QGraphicsView):
             return
         
         # CASO 3: Texto que no es overlay ni necesita borrar (no debería pasar)
-        print(f"  -> CASO INESPERADO: convirtiendo a overlay")
         text_item.is_overlay = True
         text_item.pending_write = True
         text_item.pdf_rect = new_pdf_rect
@@ -2185,9 +1917,6 @@ class PDFPageView(QGraphicsView):
             is_empty: True si se está eliminando porque el texto está vacío
             skip_render: Si True, no re-renderiza la página (útil para eliminación múltiple)
         """
-        print(f"_delete_text_item: eliminando item {'vacío' if is_empty else 'seleccionado'}")
-        print(f"  Texto: '{text_item.text}'")
-        
         # IMPORTANTE: Si el item viene del PDF y necesita borrado, borrar el texto original PRIMERO
         needs_erase = getattr(text_item, 'needs_erase', False)
         original_pdf_rect = getattr(text_item, 'original_pdf_rect', None)
@@ -2198,7 +1927,6 @@ class PDFPageView(QGraphicsView):
         if needs_erase and not is_overlay:
             rect_to_erase = internal_pdf_rect or original_pdf_rect
             if rect_to_erase:
-                print(f"  Borrando texto original del PDF en: {rect_to_erase}")
                 try:
                     if self.pdf_doc:
                         self.pdf_doc._save_snapshot()
@@ -2208,7 +1936,6 @@ class PDFPageView(QGraphicsView):
                             save_snapshot=False,
                             already_internal=bool(internal_pdf_rect)
                         )
-                        print(f"  Texto original borrado exitosamente")
                 except Exception as e:
                     print(f"  Error al borrar texto original: {e}")
         
@@ -2230,7 +1957,6 @@ class PDFPageView(QGraphicsView):
             for i, item in enumerate(self.editable_text_items):
                 if hasattr(item, 'data_index') and item.data_index > data_index:
                     item.data_index -= 1
-            print(f"  Eliminado registro en índice {data_index}")
         
         # Deseleccionar si estaba seleccionado
         if self.selected_text_item == text_item:
@@ -2327,7 +2053,6 @@ class PDFPageView(QGraphicsView):
         """)
         
         if msg.exec_() == QMessageBox.Yes:
-            print(f"_delete_text_item_with_confirmation: eliminando '{text_item.text}'")
             self._delete_text_item(text_item, is_empty=False)
 
     def _update_text_data(self, text_item: EditableTextItem):
@@ -2374,7 +2099,6 @@ class PDFPageView(QGraphicsView):
             data['internal_pdf_rect'] = getattr(text_item, 'internal_pdf_rect', None)
             data['is_overlay'] = getattr(text_item, 'is_overlay', False)
             data['pending_write'] = getattr(text_item, 'pending_write', False)
-            print(f"_update_text_data: actualizado índice {data_index} -> '{text_item.text}'")
             return
         
         # Fallback: buscar por posición PDF si no hay índice válido
@@ -2397,10 +2121,7 @@ class PDFPageView(QGraphicsView):
                 data['is_overlay'] = getattr(text_item, 'is_overlay', False)
                 data['pending_write'] = getattr(text_item, 'pending_write', False)
                 text_item.data_index = i  # Actualizar el índice para futuras operaciones
-                print(f"_update_text_data: encontrado por posición, índice {i}")
                 return
-        
-        print(f"_update_text_data: ADVERTENCIA - no se encontró el registro para '{text_item.text}'")
     
     def _clean_empty_texts(self, page_num: int = None):
         """
@@ -2418,8 +2139,7 @@ class PDFPageView(QGraphicsView):
                     if data.get('text') and data.get('text').strip()
                 ]
                 removed = original_count - len(self.editable_texts_data[page_num])
-                if removed > 0:
-                    print(f"_clean_empty_texts: eliminados {removed} textos vacíos de página {page_num}")
+                # Textos vacíos eliminados silenciosamente
         else:
             # Limpiar todas las páginas
             for pnum in list(self.editable_texts_data.keys()):
@@ -2436,15 +2156,11 @@ class PDFPageView(QGraphicsView):
         
         # Recrear los items gráficos desde los datos guardados
         page_data = self.editable_texts_data.get(self.current_page, [])
-        print(f"=== _restore_editable_texts_for_page ===")
-        print(f"  Página: {self.current_page}")
-        print(f"  Datos guardados: {len(page_data)} textos")
         
         for i, text_data in enumerate(page_data):
             # Doble verificación: ignorar textos vacíos
             text_content = text_data.get('text', '')
             if not text_content or not text_content.strip():
-                print(f"  Ignorando texto vacío en índice {i}")
                 continue
             
             is_overlay = text_data.get('is_overlay', False)
@@ -2459,7 +2175,6 @@ class PDFPageView(QGraphicsView):
             if is_overlay and saved_view_rect and isinstance(saved_view_rect, QRectF):
                 # Usar el view_rect guardado directamente
                 view_rect = saved_view_rect
-                print(f"  Usando view_rect guardado para overlay: {view_rect}")
             elif text_data.get('pdf_rect'):
                 # Obtener posición desde pdf_rect
                 base_view_rect = self.pdf_to_view_rect(text_data['pdf_rect'])
@@ -2473,13 +2188,13 @@ class PDFPageView(QGraphicsView):
                     text_width = metrics.horizontalAdvance(text_content) + 10  # padding
                     text_height = metrics.height() + 4  # padding
                     
-                    # Usar la posición del PDF pero el tamaño calculado por Qt
-                    # Asegurar que el rectángulo sea al menos tan grande como el calculado por Qt
+                    # Para overlays: SIEMPRE usar EXACTAMENTE el tamaño calculado por Qt
+                    # No usar max() porque eso puede causar fragmentación
                     view_rect = QRectF(
                         base_view_rect.x(),
                         base_view_rect.y(),
-                        max(base_view_rect.width(), text_width),
-                        max(base_view_rect.height(), text_height)
+                        text_width,
+                        text_height
                     )
                 else:
                     view_rect = base_view_rect
@@ -2487,10 +2202,6 @@ class PDFPageView(QGraphicsView):
                 text_data['view_rect'] = view_rect
             else:
                 view_rect = saved_view_rect if saved_view_rect else QRectF(0, 0, 100, 20)
-            
-            print(f"  Restaurando texto {i}: '{text_data['text']}' en {view_rect}")
-            print(f"    needs_erase: {text_data.get('needs_erase', False)}, is_overlay: {is_overlay}")
-            print(f"    font_size: {font_size}, is_bold: {is_bold}")
             
             text_item = EditableTextItem(
                 view_rect,
@@ -2512,8 +2223,6 @@ class PDFPageView(QGraphicsView):
             
             self.editable_text_items.append(text_item)
             self.scene.addItem(text_item)
-        
-        print(f"  Items en lista después de restaurar: {len(self.editable_text_items)}")
     
     def commit_overlay_texts(self) -> bool:
         """
@@ -2526,19 +2235,23 @@ class PDFPageView(QGraphicsView):
         Returns:
             True si todos los textos se escribieron correctamente
         """
+        print("\n=== COMMIT OVERLAY TEXTS ===")
+        
         if not self.pdf_doc:
+            print("No hay pdf_doc, retornando True")
             return True
         
-        print("=== commit_overlay_texts ===")
         success_count = 0
         error_count = 0
+        total_processed = 0
         
         # Recorrer todas las páginas con textos
         for page_num, page_texts in self.editable_texts_data.items():
             for text_data in page_texts:
                 # Solo procesar textos overlay pendientes
                 if text_data.get('is_overlay') and text_data.get('pending_write'):
-                    print(f"  Procesando overlay: '{text_data['text']}' en página {page_num}")
+                    total_processed += 1
+                    print(f"\nProcesando overlay en página {page_num}: '{text_data.get('text', '')[:30]}'...")
                     
                     pdf_rect = text_data.get('pdf_rect')
                     if not pdf_rect:
@@ -2549,7 +2262,6 @@ class PDFPageView(QGraphicsView):
                     # Si el texto fue movido desde otra posición, cubrir la posición original
                     original_rect = text_data.get('original_pdf_rect')
                     if original_rect:
-                        print(f"    Cubriendo posición original: {original_rect}")
                         # Usar redacción para cubrir el texto original
                         try:
                             self.pdf_doc.erase_text_transparent(
@@ -2557,6 +2269,7 @@ class PDFPageView(QGraphicsView):
                                 original_rect,
                                 save_snapshot=False
                             )
+                            print(f"    ✓ Posición original cubierta")
                         except Exception as e:
                             print(f"    Advertencia: No se pudo cubrir posición original: {e}")
                         # Limpiar el original_pdf_rect ya que lo hemos procesado
@@ -2574,16 +2287,20 @@ class PDFPageView(QGraphicsView):
                     )
                     
                     if result:
-                        print(f"    OK - texto escrito al PDF")
                         # Marcar como escrito
                         text_data['is_overlay'] = False
                         text_data['pending_write'] = False
                         success_count += 1
+                        print(f"    ✓ Texto escrito al PDF")
                     else:
-                        print(f"    ERROR al escribir texto")
+                        print(f"    ERROR al escribir texto al PDF")
                         error_count += 1
         
-        print(f"  Resultado: {success_count} escritos, {error_count} errores")
+        print(f"\n=== RESULTADO COMMIT ===")
+        print(f"Total procesados: {total_processed}")
+        print(f"Exitosos: {success_count}")
+        print(f"Errores: {error_count}")
+        
         return error_count == 0
     
     def has_pending_overlays(self) -> bool:
@@ -2593,3 +2310,29 @@ class PDFPageView(QGraphicsView):
                 if text_data.get('is_overlay') and text_data.get('pending_write'):
                     return True
         return False
+    
+    def sync_all_text_items_to_data(self):
+        """
+        Sincroniza TODOS los items visuales de texto con editable_texts_data.
+        Asegura que los datos estén actualizados con el estado visual.
+        Esto es crítico antes de guardar para no perder cambios.
+        """
+        print("\n=== SINCRONIZACIÓN DE TEXTOS VISUALES ===")
+        synced_count = 0
+        
+        # Recorrer todos los items de la escena actual
+        for item in self.scene.items():
+            if isinstance(item, EditableTextItem):
+                # Asegurarse que este item tiene los datos actualizados
+                self._update_text_data(item)
+                synced_count += 1
+        
+        # Verificar estado de overlays pendientes
+        pending_count = 0
+        for page_texts in self.editable_texts_data.values():
+            for text_data in page_texts:
+                if text_data.get('is_overlay') and text_data.get('pending_write'):
+                    pending_count += 1
+        
+        print(f"Items sincronizados: {synced_count}")
+        print(f"Overlays pendientes de escribir: {pending_count}")
