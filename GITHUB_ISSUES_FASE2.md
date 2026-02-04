@@ -119,6 +119,7 @@ Crear estructura `TextChangeReport` para documentar todos los cambios realizados
 ## 🎨 FRONTEND - Diálogos (Depende de Backend)
 
 ### [TASK] EnhancedTextEditDialog con preview en vivo
+
 **ID**: PHASE2-201  
 **Asignado a**: Frontend Engineer  
 **Prioridad**: CRÍTICA  
@@ -160,6 +161,7 @@ Diálogo mejorado para edición de texto con validación en tiempo real y opcion
 ---
 
 ### [TASK] Soporte copy/paste con estilos
+
 **ID**: PHASE2-202  
 **Asignado a**: Frontend Engineer  
 **Prioridad**: IMPORTANTE  
@@ -226,6 +228,7 @@ Muestra tabla de cambios (TextChangeReport) antes de guardar PDF.
 ## 🧪 QA - Tests y Fixtures
 
 ### [TASK] Suite de tests FontManager
+
 **ID**: PHASE2-301  
 **Asignado a**: QA Engineer  
 **Prioridad**: IMPORTANTE  
@@ -256,6 +259,7 @@ Tests unitarios exhaustivos para FontManager (80%+ cobertura).
 ---
 
 ### [TASK] Crear PDFs de test con varias fuentes
+
 **ID**: PHASE2-302  
 **Asignado a**: QA Engineer  
 **Prioridad**: IMPORTANTE  
@@ -283,6 +287,7 @@ PDFs de ejemplo para testing de detección de fuentes y bold.
 ---
 
 ### [TASK] Integration tests - flujo completo
+
 **ID**: PHASE2-303  
 **Asignado a**: QA Engineer  
 **Prioridad**: CRÍTICA  
@@ -316,6 +321,7 @@ Tests de flujo completo (Gherkin) que cubren escenarios reales de usuario.
 ---
 
 ### [TASK] Tests de clipboard
+
 **ID**: PHASE2-304  
 **Asignado a**: QA Engineer  
 **Prioridad**: IMPORTANTE  
