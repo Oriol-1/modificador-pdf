@@ -11,14 +11,14 @@ import pytest
 import tempfile
 import os
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch
 import sys
 
 # Asegurar que core está en el path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.pdf_handler import PDFDocument
-from core.font_manager import FontManager, FontDescriptor, BoldStrategy, get_font_manager
+from core.font_manager import FontManager, FontDescriptor, get_font_manager
 
 
 class TestGetTextRunDescriptors:
@@ -46,7 +46,7 @@ class TestGetTextRunDescriptors:
             # Cleanup
             try:
                 os.unlink(tmp_path)
-            except:
+            except OSError:
                 pass
         except Exception:
             # Si fitz no está disponible, usar mock
@@ -269,7 +269,7 @@ class TestDetectBoldInSpan:
                 
                 # Verificar que detect_possible_bold fue llamado
                 assert mock_detect_bold.called
-                assert result == True
+                assert result
     
     @patch('core.font_manager.FontManager.detect_possible_bold')
     @patch('core.pdf_handler.PDFDocument.get_text_run_descriptors')
