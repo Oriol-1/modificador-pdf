@@ -106,6 +106,7 @@ class FontManager:
 ---
 
 #### Task 1.2: Extender `PDFDocument` con 3 nuevos métodos
+
 **Archivo**: `core/pdf_handler.py`
 
 **Métodos a agregar**:
@@ -133,15 +134,18 @@ def detect_bold_in_span(self, span: dict) -> Optional[bool]:
 ```
 
 **Integración con FontManager**:
+
 - Usar `FontManager.detect_font()` en estos métodos
 - Usar `FontManager.handle_bold()` para negritas
 - Loguear cada fallback o ajuste
 
 **Tests**:
+
 - `test_pdf_handler.py` - agregar tests para nuevos métodos
 - Test con PDF de ejemplo que tiene fuentes custom
 
 **Criterio de aceptación**:
+
 - ✅ `get_text_run_descriptors()` retorna lista de descriptores
 - ✅ `replace_text_preserving_metrics()` valida cabe el texto
 - ✅ `detect_bold_in_span()` retorna bool o None sin errores
@@ -149,6 +153,7 @@ def detect_bold_in_span(self, span: dict) -> Optional[bool]:
 ---
 
 #### Task 1.3: Crear sistema de reportes de cambios
+
 **Archivo**: `core/change_report.py` (NUEVO, 100-150 líneas)
 
 **Qué hacer**:
@@ -174,6 +179,7 @@ class TextChangeReport:
 **Usado por**: `pdf_viewer.py` para mostrar diálogo "Resumen de cambios antes de guardar"
 
 **Criterio de aceptación**:
+
 - ✅ Estructura captures todos los cambios
 - ✅ `as_dict()` serializa sin errores
 - ✅ Fácil de mostrar en UI
@@ -181,6 +187,7 @@ class TextChangeReport:
 ---
 
 ### Estimación Backend
+
 - **Task 1.1**: 8 horas (incluye tests)
 - **Task 1.2**: 4 horas (integración con FontManager)
 - **Task 1.3**: 2 horas (estructura de datos)
@@ -191,11 +198,13 @@ class TextChangeReport:
 ## 🎨 INGENIERO FRONTEND / UI
 
 ### Responsabilidad Principal
+
 Crear diálogos mejorados, validar en tiempo real, mostrar previsualizaciones. **Depende de** Backend Task 1.1-1.3.
 
 ### Tareas Específicas
 
 #### Task 2.1: Crear `EnhancedTextEditDialog`
+
 **Archivo**: `ui/text_editor_dialog.py` (NUEVO O EXTENDER, 300-400 líneas)
 
 **Componentes del diálogo**:
@@ -239,6 +248,7 @@ class EnhancedTextEditDialog(QDialog):
 ```
 
 **Comportamiento esperado**:
+
 - Cuando usuario escribe, preview se actualiza en tiempo real
 - Si no cabe, mostrar dialog tipo:
   ```
@@ -253,11 +263,13 @@ class EnhancedTextEditDialog(QDialog):
 - Checkboxes para estilos con ayuda contextual
 
 **Tests**:
+
 - Test que dialog valida correctamente
 - Test que preview se actualiza
 - Test opciones spacing/size
 
 **Criterio de aceptación**:
+
 - ✅ Dialog muestra preview en vivo
 - ✅ Valida "cabe/no cabe"
 - ✅ Ofrece opciones [A][B][C] si no cabe
@@ -266,6 +278,7 @@ class EnhancedTextEditDialog(QDialog):
 ---
 
 #### Task 2.2: Agregar soporte copy/paste con estilos
+
 **Archivo**: `ui/pdf_viewer.py` (método nuevo)
 
 **Qué hacer**:
@@ -287,15 +300,18 @@ def handle_paste_with_styles(self) -> bool:
 ```
 
 **Integración**:
+
 - Llamar desde `on_paste_triggered()` o similar
 - Usa `EnhancedTextEditDialog` de Task 2.1
 - Loguea qué estilos se detectaron
 
 **Tests**:
+
 - Mock clipboard con texto simple, HTML con `<b>`, RTF con `\b`
 - Verifica que extrae estilos correctamente
 
 **Criterio de aceptación**:
+
 - ✅ Detecta bold en HTML pasted
 - ✅ Mapea a `should_bold: bool`
 - ✅ Dialog muestra intención de estilos
@@ -303,6 +319,7 @@ def handle_paste_with_styles(self) -> bool:
 ---
 
 #### Task 2.3: Diálogo "Resumen de cambios antes de guardar"
+
 **Archivo**: `ui/save_summary_dialog.py` (NUEVO, 200 líneas)
 
 **Componentes**:
@@ -325,15 +342,18 @@ class SaveSummaryDialog(QDialog):
 ```
 
 **Llamado desde**:
+
 - `main_window.save_pdf()` cuando hay ediciones pendientes
 - Antes de llamar a `PDFDocument.save()`
 
 **Tests**:
+
 - Dialog muestra tabla de cambios
 - Warnings destacados en rojo
 - Botones [Guardar] [Cancelar]
 
 **Criterio de aceptación**:
+
 - ✅ Muestra tabla de cambios legible
 - ✅ Destaca warnings
 - ✅ Retorna confirmación usuario
@@ -341,6 +361,7 @@ class SaveSummaryDialog(QDialog):
 ---
 
 ### Estimación Frontend
+
 - **Task 2.1**: 12 horas (dialog complejo con preview)
 - **Task 2.2**: 4 horas (copy/paste con parsing)
 - **Task 2.3**: 4 horas (diálogo de resumen)
@@ -351,11 +372,13 @@ class SaveSummaryDialog(QDialog):
 ## 🧪 INGENIERO QA / TESTING
 
 ### Responsabilidad Principal
+
 Diseñar tests exhaustivos, crear PDFs de test, validar casos edge.
 
 ### Tareas Específicas
 
 #### Task 3.1: Suite de tests para FontManager
+
 **Archivo**: `tests/test_font_manager.py` (300+ líneas)
 
 **Test cases**:
@@ -394,6 +417,7 @@ def test_bounding_rect_arial_12pt():
 ---
 
 #### Task 3.2: PDFs de test con varias fuentes
+
 **Archivo**: `tests/fixtures/test_pdfs/` (NUEVOS)
 
 **Crear 3 PDFs de ejemplo**:
@@ -407,6 +431,7 @@ def test_bounding_rect_arial_12pt():
 ---
 
 #### Task 3.3: Integration tests - flujo completo
+
 **Archivo**: `tests/test_phase2_integration.py` (400+ líneas)
 
 **Escenarios**:
@@ -445,6 +470,7 @@ Feature: Edición de texto con soporte bold
 ---
 
 #### Task 3.4: Tests de copy/paste
+
 **Archivo**: `tests/test_clipboard.py` (150+ líneas)
 
 **Test casos**:
@@ -470,6 +496,7 @@ def test_paste_rtf_with_formatting():
 ---
 
 ### Estimación QA
+
 - **Task 3.1**: 8 horas (unit tests FontManager)
 - **Task 3.2**: 3 horas (crear PDFs de test)
 - **Task 3.3**: 10 horas (integration tests complejos)
@@ -483,10 +510,12 @@ def test_paste_rtf_with_formatting():
 ### Sprint 1 (Semana 1-2)
 
 **Semana 1: Backend (Tareas 1.1-1.3)**
+
 - Lunes-Miércoles: Backend Task 1.1 (FontManager)
 - Jueves-Viernes: Backend Task 1.2 + 1.3
 
 **Semana 2: Inicio Frontend + QA paralelo**
+
 - Lunes-Miércoles: Frontend Task 2.1 (Dialog)
 - Martes-Viernes: QA Task 3.1-3.2 (tests unitarios + fixtures)
 - **Bloqueo**: Frontend no avanza hasta Backend Task 1.1 esté listo
@@ -494,10 +523,12 @@ def test_paste_rtf_with_formatting():
 ### Sprint 2 (Semana 3-4)
 
 **Semana 3: Frontend + Integración**
+
 - Lunes-Martes: Frontend Task 2.2 (copy/paste)
 - Miércoles-Viernes: Frontend Task 2.3 + integración con Backend
 
 **Semana 4: Testing final + Bug fixes**
+
 - Lunes-Miércoles: QA Task 3.3-3.4 (integration tests)
 - Jueves-Viernes: Bug fixes, documentación, release prep
 
@@ -534,6 +565,7 @@ QA Task 3.3-3.4 (Integration Tests)
 
 ---
 
+## 🔗 Referencias
 ## 🔗 Referencias
 
 - **PROMPT_MEJORADO_v2.md** - Especificación técnica completa
