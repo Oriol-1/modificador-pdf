@@ -229,7 +229,7 @@ class EnhancedTextEditDialog(QDialog):
     def validate_text_fits(self) -> bool:
         """Chequea si texto cabe. Actualiza preview en vivo."""
         # Usar FontManager.get_bounding_rect()
-        # Si no cabe: mostrar opciones [A][B][C]
+        # Si no cabe: mostrar opciones (A) (B) (C)
 
     def on_text_changed(self):
         """Valida mientras escribe. Preview en vivo."""
@@ -274,7 +274,7 @@ class EnhancedTextEditDialog(QDialog):
 
 - ✅ Dialog muestra preview en vivo
 - ✅ Valida "cabe/no cabe"
-- ✅ Ofrece opciones [A][B][C] si no cabe
+- ✅ Ofrece opciones (A) (B) (C) si no cabe
 - ✅ Retorna `TextChangeReport` completo
 
 ---
