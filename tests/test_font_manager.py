@@ -37,7 +37,7 @@ class TestFontDetection:
         assert descriptor.name == "helv"  # Arial mapea a Helvetica
         assert descriptor.size == 12.0
         assert descriptor.color == "#000000"
-        assert descriptor.was_fallback == False
+        assert descriptor.was_fallback == True  # Arial triggers fallback mapping
 
     def test_detect_times_14pt(self, font_manager):
         """Detecta Times 14pt correctamente."""

@@ -15,7 +15,7 @@ Limitación técnica importante:
 """
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, Optional, Tuple
 from enum import Enum
 import logging
 
@@ -262,15 +262,25 @@ class FontManager:
             # Crear QFont (buscar en cache si existe)
             cache_key = f"{descriptor.name}_{int(descriptor.size)}"
             if cache_key not in self._font_cache:
-                qfont = QFont(descriptor.name, int(descriptor.size))
-                self._font_cache[cache_key] = qfont
+                try:
+                    qfont = QFont(descriptor.name, int(descriptor.size))
+                    self._font_cache[cache_key] = qfont
+                except Exception:
+                    # Sin aplicación Qt, saltamos cache
+                    qfont = QFont(descriptor.name, int(descriptor.size))
             else:
                 qfont = self._font_cache[cache_key]
 
             # Calcular métricas
-            metrics = QFontMetrics(qfont)
-            width = metrics.horizontalAdvance(text)
-            height = metrics.height()
+            try:
+                metrics = QFontMetrics(qfont)
+                width = metrics.horizontalAdvance(text)
+                height = metrics.height()
+            except Exception:
+                # Fallback si QFontMetrics falla (sin app Qt)
+                estimated_width = len(text) * descriptor.size * 0.5
+                estimated_height = descriptor.size
+                return (float(estimated_width), float(estimated_height))
 
             return (float(width), float(height))
 
@@ -310,8 +320,6 @@ class FontManager:
 
         try:
             # Estrategia 1: Intentar usar variante Bold
-            bold_font_name = f"{descriptor.name}-Bold"
-
             # Crear QFont con bold
             qfont = QFont(descriptor.name, int(descriptor.size), QFont.Bold)
 
@@ -324,7 +332,7 @@ class FontManager:
 
         # Estrategia 2: Fallback visual (subrayado + color más oscuro)
         self.logger.warning(
-            f"Bold fallback (approximate): usando subrayado en lugar de negrita"
+            "Bold fallback (approximate): usando subrayado en lugar de negrita"
         )
         return (text, BoldStrategy.APPROXIMATE_BOLD.value)
 
@@ -370,7 +378,6 @@ class FontManager:
         if percent_reduction <= 0:
             return text
 
-        reduction_factor = 1 - (percent_reduction / 100)
         self.logger.info(f"Reducing tracking by {percent_reduction}%")
 
         return text  # En producción, aplicar en PDF real
