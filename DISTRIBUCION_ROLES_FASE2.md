@@ -251,15 +251,17 @@ class EnhancedTextEditDialog(QDialog):
 
 - Cuando usuario escribe, preview se actualiza en tiempo real
 - Si no cabe, mostrar dialog tipo:
-  ```
-  ⚠️ Texto muy largo (no cabe en área original)
+
+```
+⚠️ Texto muy largo (no cabe en área original)
   
   Opciones:
   [A] Recortar con "..." (perder contenido)
   [B] Reducir espaciado (tracking: -10%) ← Recomendado
   [C] Reducir tamaño (de 12pt a 10pt)
   [Cancelar]
-  ```
+```
+
 - Checkboxes para estilos con ayuda contextual
 
 **Tests**:
@@ -308,41 +310,6 @@ def handle_paste_with_styles(self) -> bool:
 **Tests**:
 
 - Mock clipboard con texto simple, HTML con `<b>`, RTF con `\\b`
-- Verifica que extrae estilos correctamente
-
-**Criterio de aceptación**:
-
-- ✅ Detecta bold en HTML pasted
-- ✅ Mapea a `should_bold: bool`
-- ✅ Dialog muestra intención de estilos
-
-**Qué hacer**:
-
-```python
-def handle_paste_with_styles(self) -> bool:
-    """
-    Al hacer Ctrl+V, analiza si clipboard tiene HTML/RTF.
-    Extrae: texto + información de bold/italic/color.
-    Mapea a: FontDescriptor + styling_choices.
-    """
-    # Pseudocódigo:
-    # 1. Leer clipboard (texto, HTML, RTF)
-    # 2. Parsear bold/italic tags: <b>, <strong>, RTF \b
-    # 3. Extraer color si está disponible
-    # 4. Crear FontDescriptor para contexto actual
-    # 5. Llamar EnhancedTextEditDialog con estilos pre-llenados
-    # 6. Usuario valida y acepta
-```
-
-**Integración**:
-
-- Llamar desde `on_paste_triggered()` o similar
-- Usa `EnhancedTextEditDialog` de Task 2.1
-- Loguea qué estilos se detectaron
-
-**Tests**:
-
-- Mock clipboard con texto simple, HTML con `<b>`, RTF con `\b`
 - Verifica que extrae estilos correctamente
 
 **Criterio de aceptación**:
@@ -527,18 +494,6 @@ def test_paste_rtf_with_formatting():
     # Mock clipboard RTF
     # Verify: estilos se extraen correctamente
 ```
-
----
-
-### Estimación QA
-
-- **Task 3.1**: 8 horas (unit tests FontManager)
-- **Task 3.2**: 3 horas (crear PDFs de test)
-- **Task 3.3**: 10 horas (integration tests complejos)
-- **Task 3.4**: 4 horas (clipboard tests)
-- **Total**: 25 horas (3+ días)
-
----
 
 ---
 
