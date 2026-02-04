@@ -9,11 +9,13 @@ Duración estimada: 2 sprints (4 semanas)
 ## 📋 Resumen para Todos los Roles
 
 **Objetivos de Fase 2**:
+
 1. Agregar soporte para negritas (con heurísticas inteligentes)
 2. Habilitar copy/paste desde Word/navegadores manteniendo estilos
 3. Validar y reportar cambios de fuentes antes de guardar
 
 **Cambios principales**:
+
 - Nuevo módulo: `FontManager` (gestión centralizada)
 - Extender: `PDFDocument` con métodos de detección
 - Mejorar: diálogos en `pdf_viewer.py` con validaciones
@@ -25,11 +27,13 @@ Duración estimada: 2 sprints (4 semanas)
 ## 👨‍💻 INGENIERO BACKEND / CORE
 
 ### Responsabilidad Principal
+
 Implementar módulos de lógica de fuentes y validación. El backend es **crítico**: sin esto, UI no puede avanzar.
 
 ### Tareas Específicas
 
 #### Task 1.1: Implementar `FontManager` (200-300 líneas)
+
 **Archivo**: `core/font_manager.py` (NUEVO)
 
 **Métodos a implementar**:
@@ -82,15 +86,18 @@ class FontManager:
 ```
 
 **Definir antes de codificar**:
+
 - Estructura `FontDescriptor` (NamedTuple o dataclass)
 - Algoritmo de heurística para bold (comparar widths, parsear nombre)
 - Tabla exhaustiva de mappeos (línea 380-400 de PROMPT_MEJORADO_v2)
 
 **Tests requeridos**:
+
 - `test_font_manager.py` con cobertura >80%
 - Test casos: Arial→helv, custom→fallback, bold detection
 
 **Criterio de aceptación**:
+
 - ✅ Detecta fuente de span sin errores
 - ✅ Fallback a "helv" por defecto
 - ✅ Heurística de bold da resultado True/False/None
