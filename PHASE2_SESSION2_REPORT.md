@@ -137,24 +137,24 @@ Características implementadas:
 
 **Corto plazo** (30-45 min):
 
-2. ⏳ PHASE2-103: ChangeReport Class
+1. ⏳ PHASE2-103: ChangeReport Class
    - Crear `core/change_report.py`
    - Implementar tracking de cambios (fuente, posición, contenido)
    - Crear tests complementarios
 
-3. ⏳ PHASE2-201: Enhanced Dialog
+2. ⏳ PHASE2-201: Enhanced Dialog
    - Extender `ui/main_window.py` con diálogos mejorados
    - Integrar FontManager en UI
    - Crear selectores de fuente con preview
 
 **Largo plazo** (1-2 horas):
 
-4. ⏳ PHASE2-202: Copy/Paste with Styles
+1. ⏳ PHASE2-202: Copy/Paste with Styles
    - Implementar clipboard handler
    - Preservar estilos durante copy/paste
    - Integración con Qt clipboard
 
-5. ⏳ PHASE2-203: Summary Dialog
+2. ⏳ PHASE2-203: Summary Dialog
    - Diálogo de resumen de cambios
    - Análisis de métricas (fuentes usadas, cambios por página)
    - Validación de consistencia
