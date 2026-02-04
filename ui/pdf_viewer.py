@@ -465,14 +465,9 @@ class PDFPageView(QGraphicsView):
         # Manejar arrastre de texto editable
         if self.dragging_text and self.selected_text_item and self.drag_start_pos:
             delta = scene_pos - self.drag_start_pos
-            current_rect = self.selected_text_item.rect()
-            new_rect = QRectF(
-                current_rect.x() + delta.x(),
-                current_rect.y() + delta.y(),
-                current_rect.width(),
-                current_rect.height()
-            )
-            self.selected_text_item.setRect(new_rect)
+            # Mover el item usando setPos() en lugar de modificar el rect
+            new_pos = self.selected_text_item.pos() + delta
+            self.selected_text_item.setPos(new_pos)
             self.drag_start_pos = scene_pos
             self.text_was_moved = True  # Marcar que hubo movimiento real
             event.accept()
@@ -992,8 +987,23 @@ class PDFPageView(QGraphicsView):
         # El efecto visual se logra con el re-render de la página
     
     def handle_edit_click(self, scene_pos: QPointF):
-        """Maneja un click en modo edición - permite añadir texto en cualquier posición."""
+        """Maneja un click en modo edición - permite añadir texto en cualquier posición.
+        
+        Para PDFs de imagen, funciona igual que para PDFs editables:
+        1. Primero busca textos overlay/editables existentes (añadidos por el usuario)
+        2. Si no hay overlay, busca texto del PDF (si existe)
+        3. Si no hay nada, permite añadir texto nuevo
+        """
         if not self.pdf_doc:
+            return
+        
+        # PRIMERO: Buscar en textos editables/overlay existentes
+        # Esto es crucial para PDFs de imagen donde el usuario ya añadió texto
+        existing_editable = self._find_text_at_position(scene_pos)
+        if existing_editable:
+            # Ya existe un texto editable aquí - editarlo con _edit_text_content
+            self._select_text_item(existing_editable)
+            self._edit_text_content(existing_editable)
             return
         
         # Convertir a coordenadas PDF
@@ -1001,7 +1011,7 @@ class PDFPageView(QGraphicsView):
         pdf_y = scene_pos.y() / self.zoom_level
         pdf_point = (pdf_x, pdf_y)
         
-        # Buscar texto en esa posición
+        # SEGUNDO: Buscar texto del PDF (solo funciona si el PDF tiene texto real)
         block = self.pdf_doc.find_text_at_point(self.current_page, pdf_point)
         
         if block:
@@ -1068,8 +1078,18 @@ class PDFPageView(QGraphicsView):
             )
             
             if ok and new_text.strip():
-                # Crear un rectángulo pequeño en la posición del click
-                rect = fitz.Rect(pdf_x, pdf_y - 15, pdf_x + len(new_text) * 8, pdf_y + 5)
+                # Crear un rectángulo con tamaño CORRECTO basado en QFontMetrics
+                # CRÍTICO: Para PDFs de imagen, el tamaño debe ser exacto o habrá fragmentación
+                view_pos = scene_pos  # Posición en vista donde hacer clic
+                view_rect = self._calculate_text_rect_for_view(
+                    new_text,
+                    font_size=12,
+                    is_bold=False,
+                    base_position=view_pos
+                )
+                
+                # Convertir a coordenadas PDF
+                rect = self.view_to_pdf_rect(view_rect)
                 
                 # Detectar si es PDF de imagen
                 is_image_pdf = self.pdf_doc.is_image_based_pdf()
@@ -1510,6 +1530,50 @@ class PDFPageView(QGraphicsView):
             self.selected_text_item.set_selected(False)
             self.selected_text_item = None
     
+    def _calculate_text_rect_for_view(self, text: str, font_size: float = 12, 
+                                      is_bold: bool = False, base_position: QPointF = None) -> QRectF:
+        """Calcula el rect exacto necesario para mostrar texto basado en QFontMetrics.
+        
+        CRÍTICO para PDFs de imagen: asegura que el rect sea lo suficientemente grande
+        para contener COMPLETAMENTE el texto sin fragmentación.
+        
+        Args:
+            text: Contenido del texto
+            font_size: Tamaño de fuente en puntos
+            is_bold: Si es negrita
+            base_position: Posición superior-izquierda del rect (en coordenadas de vista)
+                          Si None, usa (0, 0)
+        
+        Returns:
+            QRectF con el tamaño exacto necesario
+        """
+        if not text or not text.strip():
+            return QRectF(0, 0, 0, 0)
+        
+        # Crear fuente con los parámetros especificados
+        font = QFont("Helvetica", int(font_size))
+        if is_bold:
+            font.setBold(True)
+        
+        # Obtener métricas exactas
+        metrics = QFontMetrics(font)
+        
+        # Calcular ancho: horizontalAdvance da el ancho exacto del texto
+        text_width = metrics.horizontalAdvance(text)
+        # Agregar padding para márgenes seguros
+        total_width = text_width + 6
+        
+        # Calcular alto: height da la altura de línea
+        text_height = metrics.height()
+        # Agregar padding para márgenes seguros
+        total_height = text_height + 4
+        
+        # Usar posición base o (0, 0)
+        if base_position is None:
+            base_position = QPointF(0, 0)
+        
+        return QRectF(base_position.x(), base_position.y(), total_width, total_height)
+    
     def _add_editable_text(self, view_rect: QRectF, text: str, font_size: float = 12, 
                            color: tuple = (0, 0, 0), pdf_rect=None, is_from_pdf: bool = False,
                            font_name: str = "helv", is_bold: bool = False):
@@ -1637,14 +1701,23 @@ class PDFPageView(QGraphicsView):
             current_scene_rect = text_item.sceneBoundingRect()
             current_pdf_rect = text_item.pdf_rect
             
+            # Determinar si es overlay ANTES de calcular el rect
+            is_overlay_now = getattr(text_item, 'is_overlay', False)
+            
             if current_pdf_rect:
                 # Obtener posición actual en coordenadas de vista
                 current_view_rect = self.pdf_to_view_rect(current_pdf_rect)
                 
-                # El rectángulo debe ser al menos tan grande como lo que necesita Qt
-                # Usar el máximo entre el tamaño actual y el mínimo requerido
-                new_view_width = max(current_view_rect.width(), min_text_width)
-                new_view_height = max(current_view_rect.height(), min_text_height)
+                # CRÍTICO: Para overlays (PDFs de imagen), SIEMPRE usar el tamaño mínimo
+                # Para evitar fragmentación al arrastrar
+                if is_overlay_now:
+                    # Overlay: usar EXACTAMENTE el tamaño necesario
+                    new_view_width = min_text_width
+                    new_view_height = min_text_height
+                else:
+                    # Editable normal: usar el máximo entre actual y mínimo requerido
+                    new_view_width = max(current_view_rect.width(), min_text_width)
+                    new_view_height = max(current_view_rect.height(), min_text_height)
                 
                 new_view_rect = QRectF(
                     current_view_rect.x(),
@@ -1676,7 +1749,6 @@ class PDFPageView(QGraphicsView):
             # Esto evita duplicación y cambios de formato
             
             needs_erase = getattr(text_item, 'needs_erase', False)
-            is_overlay = getattr(text_item, 'is_overlay', False)
             
             # Si el texto viene del PDF original y nunca fue modificado, borrar el original
             if needs_erase and not is_overlay:
@@ -2116,13 +2188,13 @@ class PDFPageView(QGraphicsView):
                     text_width = metrics.horizontalAdvance(text_content) + 10  # padding
                     text_height = metrics.height() + 4  # padding
                     
-                    # Usar la posición del PDF pero el tamaño calculado por Qt
-                    # Asegurar que el rectángulo sea al menos tan grande como el calculado por Qt
+                    # Para overlays: SIEMPRE usar EXACTAMENTE el tamaño calculado por Qt
+                    # No usar max() porque eso puede causar fragmentación
                     view_rect = QRectF(
                         base_view_rect.x(),
                         base_view_rect.y(),
-                        max(base_view_rect.width(), text_width),
-                        max(base_view_rect.height(), text_height)
+                        text_width,
+                        text_height
                     )
                 else:
                     view_rect = base_view_rect

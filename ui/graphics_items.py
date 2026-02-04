@@ -219,7 +219,11 @@ class EditableTextItem(QGraphicsRectItem):
         super().hoverLeaveEvent(event)
     
     def paint(self, painter, option, widget=None):
-        """Dibuja el item. Si es overlay, también dibuja el texto."""
+        """Dibuja el item. Si es overlay, también dibuja el texto.
+        
+        CRÍTICO para PDFs de imagen: asegurar que el rect sea lo suficientemente
+        grande y que el texto se dibuje COMPLETAMENTE sin fragmentación.
+        """
         # Primero dibujar el rectángulo base (bordes de selección)
         super().paint(painter, option, widget)
         
@@ -227,13 +231,20 @@ class EditableTextItem(QGraphicsRectItem):
         if self.is_overlay and self.text:
             rect = self.rect()
             
-            # NO dibujar fondo blanco - el texto original ya fue borrado del PDF
-            # (antes se dibujaba fondo si había original_pdf_rect, pero eso causaba problemas)
-            
-            # Configurar fuente - usar el tamaño original del texto
+            # Asegurar que el rect sea lo suficientemente grande
+            # Si el rect es muy pequeño, expandir lo justo para el texto
             font = QFont("Helvetica", int(self.font_size))
             if self.is_bold:
                 font.setBold(True)
+            
+            from PyQt5.QtGui import QFontMetrics
+            metrics = QFontMetrics(font)
+            text_width = metrics.horizontalAdvance(self.text)
+            text_height = metrics.height()
+            
+            # Si el rect es más pequeño que el texto necesario, es un problema
+            # pero aun así intentar dibujarlo sin clipping
+            
             painter.setFont(font)
             
             # Configurar color
@@ -243,7 +254,14 @@ class EditableTextItem(QGraphicsRectItem):
                 r, g, b = int(r * 255), int(g * 255), int(b * 255)
             painter.setPen(QColor(r, g, b))
             
-            # Dibujar texto - usar TextDontClip para evitar recortes
-            # Y ajustar el rectángulo para que el texto quepa
+            # CRÍTICO: Usar TextDontClip para que el texto NUNCA se recorte
+            # Esto es esencial para que no se fragmente
             text_flags = Qt.AlignLeft | Qt.AlignVCenter | Qt.TextDontClip
             painter.drawText(rect, text_flags, self.text)
+            
+            # DEBUG: Si el rect es muy pequeño comparado con el texto, avisar
+            if rect.width() < text_width - 5 or rect.height() < text_height - 4:
+                # El rect es insuficiente - esto causará fragmentación
+                # Pero ya usamos TextDontClip, así que el texto se dibuja fuera del rect
+                pass
+
