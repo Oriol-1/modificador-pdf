@@ -152,7 +152,7 @@ Diálogo mejorado para edición de texto con validación en tiempo real y opcion
 
 - ✅ Preview muestra cómo se vería el texto
 - ✅ Valida "cabe/no cabe" sin lag
-- ✅ Ofrece opciones [A][B][C] si no cabe
+- ✅ Ofrece opciones (A) (B) (C) si no cabe
 - ✅ Checkboxes bold funcionan
 - ✅ Retorna TextChangeReport con todos los cambios
 
@@ -171,7 +171,6 @@ Diálogo mejorado para edición de texto con validación en tiempo real y opcion
 
 **Descripción**:
 Al hacer Ctrl+V, detectar si clipboard contiene HTML/RTF con bold/italic y mapear a estilos.
-
 
 **Requerimientos**:
 - [ ] Método `handle_paste_with_styles()` en `ui/pdf_viewer.py`
@@ -227,6 +226,8 @@ Muestra tabla de cambios (TextChangeReport) antes de guardar PDF.
 
 ## 🧪 QA - Tests y Fixtures
 
+**Requerimientos**:
+
 ### [TASK] Suite de tests FontManager
 
 **ID**: PHASE2-301  
@@ -259,6 +260,8 @@ Tests unitarios exhaustivos para FontManager (80%+ cobertura).
 ---
 
 ### [TASK] Crear PDFs de test con varias fuentes
+
+**Requerimientos**:
 
 **ID**: PHASE2-302  
 **Asignado a**: QA Engineer  
