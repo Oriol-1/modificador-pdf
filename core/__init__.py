@@ -12,6 +12,11 @@ from .change_report import (
     ChangeType, ChangePosition, FontInfo, Change, ChangeReport,
     get_change_report, reset_change_report
 )
+from .clipboard_handler import (
+    StyledTextData, ClipboardHandler, STYLED_TEXT_MIME,
+    get_clipboard_handler, reset_clipboard_handler,
+    copy_text, paste_text, has_clipboard_content
+)
 
 __all__ = [
     'PDFDocument', 'TextBlock', 'EditOperation',
@@ -21,5 +26,8 @@ __all__ = [
     'debug_print', 'debug_render', 'debug_coords', 'debug_edit',
     'debug_undo', 'debug_selection', 'debug_overlay',
     'ChangeType', 'ChangePosition', 'FontInfo', 'Change', 'ChangeReport',
-    'get_change_report', 'reset_change_report'
+    'get_change_report', 'reset_change_report',
+    'StyledTextData', 'ClipboardHandler', 'STYLED_TEXT_MIME',
+    'get_clipboard_handler', 'reset_clipboard_handler',
+    'copy_text', 'paste_text', 'has_clipboard_content'
 ]
