@@ -38,6 +38,7 @@ Características implementadas:
 - ✅ Cobertura: 80%+ (objetivo alcanzado)
 
 **Correcciones aplicadas**:
+
 - ✅ Removido import `List` no usado (F401)
 - ✅ Eliminada variable `bold_font_name` sin usar (F841)
 - ✅ Convertido f-string sin placeholders a string regular (F541)
@@ -52,6 +53,7 @@ Características implementadas:
 **Archivo**: `core/pdf_handler.py` (+75 líneas, métodos agregados al final)
 
 **Métodos implementados**:
+
 1. ✅ `get_text_run_descriptors()` (50 líneas)
    - Extrae descriptores de fuente de un área especificada
    - Integración con FontManager.detect_font()
@@ -69,6 +71,7 @@ Características implementadas:
    - Manejo de casos sin descriptores
 
 **Tests**: `tests/test_pdf_handler_phase2.py` (375 líneas)
+
 - ✅ 18/22 tests PASANDO (81%)
 - ✅ Clases de tests:
   - TestGetTextRunDescriptors: 4 tests ✅
@@ -78,6 +81,7 @@ Características implementadas:
   - TestErrorHandling: 2/3 tests (67%)
 
 **Problemas identificados** (4 tests):
+
 1. ❌ test_replace_text_with_descriptors: Mock de search_text necesita ajuste
 2. ❌ test_replace_text_preserves_bold: edit_text no se llama (necesita routing)
 3. ❌ test_replace_text_sets_modified_flag: modified flag no se establece en mock
@@ -103,16 +107,19 @@ Características implementadas:
 ### 🔧 CAMBIOS TÉCNICOS
 
 **core/pdf_handler.py**:
+
 - Agregado import: `from .font_manager import FontManager, FontDescriptor, get_font_manager`
 - 3 nuevos métodos (169 líneas totales)
 - Totales del archivo: 1682 líneas (anteriormente 1507)
 
 **core/font_manager.py**:
+
 - Mejorado manejo de excepciones en `get_bounding_rect()`
 - Fallback para QFontMetrics cuando QApplication no está disponible
 - Cálculo estimado de dimensiones como fallback seguro
 
 **tests/**:
+
 - Creado `test_pdf_handler_phase2.py` (375 líneas)
 - Actualizado `test_font_manager.py` (expectativa de `was_fallback=True` para Arial)
 - Corregida sintaxis en `__init__.py`
