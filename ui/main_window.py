@@ -23,6 +23,14 @@ from ui.workspace_manager import (
 )
 from ui.help_system import HelpDialog, show_help, open_online_manual
 
+# Phase 2 imports
+try:
+    from ui.summary_dialog import SummaryDialog
+    from core.change_report import get_change_report, ChangeType
+    HAS_CHANGE_REPORT = True
+except ImportError:
+    HAS_CHANGE_REPORT = False
+
 
 class DropZoneWidget(QFrame):
     """Widget de zona de arrastre cuando no hay PDF abierto."""
@@ -1068,6 +1076,15 @@ class MainWindow(QMainWindow):
         if not self.current_file:
             self.save_file_as()
             return
+        
+        # Phase 2: Mostrar resumen de cambios antes de guardar (si hay cambios)
+        if HAS_CHANGE_REPORT:
+            report = get_change_report()
+            if report.get_statistics().get('total', 0) > 0:
+                dialog = SummaryDialog(report, parent=self)
+                if dialog.exec_() != dialog.Accepted:
+                    self.status_label.setText("Guardado cancelado")
+                    return
         
         self.status_label.setText("Guardando...")
         QApplication.processEvents()

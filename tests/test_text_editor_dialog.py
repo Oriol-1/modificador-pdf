@@ -10,7 +10,6 @@ Prueba el diálogo mejorado de edición de texto con:
 
 import pytest
 from unittest.mock import MagicMock, patch
-from dataclasses import dataclass
 
 # Mock Qt antes de importar el módulo
 @pytest.fixture(autouse=True)
