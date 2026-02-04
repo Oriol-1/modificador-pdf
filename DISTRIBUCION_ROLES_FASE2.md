@@ -307,7 +307,7 @@ def handle_paste_with_styles(self) -> bool:
 
 **Tests**:
 
-- Mock clipboard con texto simple, HTML con `<b>`, RTF con `\b`
+- Mock clipboard con texto simple, HTML con `<b>`, RTF con `\\b`
 - Verifica que extrae estilos correctamente
 
 **Criterio de aceptación**:
@@ -315,19 +315,6 @@ def handle_paste_with_styles(self) -> bool:
 - ✅ Detecta bold en HTML pasted
 - ✅ Mapea a `should_bold: bool`
 - ✅ Dialog muestra intención de estilos
-
-**Criterio de aceptación**:
-
-- ✅ Dialog muestra preview en vivo
-- ✅ Valida "cabe/no cabe"
-- ✅ Ofrece opciones [A][B][C] si no cabe
-- ✅ Retorna `TextChangeReport` completo
-
----
-
-#### Task 2.2: Agregar soporte copy/paste con estilos
-
-**Archivo**: `ui/pdf_viewer.py` (método nuevo)
 
 **Qué hacer**:
 
@@ -553,72 +540,6 @@ def test_paste_rtf_with_formatting():
 
 ---
 
-## 📅 TIMELINE INTEGRADO (2 sprints = 4 semanas)
-
-### Sprint 1 (Semana 1-2)
-
-**Semana 1: Backend (Tareas 1.1-1.3)**
-
-- Lunes-Miércoles: Backend Task 1.1 (FontManager)
-- Jueves-Viernes: Backend Task 1.2 + 1.3
-
-**Semana 2: Inicio Frontend + QA paralelo**
-
-- Lunes-Miércoles: Frontend Task 2.1 (Dialog)
-- Martes-Viernes: QA Task 3.1-3.2 (tests unitarios + fixtures)
-- **Bloqueo**: Frontend no avanza hasta Backend Task 1.1 esté listo
-
-### Sprint 2 (Semana 3-4)
-
-**Semana 3: Frontend + Integración**
-
-- Lunes-Martes: Frontend Task 2.2 (copy/paste)
-- Miércoles-Viernes: Frontend Task 2.3 + integración con Backend
-
-**Semana 4: Testing final + Bug fixes**
-
-- Lunes-Miércoles: QA Task 3.3-3.4 (integration tests)
-- Jueves-Viernes: Bug fixes, documentación, release prep
-
----
-
-## 🔄 Dependencias
-
-```
-Backend Task 1.1 (FontManager)
-    ↓
-Frontend Task 2.1 (Dialog)
-    ↓
-Frontend Task 2.2 (Copy/Paste)
-    ↓
-Frontend Task 2.3 (Summary Dialog)
-    ↓
-QA Task 3.3-3.4 (Integration Tests)
-```
-
-**Critical Path**: Backend 1.1 → Frontend 2.1-2.3 → QA 3.3 → Release
-
----
-
-## 📊 Métricas de Éxito
-
-| Métrica | Target |
-| --------- | ---------- |
-| Cobertura tests | 85%+ |
-| PDFs test cases | 3+ |
-| Integration tests | 10+ escenarios |
-| Diálogos usables | Heurística bold working |
-| Copy/paste | Detecta bold en HTML/RTF |
-| ChangeReport | Captura todos los cambios |
-
----
-
-## 🔗 Referencias
-
-- **PROMPT_MEJORADO_v2.md** - Especificación técnica completa
-- **ANALISIS_PROMPT_MEJORADO.md** - Contexto de limitaciones PyMuPDF
-- **COMPARATIVA_PROMPTS.md** - Antes/después + estimaciones
-
 ---
 
 ### Estimación QA
@@ -691,7 +612,6 @@ QA Task 3.3-3.4 (Integration Tests)
 
 ---
 
-## 🔗 Referencias
 ## 🔗 Referencias
 
 - **PROMPT_MEJORADO_v2.md** - Especificación técnica completa
