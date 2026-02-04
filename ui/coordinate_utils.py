@@ -47,7 +47,7 @@ class CoordinateConverter:
         y1 = view_rect.bottom() / self.zoom_level
         
         if debug:
-            print(f"=== Conversión de coordenadas ===")
+            print("=== Conversión de coordenadas ===")
             print(f"View rect: ({view_rect.x():.1f}, {view_rect.y():.1f}) -> ({view_rect.right():.1f}, {view_rect.bottom():.1f})")
             print(f"Zoom: {self.zoom_level}")
             print(f"Rotación página: {self.page_rotation}°")

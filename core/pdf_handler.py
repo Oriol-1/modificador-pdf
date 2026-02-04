@@ -945,7 +945,6 @@ class PDFDocument:
     def undo(self) -> bool:
         """Deshace la última operación restaurando el estado anterior."""
         if not self._undo_snapshots:
-            print("No hay nada que deshacer")
             return False
         
         try:
@@ -977,7 +976,6 @@ class PDFDocument:
                 self._restore_overlay_state_callback(previous_overlay)
             
             self.modified = len(self._undo_snapshots) > 0
-            print(f"Deshacer exitoso. Niveles restantes: {len(self._undo_snapshots)}")
             return True
         except Exception as e:
             print(f"Error al deshacer: {e}")
@@ -986,7 +984,6 @@ class PDFDocument:
     def redo(self) -> bool:
         """Rehace la última operación deshecha."""
         if not self._redo_snapshots:
-            print("No hay nada que rehacer")
             return False
         
         try:
@@ -1018,7 +1015,6 @@ class PDFDocument:
                 self._restore_overlay_state_callback(next_overlay)
             
             self.modified = True
-            print(f"Rehacer exitoso. Niveles de rehacer restantes: {len(self._redo_snapshots)}")
             return True
         except Exception as e:
             print(f"Error al rehacer: {e}")
@@ -1052,8 +1048,6 @@ class PDFDocument:
             
             # Limpiar la pila de rehacer cuando se hace una nueva modificación
             self._redo_snapshots.clear()
-            
-            print(f"Snapshot guardado. Niveles de deshacer: {len(self._undo_snapshots)}")
         except Exception as e:
             print(f"Error guardando snapshot: {e}")
     
