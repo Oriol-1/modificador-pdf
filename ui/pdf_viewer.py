@@ -2235,17 +2235,23 @@ class PDFPageView(QGraphicsView):
         Returns:
             True si todos los textos se escribieron correctamente
         """
+        print("\n=== COMMIT OVERLAY TEXTS ===")
+        
         if not self.pdf_doc:
+            print("No hay pdf_doc, retornando True")
             return True
         
         success_count = 0
         error_count = 0
+        total_processed = 0
         
         # Recorrer todas las páginas con textos
         for page_num, page_texts in self.editable_texts_data.items():
             for text_data in page_texts:
                 # Solo procesar textos overlay pendientes
                 if text_data.get('is_overlay') and text_data.get('pending_write'):
+                    total_processed += 1
+                    print(f"\nProcesando overlay en página {page_num}: '{text_data.get('text', '')[:30]}'...")
                     
                     pdf_rect = text_data.get('pdf_rect')
                     if not pdf_rect:
@@ -2263,6 +2269,7 @@ class PDFPageView(QGraphicsView):
                                 original_rect,
                                 save_snapshot=False
                             )
+                            print(f"    ✓ Posición original cubierta")
                         except Exception as e:
                             print(f"    Advertencia: No se pudo cubrir posición original: {e}")
                         # Limpiar el original_pdf_rect ya que lo hemos procesado
@@ -2284,9 +2291,15 @@ class PDFPageView(QGraphicsView):
                         text_data['is_overlay'] = False
                         text_data['pending_write'] = False
                         success_count += 1
+                        print(f"    ✓ Texto escrito al PDF")
                     else:
-                        print(f"    ERROR al escribir texto")
+                        print(f"    ERROR al escribir texto al PDF")
                         error_count += 1
+        
+        print(f"\n=== RESULTADO COMMIT ===")
+        print(f"Total procesados: {total_processed}")
+        print(f"Exitosos: {success_count}")
+        print(f"Errores: {error_count}")
         
         return error_count == 0
     
@@ -2297,3 +2310,29 @@ class PDFPageView(QGraphicsView):
                 if text_data.get('is_overlay') and text_data.get('pending_write'):
                     return True
         return False
+    
+    def sync_all_text_items_to_data(self):
+        """
+        Sincroniza TODOS los items visuales de texto con editable_texts_data.
+        Asegura que los datos estén actualizados con el estado visual.
+        Esto es crítico antes de guardar para no perder cambios.
+        """
+        print("\n=== SINCRONIZACIÓN DE TEXTOS VISUALES ===")
+        synced_count = 0
+        
+        # Recorrer todos los items de la escena actual
+        for item in self.scene.items():
+            if isinstance(item, EditableTextItem):
+                # Asegurarse que este item tiene los datos actualizados
+                self._update_text_data(item)
+                synced_count += 1
+        
+        # Verificar estado de overlays pendientes
+        pending_count = 0
+        for page_texts in self.editable_texts_data.values():
+            for text_data in page_texts:
+                if text_data.get('is_overlay') and text_data.get('pending_write'):
+                    pending_count += 1
+        
+        print(f"Items sincronizados: {synced_count}")
+        print(f"Overlays pendientes de escribir: {pending_count}")
