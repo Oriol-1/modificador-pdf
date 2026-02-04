@@ -14,7 +14,7 @@
 | ---------------------- | ------------ | ---------- | --------------- |
 | dist/PDF_Editor_Pro.exe | Ejecutable | 54.34 MB | ✅ Compilado |
 
-### Disponibles para Compilar
+### Scripts de Compilación Disponibles
 
 #### Windows
 

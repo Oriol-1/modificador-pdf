@@ -71,6 +71,7 @@ Permitir que usuarios **editen contenido textual** en un PDF sin:
 
 - [ ] **Mapeo de Fuentes** (fallback):
   - Mantener tabla:
+
     ```text
     "Arial"        → "helv" (Helvetica)
     "Times New Roman" → "times" (Times)
@@ -78,6 +79,7 @@ Permitir que usuarios **editen contenido textual** en un PDF sin:
     "Symbol", "Wingdings" → "symbols" (Symbol)
     [otros]        → "helv" (fallback seguro)
     ```text
+
   - **Cuando se use fallback, loguear advertencia**:
     `"Fuente 'Custom' no disponible en PDF, usando Helvetica"`
 
@@ -123,8 +125,7 @@ Definir de forma clara y consistente:
 
 - Calcular relleno disponible: `QFontMetrics.boundingRect(new_text).width()`
 
-- Si excede: **mostrar diálogo**:
-  ```text
+- Si excede: **mostrar diálogo**:  ```text
   "El texto no cabe en el área original.
   Opciones:
   [A] Recortar con '...' (perder contenido)
