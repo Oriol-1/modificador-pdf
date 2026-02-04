@@ -37,7 +37,7 @@ class TestFontDetection:
         assert descriptor.name == "helv"  # Arial mapea a Helvetica
         assert descriptor.size == 12.0
         assert descriptor.color == "#000000"
-        assert descriptor.was_fallback == True  # Arial triggers fallback mapping
+        assert descriptor.was_fallback  # Arial triggers fallback mapping
 
     def test_detect_times_14pt(self, font_manager):
         """Detecta Times 14pt correctamente."""
@@ -72,7 +72,7 @@ class TestFontDetection:
         }
         descriptor = font_manager.detect_font(span)
 
-        assert descriptor.was_fallback == True
+        assert descriptor.was_fallback
         assert descriptor.fallback_from == "MyriadPro"
         assert descriptor.name == "helv"  # Default fallback
 
@@ -97,7 +97,7 @@ class TestFontDetection:
         descriptor = font_manager.detect_font(span)
 
         assert descriptor.name == "helv"  # Default
-        assert descriptor.was_fallback == True
+        assert descriptor.was_fallback
 
     def test_detect_font_handles_missing_size(self, font_manager):
         """Maneja gracefully size faltante."""
@@ -161,43 +161,43 @@ class TestBoldDetection:
         """Detecta bold cuando nombre contiene 'Bold'."""
         span = {"font": "ArialBold"}
         result = font_manager.detect_possible_bold(span)
-        assert result == True
+        assert result
 
     def test_bold_suffix_detection(self, font_manager):
         """Detecta bold por sufijo -Bold."""
         span = {"font": "Helvetica-Bold"}
         result = font_manager.detect_possible_bold(span)
-        assert result == True
+        assert result
 
     def test_bold_short_notation(self, font_manager):
         """Detecta bold por sufijo -B."""
         span = {"font": "Arial-B"}
         result = font_manager.detect_possible_bold(span)
-        assert result == True
+        assert result
 
     def test_no_bold_detection(self, font_manager):
         """No detecta bold en fuente regular."""
         span = {"font": "Arial"}
         result = font_manager.detect_possible_bold(span)
-        assert result == None or result == False
+        assert result is None or not result
 
     def test_bold_by_flags(self, font_manager):
         """Detecta bold por flags PDF (0x40)."""
         span = {"font": "Arial", "flags": 0x40}
         result = font_manager.detect_possible_bold(span)
-        assert result == True
+        assert result
 
     def test_heavy_in_font_name(self, font_manager):
         """Detecta bold cuando nombre contiene 'Heavy'."""
         span = {"font": "HelveticaHeavy"}
         result = font_manager.detect_possible_bold(span)
-        assert result == True
+        assert result
 
     def test_black_in_font_name(self, font_manager):
         """Detecta bold cuando nombre contiene 'Black'."""
         span = {"font": "ArialBlack"}
         result = font_manager.detect_possible_bold(span)
-        assert result == True
+        assert result
 
 
 class TestBoundingRect:
@@ -286,7 +286,7 @@ class TestValidateTextFits:
 
         fits, message = font_manager.validate_text_fits(text, descriptor, max_width)
 
-        assert fits == True
+        assert fits
         assert message is None
 
     def test_text_doesnt_fit(self, font_manager):
@@ -297,7 +297,7 @@ class TestValidateTextFits:
 
         fits, message = font_manager.validate_text_fits(text, descriptor, max_width)
 
-        assert fits == False
+        assert not fits
         assert message is not None
         assert "no cabe" in message.lower()
 
@@ -343,7 +343,7 @@ class TestFontDescriptor:
 
         assert desc.name == "helv"
         assert desc.size == 12.0
-        assert desc.was_fallback == False
+        assert not desc.was_fallback
 
     def test_font_descriptor_with_fallback(self):
         """FontDescriptor con fallback de fuente."""
@@ -355,7 +355,7 @@ class TestFontDescriptor:
         )
 
         assert desc.fallback_from == "MyriadPro"
-        assert desc.was_fallback == True
+        assert desc.was_fallback
 
     def test_font_descriptor_repr(self):
         """Representación string de FontDescriptor."""
