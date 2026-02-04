@@ -9,11 +9,13 @@ from .graphics_items import (
 )
 from .coordinate_utils import CoordinateConverter
 from .font_dialog import FontDialog, TextFormatDialog, FontPreviewWidget, ColorButton
+from .summary_dialog import SummaryDialog, QuickStatsWidget, StatWidget
 
 __all__ = [
     'MainWindow', 'PDFPageView', 'ThumbnailPanel', 'EditorToolBar',
     'SelectionRect', 'DeletePreviewRect', 'FloatingLabel',
     'HighlightRect', 'TextEditDialog', 'EditableTextItem',
     'CoordinateConverter',
-    'FontDialog', 'TextFormatDialog', 'FontPreviewWidget', 'ColorButton'
+    'FontDialog', 'TextFormatDialog', 'FontPreviewWidget', 'ColorButton',
+    'SummaryDialog', 'QuickStatsWidget', 'StatWidget'
 ]
