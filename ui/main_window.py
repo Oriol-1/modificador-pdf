@@ -1459,21 +1459,29 @@ class MainWindow(QMainWindow):
     
     def undo(self):
         """Deshace la última acción."""
+        print(f"[UNDO] Snapshots antes: {len(self.pdf_doc._undo_snapshots)}")
         if self.pdf_doc.undo():
+            print(f"[UNDO] Snapshots después: {len(self.pdf_doc._undo_snapshots)}")
             current_page = self.pdf_viewer.current_page
-            # Limpiar datos de textos editables al deshacer
-            self.pdf_viewer.clear_editable_texts_data()
+            # Los overlays se restauran automáticamente via callback en pdf_doc.undo()
+            # Solo necesitamos limpiar los items visuales para que se recreen
+            self.pdf_viewer.editable_text_items = []
+            self.pdf_viewer.selected_text_item = None
             self.pdf_viewer.render_page()
             self.thumbnail_panel.refresh_thumbnail(current_page)
             self.update_undo_redo_state()
             self.status_label.setText("Acción deshecha")
+        else:
+            print("[UNDO] No hay más acciones para deshacer")
     
     def redo(self):
         """Rehace la última acción."""
         if self.pdf_doc.redo():
             current_page = self.pdf_viewer.current_page
-            # Limpiar datos de textos editables al rehacer
-            self.pdf_viewer.clear_editable_texts_data()
+            # Los overlays se restauran automáticamente via callback en pdf_doc.redo()
+            # Solo necesitamos limpiar los items visuales para que se recreen
+            self.pdf_viewer.editable_text_items = []
+            self.pdf_viewer.selected_text_item = None
             self.pdf_viewer.render_page()
             self.thumbnail_panel.refresh_thumbnail(current_page)
             self.update_undo_redo_state()

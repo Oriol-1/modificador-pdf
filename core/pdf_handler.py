@@ -28,11 +28,15 @@ class PDFDocument:
         self.file_path: Optional[str] = None
         self.modified: bool = False
         # Sistema de deshacer/rehacer basado en snapshots
-        self._undo_snapshots: List[bytes] = []  # Lista de estados anteriores
-        self._redo_snapshots: List[bytes] = []  # Lista de estados para rehacer
+        # Cada snapshot es una tupla: (pdf_bytes, overlay_data)
+        self._undo_snapshots: List[tuple] = []  # Lista de estados anteriores
+        self._redo_snapshots: List[tuple] = []  # Lista de estados para rehacer
         self._original_doc_bytes: Optional[bytes] = None
         self._last_error: str = ""
         self._max_undo_levels = 20  # Máximo de niveles de deshacer
+        # Callback para obtener/restaurar estado de overlays del viewer
+        self._get_overlay_state_callback = None
+        self._restore_overlay_state_callback = None
         
     def open(self, file_path: str) -> bool:
         """Abre un documento PDF."""
@@ -945,19 +949,32 @@ class PDFDocument:
             return False
         
         try:
-            # Guardar estado actual para rehacer
+            # Guardar estado actual para rehacer (PDF + overlays)
             current_bytes = self.doc.tobytes(garbage=0)
-            self._redo_snapshots.append(current_bytes)
+            current_overlay = None
+            if self._get_overlay_state_callback:
+                current_overlay = self._get_overlay_state_callback()
+            self._redo_snapshots.append((current_bytes, current_overlay))
             
-            # Obtener estado anterior
-            previous_bytes = self._undo_snapshots.pop()
+            # Obtener estado anterior (tupla o bytes legacy)
+            previous_state = self._undo_snapshots.pop()
+            if isinstance(previous_state, tuple):
+                previous_bytes, previous_overlay = previous_state
+            else:
+                # Compatibilidad con snapshots antiguos (solo bytes)
+                previous_bytes = previous_state
+                previous_overlay = None
             
             # Cerrar documento actual
             if self.doc:
                 self.doc.close()
             
-            # Restaurar estado anterior
+            # Restaurar estado anterior del PDF
             self.doc = fitz.open(stream=previous_bytes, filetype="pdf")
+            
+            # Restaurar estado de overlays (si hay callback y datos)
+            if self._restore_overlay_state_callback and previous_overlay is not None:
+                self._restore_overlay_state_callback(previous_overlay)
             
             self.modified = len(self._undo_snapshots) > 0
             print(f"Deshacer exitoso. Niveles restantes: {len(self._undo_snapshots)}")
@@ -973,19 +990,32 @@ class PDFDocument:
             return False
         
         try:
-            # Guardar estado actual para deshacer
+            # Guardar estado actual para deshacer (PDF + overlays)
             current_bytes = self.doc.tobytes(garbage=0)
-            self._undo_snapshots.append(current_bytes)
+            current_overlay = None
+            if self._get_overlay_state_callback:
+                current_overlay = self._get_overlay_state_callback()
+            self._undo_snapshots.append((current_bytes, current_overlay))
             
-            # Obtener estado siguiente
-            next_bytes = self._redo_snapshots.pop()
+            # Obtener estado siguiente (tupla o bytes legacy)
+            next_state = self._redo_snapshots.pop()
+            if isinstance(next_state, tuple):
+                next_bytes, next_overlay = next_state
+            else:
+                # Compatibilidad con snapshots antiguos (solo bytes)
+                next_bytes = next_state
+                next_overlay = None
             
             # Cerrar documento actual
             if self.doc:
                 self.doc.close()
             
-            # Restaurar estado siguiente
+            # Restaurar estado siguiente del PDF
             self.doc = fitz.open(stream=next_bytes, filetype="pdf")
+            
+            # Restaurar estado de overlays (si hay callback y datos)
+            if self._restore_overlay_state_callback and next_overlay is not None:
+                self._restore_overlay_state_callback(next_overlay)
             
             self.modified = True
             print(f"Rehacer exitoso. Niveles de rehacer restantes: {len(self._redo_snapshots)}")
@@ -994,15 +1024,27 @@ class PDFDocument:
             print(f"Error al rehacer: {e}")
             return False
     
+    def set_overlay_callbacks(self, get_callback, restore_callback):
+        """Configura callbacks para manejar el estado de overlays del viewer."""
+        self._get_overlay_state_callback = get_callback
+        self._restore_overlay_state_callback = restore_callback
+    
     def _save_snapshot(self):
         """Guarda un snapshot del estado actual antes de una modificación."""
         if not self.doc:
             return
         
         try:
-            # Guardar estado actual
+            # Guardar estado del PDF
             current_bytes = self.doc.tobytes(garbage=0)
-            self._undo_snapshots.append(current_bytes)
+            
+            # Guardar estado de overlays (si hay callback)
+            overlay_state = None
+            if self._get_overlay_state_callback:
+                overlay_state = self._get_overlay_state_callback()
+            
+            # Guardar tupla (pdf_bytes, overlay_state)
+            self._undo_snapshots.append((current_bytes, overlay_state))
             
             # Limitar el número de niveles de deshacer
             while len(self._undo_snapshots) > self._max_undo_levels:

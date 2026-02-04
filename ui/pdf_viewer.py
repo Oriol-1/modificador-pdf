@@ -151,6 +151,11 @@ class PDFPageView(QGraphicsView):
         
         self.pdf_doc = pdf_doc
         if pdf_doc and pdf_doc.is_open():
+            # Conectar callbacks para el sistema de undo con overlays
+            pdf_doc.set_overlay_callbacks(
+                self.get_overlay_state,
+                self.restore_overlay_state
+            )
             self.load_page(0)
     
     def clear_all_state(self):
@@ -189,6 +194,17 @@ class PDFPageView(QGraphicsView):
         self.drag_start_pos = None
         self.drag_original_rect = None
         self.text_was_moved = False
+    
+    def get_overlay_state(self) -> dict:
+        """Obtiene una copia del estado actual de overlays para el sistema de undo."""
+        import copy
+        return copy.deepcopy(self.editable_texts_data)
+    
+    def restore_overlay_state(self, state: dict):
+        """Restaura el estado de overlays desde un snapshot del sistema de undo."""
+        import copy
+        self.editable_texts_data = copy.deepcopy(state) if state else {}
+        # Nota: los items visuales se recrearán al renderizar la página
     
     def load_page(self, page_num: int):
         """Carga y muestra una página específica."""
