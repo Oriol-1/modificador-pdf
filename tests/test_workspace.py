@@ -66,7 +66,9 @@ class TestWorkGroup:
         assert group.get_pending_count() == 0
         assert group.get_modified_count() == 0
         assert group.get_archived_count() == 0
-        assert group.is_complete() == True  # Sin pendientes = completo
+        # is_complete() requiere: sin pendientes Y con modificados
+        # Grupo vacío no está "completo" porque no tiene archivos modificados
+        assert group.is_complete() == False
     
     def test_workgroup_stats_with_files(self):
         """Test: Estadísticas con archivos."""
@@ -256,12 +258,14 @@ class TestWorkspaceManager:
         
         self.manager.create_new_group([pdf1, pdf2])
         
-        stats = self.manager.get_stats()
+        # get_stats() retorna stats del grupo actual
+        # get_global_stats() retorna stats de todos los grupos
+        stats = self.manager.get_global_stats()
         
-        assert stats['total_groups'] == 1
+        assert stats['groups'] == 1
         assert stats['pending'] == 2
         assert stats['modified'] == 0
-        assert stats['backups'] == 0
+        assert stats['archived'] == 0
     
     def test_multiple_groups(self):
         """Test: Crear múltiples grupos independientes."""
@@ -299,9 +303,11 @@ class TestWorkspaceManager:
             f.write("fake pdf 2")
         self.manager.create_new_group([pdf2])
         
-        all_pending = self.manager.get_pending_pdfs()
+        # get_pending_pdfs() solo retorna del grupo actual (el último creado)
+        # Para contar todos usamos get_all_pending_count()
+        all_pending_count = self.manager.get_all_pending_count()
         
-        assert len(all_pending) == 2
+        assert all_pending_count == 2
 
 
 class TestWorkspaceManagerProcessing:

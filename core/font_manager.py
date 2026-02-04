@@ -259,6 +259,15 @@ class FontManager:
             (ancho, alto) en píxeles
         """
         try:
+            # Verificar si hay QApplication activa (necesaria para QFontMetrics)
+            from PyQt5.QtWidgets import QApplication
+            app = QApplication.instance()
+            if app is None:
+                # Sin aplicación Qt, usar estimación
+                estimated_width = len(text) * descriptor.size * 0.5
+                estimated_height = descriptor.size * 1.2
+                return (float(estimated_width), float(estimated_height))
+            
             # Crear QFont (buscar en cache si existe)
             cache_key = f"{descriptor.name}_{int(descriptor.size)}"
             if cache_key not in self._font_cache:
