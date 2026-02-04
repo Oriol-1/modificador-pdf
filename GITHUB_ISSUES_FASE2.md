@@ -173,6 +173,7 @@ Diálogo mejorado para edición de texto con validación en tiempo real y opcion
 Al hacer Ctrl+V, detectar si clipboard contiene HTML/RTF con bold/italic y mapear a estilos.
 
 **Requerimientos**:
+
 - [ ] Método `handle_paste_with_styles()` en `ui/pdf_viewer.py`
 - [ ] Parsear HTML (`<b>`, `<strong>`, `<em>`, `<i>` tags)
 - [ ] Parsear RTF (`\b` para bold)
@@ -216,6 +217,7 @@ Muestra tabla de cambios (TextChangeReport) antes de guardar PDF.
 - [ ] Tests: mostrar tabla, warnings destacados
 
 **Aceptación**:
+
 - ✅ Tabla legible
 - ✅ Warnings en rojo (ej: "Fuente no disponible")
 - ✅ Usuario puede confirmar/cancelar
@@ -251,6 +253,7 @@ Tests unitarios exhaustivos para FontManager (80%+ cobertura).
 - [ ] Cobertura: 80%+ (target 90%)
 
 **Aceptación**:
+
 - ✅ 80%+ cobertura de `font_manager.py`
 - ✅ Todos los tests pasan
 - ✅ Casos edge: fuentes vacías, tamaños 0, None values
@@ -302,6 +305,7 @@ PDFs de ejemplo para testing de detección de fuentes y bold.
 Tests de flujo completo (Gherkin) que cubren escenarios reales de usuario.
 
 **Requerimientos**:
+
 - [ ] Crear `tests/test_phase2_integration.py`
 - [ ] Escenarios Gherkin:
   - Editar "viaje" → "viaje increíble" (Arial 12pt)
@@ -344,7 +348,6 @@ Tests específicos para copy/paste con HTML y RTF.
 - [ ] Mock clipboard con RTF: `\b` (bold)
 - [ ] Verificar que extrae estilos correctamente
 - [ ] Verificar que dialog abre con estilos pre-llenados
-
 
 **Aceptación**:
 
