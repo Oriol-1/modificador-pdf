@@ -197,11 +197,11 @@ class TextChangeReport:
 
 ## 🎨 INGENIERO FRONTEND / UI
 
-### Responsabilidad Principal
+### Responsabilidad Principal (Frontend)
 
 Crear diálogos mejorados, validar en tiempo real, mostrar previsualizaciones. **Depende de** Backend Task 1.1-1.3.
 
-### Tareas Específicas
+### Tareas Específicas (Frontend)
 
 #### Task 2.1: Crear `EnhancedTextEditDialog`
 
@@ -316,6 +316,54 @@ def handle_paste_with_styles(self) -> bool:
 - ✅ Mapea a `should_bold: bool`
 - ✅ Dialog muestra intención de estilos
 
+**Criterio de aceptación**:
+
+- ✅ Dialog muestra preview en vivo
+- ✅ Valida "cabe/no cabe"
+- ✅ Ofrece opciones [A][B][C] si no cabe
+- ✅ Retorna `TextChangeReport` completo
+
+---
+
+#### Task 2.2: Agregar soporte copy/paste con estilos
+
+**Archivo**: `ui/pdf_viewer.py` (método nuevo)
+
+**Qué hacer**:
+
+```python
+def handle_paste_with_styles(self) -> bool:
+    """
+    Al hacer Ctrl+V, analiza si clipboard tiene HTML/RTF.
+    Extrae: texto + información de bold/italic/color.
+    Mapea a: FontDescriptor + styling_choices.
+    """
+    # Pseudocódigo:
+    # 1. Leer clipboard (texto, HTML, RTF)
+    # 2. Parsear bold/italic tags: <b>, <strong>, RTF \b
+    # 3. Extraer color si está disponible
+    # 4. Crear FontDescriptor para contexto actual
+    # 5. Llamar EnhancedTextEditDialog con estilos pre-llenados
+    # 6. Usuario valida y acepta
+```
+
+**Integración**:
+
+- Llamar desde `on_paste_triggered()` o similar
+- Usa `EnhancedTextEditDialog` de Task 2.1
+- Loguea qué estilos se detectaron
+
+**Tests**:
+
+- Mock clipboard con texto simple, HTML con `<b>`, RTF con `\b`
+- Verifica que extrae estilos correctamente
+
+**Criterio de aceptación**:
+
+- ✅ Detecta bold en HTML pasted
+- ✅ Mapea a `should_bold: bool`
+- ✅ Dialog muestra intención de estilos
+
 ---
 
 #### Task 2.3: Diálogo "Resumen de cambios antes de guardar"
@@ -371,11 +419,11 @@ class SaveSummaryDialog(QDialog):
 
 ## 🧪 INGENIERO QA / TESTING
 
-### Responsabilidad Principal
+### Responsabilidad Principal (QA)
 
 Diseñar tests exhaustivos, crear PDFs de test, validar casos edge.
 
-### Tareas Específicas
+### Tareas Específicas (QA)
 
 #### Task 3.1: Suite de tests para FontManager
 
@@ -488,10 +536,88 @@ def test_paste_html_with_bold():
     # Verify: dialog muestra "apply_bold: True"
 
 def test_paste_rtf_with_formatting():
-    """Pegar RTF con \b (bold) y colores."""
+    """Pegar RTF con \\b (bold) y colores."""
     # Mock clipboard RTF
     # Verify: estilos se extraen correctamente
 ```
+
+---
+
+### Estimación QA
+
+- **Task 3.1**: 8 horas (unit tests FontManager)
+- **Task 3.2**: 3 horas (crear PDFs de test)
+- **Task 3.3**: 10 horas (integration tests complejos)
+- **Task 3.4**: 4 horas (clipboard tests)
+- **Total**: 25 horas (3+ días)
+
+---
+
+## 📅 TIMELINE INTEGRADO (2 sprints = 4 semanas)
+
+### Sprint 1 (Semana 1-2)
+
+**Semana 1: Backend (Tareas 1.1-1.3)**
+
+- Lunes-Miércoles: Backend Task 1.1 (FontManager)
+- Jueves-Viernes: Backend Task 1.2 + 1.3
+
+**Semana 2: Inicio Frontend + QA paralelo**
+
+- Lunes-Miércoles: Frontend Task 2.1 (Dialog)
+- Martes-Viernes: QA Task 3.1-3.2 (tests unitarios + fixtures)
+- **Bloqueo**: Frontend no avanza hasta Backend Task 1.1 esté listo
+
+### Sprint 2 (Semana 3-4)
+
+**Semana 3: Frontend + Integración**
+
+- Lunes-Martes: Frontend Task 2.2 (copy/paste)
+- Miércoles-Viernes: Frontend Task 2.3 + integración con Backend
+
+**Semana 4: Testing final + Bug fixes**
+
+- Lunes-Miércoles: QA Task 3.3-3.4 (integration tests)
+- Jueves-Viernes: Bug fixes, documentación, release prep
+
+---
+
+## 🔄 Dependencias
+
+```
+Backend Task 1.1 (FontManager)
+    ↓
+Frontend Task 2.1 (Dialog)
+    ↓
+Frontend Task 2.2 (Copy/Paste)
+    ↓
+Frontend Task 2.3 (Summary Dialog)
+    ↓
+QA Task 3.3-3.4 (Integration Tests)
+```
+
+**Critical Path**: Backend 1.1 → Frontend 2.1-2.3 → QA 3.3 → Release
+
+---
+
+## 📊 Métricas de Éxito
+
+| Métrica | Target |
+| --------- | ---------- |
+| Cobertura tests | 85%+ |
+| PDFs test cases | 3+ |
+| Integration tests | 10+ escenarios |
+| Diálogos usables | Heurística bold working |
+| Copy/paste | Detecta bold en HTML/RTF |
+| ChangeReport | Captura todos los cambios |
+
+---
+
+## 🔗 Referencias
+
+- **PROMPT_MEJORADO_v2.md** - Especificación técnica completa
+- **ANALISIS_PROMPT_MEJORADO.md** - Contexto de limitaciones PyMuPDF
+- **COMPARATIVA_PROMPTS.md** - Antes/después + estimaciones
 
 ---
 
