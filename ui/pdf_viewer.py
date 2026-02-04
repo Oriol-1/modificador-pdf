@@ -1751,7 +1751,7 @@ class PDFPageView(QGraphicsView):
             needs_erase = getattr(text_item, 'needs_erase', False)
             
             # Si el texto viene del PDF original y nunca fue modificado, borrar el original
-            if needs_erase and not is_overlay:
+            if needs_erase and not is_overlay_now:
                 
                 internal_pdf_rect = getattr(text_item, 'internal_pdf_rect', None)
                 original_pdf_rect = getattr(text_item, 'original_pdf_rect', None)
@@ -1776,7 +1776,7 @@ class PDFPageView(QGraphicsView):
                     )
             
             # Convertir a overlay (si no lo era)
-            if not is_overlay:
+            if not is_overlay_now:
                 text_item.is_overlay = True
             
             # Actualizar propiedades
@@ -1788,7 +1788,7 @@ class PDFPageView(QGraphicsView):
             self._update_text_data(text_item)
             
             # Re-renderizar para mostrar el PDF actualizado (sin el texto original)
-            if needs_erase and not is_overlay:
+            if needs_erase and not is_overlay_now:
                 self.render_page()
             else:
                 # Solo forzar repintado del item
