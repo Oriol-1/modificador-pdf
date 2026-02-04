@@ -21,6 +21,20 @@ from .graphics_items import (
 )
 from .coordinate_utils import CoordinateConverter
 
+# Importar diálogo mejorado de edición de texto (Phase 2)
+try:
+    from .text_editor_dialog import EnhancedTextEditDialog, show_text_edit_dialog
+    HAS_ENHANCED_DIALOG = True
+except ImportError:
+    HAS_ENHANCED_DIALOG = False
+
+# Importar FontManager para detección de fuentes (Phase 2)
+try:
+    from core.font_manager import get_font_manager, FontDescriptor
+    HAS_FONT_MANAGER = True
+except ImportError:
+    HAS_FONT_MANAGER = False
+
 
 class PDFPageView(QGraphicsView):
     """Vista de una página de PDF con capacidades de selección y edición."""
@@ -1641,13 +1655,81 @@ class PDFPageView(QGraphicsView):
         return text_item
     
     def _edit_text_content(self, text_item: EditableTextItem):
-        """Abre un diálogo para editar el contenido del texto con opciones de formato."""
+        """Abre un diálogo para editar el contenido del texto con opciones de formato.
+        
+        Si el EnhancedTextEditDialog está disponible (Phase 2), lo usa para
+        proporcionar preview en vivo y opciones avanzadas de formato.
+        """
         # Obtener valores actuales
         current_text = text_item.text
         current_font_size = text_item.font_size
         current_is_bold = getattr(text_item, 'is_bold', False)
+        current_font_name = getattr(text_item, 'font_name', 'helv')
         
-        # Abrir diálogo personalizado
+        # Calcular ancho máximo disponible
+        max_width = 200  # Default
+        if text_item.pdf_rect:
+            max_width = text_item.pdf_rect.width
+        
+        # Intentar usar el diálogo mejorado (Phase 2)
+        if HAS_ENHANCED_DIALOG:
+            try:
+                # Crear descriptor de fuente para el diálogo
+                font_descriptor = None
+                detected_bold = current_is_bold
+                
+                if HAS_FONT_MANAGER:
+                    # Usar FontManager para detectar info de fuente
+                    try:
+                        font_manager = get_font_manager()
+                        # Crear FontDescriptor básico
+                        font_descriptor = FontDescriptor(
+                            name=current_font_name.replace('hebo', 'Helvetica-Bold').replace('helv', 'Helvetica'),
+                            size=current_font_size,
+                            possible_bold=current_is_bold,
+                            color='#000000'
+                        )
+                    except Exception:
+                        pass
+                
+                # Abrir diálogo mejorado
+                result = show_text_edit_dialog(
+                    parent=self,
+                    original_text=current_text,
+                    max_width=max_width,
+                    font_descriptor=font_descriptor,
+                    detected_bold=detected_bold
+                )
+                
+                if result:
+                    new_text, change_report = result
+                    new_text = new_text.strip()
+                    
+                    # Obtener opciones de estilo
+                    new_is_bold = change_report.get('bold_applied', current_is_bold)
+                    new_font_size = change_report.get('font_size', current_font_size)
+                    
+                    # Si hay reducción de tamaño
+                    size_reduction = change_report.get('size_reduced', 0)
+                    if size_reduction > 0:
+                        new_font_size = current_font_size * (1 - size_reduction / 100)
+                    
+                    # Aplicar cambios
+                    self._apply_text_edit(
+                        text_item, 
+                        new_text, 
+                        new_font_size, 
+                        new_is_bold,
+                        change_report.get('was_truncated', False),
+                        change_report.get('warnings', [])
+                    )
+                return
+                
+            except Exception as e:
+                # Si falla, usar el diálogo básico
+                print(f"EnhancedTextEditDialog falló, usando básico: {e}")
+        
+        # Fallback: usar diálogo básico
         dialog = TextEditDialog(
             text=current_text,
             font_size=current_font_size,
@@ -1662,139 +1744,154 @@ class PDFPageView(QGraphicsView):
             new_font_size = values['font_size']
             new_is_bold = values['is_bold']
             
-            # Si el texto está vacío, ELIMINAR el texto del PDF y el item
-            if not new_text:
-                self._remove_empty_text_item(text_item)
-                self.documentModified.emit()
-                return
-            
-            # Verificar si hay cambios (tolerancia de 0.5 para tamaño de fuente)
-            text_changed = new_text != text_item.text
-            size_changed = abs(new_font_size - text_item.font_size) > 0.5
-            bold_changed = new_is_bold != current_is_bold
-            
-            if not (text_changed or size_changed or bold_changed):
-                return
-            
-            
-            # Actualizar propiedades del item
-            old_text = text_item.text
-            old_font_size = text_item.font_size
-            text_item.text = new_text
-            text_item.font_size = new_font_size
-            text_item.is_bold = new_is_bold
-            # Determinar el nombre de fuente según negrita
-            text_item.font_name = "hebo" if new_is_bold else "helv"
-            
-            # Detectar si es PDF de imagen
-            is_image_pdf = self.pdf_doc.is_image_based_pdf() if self.pdf_doc else False
-            
-            # IMPORTANTE: Calcular tamaño basado en métricas de Qt para evitar recorte
-            # El rectángulo debe ser lo suficientemente grande para mostrar todo el texto
-            font = QFont("Helvetica", int(new_font_size))
-            if new_is_bold:
-                font.setBold(True)
-            metrics = QFontMetrics(font)
-            min_text_width = metrics.horizontalAdvance(new_text) + 10  # padding
-            min_text_height = metrics.height() + 4  # padding
-            
-            current_scene_rect = text_item.sceneBoundingRect()
-            current_pdf_rect = text_item.pdf_rect
-            
-            # Determinar si es overlay ANTES de calcular el rect
-            is_overlay_now = getattr(text_item, 'is_overlay', False)
-            
-            if current_pdf_rect:
-                # Obtener posición actual en coordenadas de vista
-                current_view_rect = self.pdf_to_view_rect(current_pdf_rect)
-                
-                # CRÍTICO: Para overlays (PDFs de imagen), SIEMPRE usar el tamaño mínimo
-                # Para evitar fragmentación al arrastrar
-                if is_overlay_now:
-                    # Overlay: usar EXACTAMENTE el tamaño necesario
-                    new_view_width = min_text_width
-                    new_view_height = min_text_height
-                else:
-                    # Editable normal: usar el máximo entre actual y mínimo requerido
-                    new_view_width = max(current_view_rect.width(), min_text_width)
-                    new_view_height = max(current_view_rect.height(), min_text_height)
-                
-                new_view_rect = QRectF(
-                    current_view_rect.x(),
-                    current_view_rect.y(),
-                    new_view_width,
-                    new_view_height
-                )
-                
-                # Convertir a PDF rect
-                new_pdf_rect = self.view_to_pdf_rect(new_view_rect)
-                
-            else:
-                # Si no hay pdf_rect, crear uno nuevo
-                new_view_rect = QRectF(
-                    current_scene_rect.x(),
-                    current_scene_rect.y(),
-                    min_text_width,
-                    min_text_height
-                )
-                new_pdf_rect = self.view_to_pdf_rect(new_view_rect)
-            
-            # Actualizar el rectángulo visual
-            text_item.setRect(QRectF(0, 0, new_view_rect.width(), new_view_rect.height()))
-            text_item.setPos(new_view_rect.x(), new_view_rect.y())
-            
-            
-            # SISTEMA UNIFICADO: SIEMPRE usar overlay para ediciones
-            # El texto solo se escribe al PDF cuando se GUARDA el documento
-            # Esto evita duplicación y cambios de formato
-            
-            needs_erase = getattr(text_item, 'needs_erase', False)
-            
-            # Si el texto viene del PDF original y nunca fue modificado, borrar el original
-            if needs_erase and not is_overlay_now:
-                
-                internal_pdf_rect = getattr(text_item, 'internal_pdf_rect', None)
-                original_pdf_rect = getattr(text_item, 'original_pdf_rect', None)
-                
-                if internal_pdf_rect:
-                    rect_to_erase = internal_pdf_rect
-                    already_internal = True
-                elif original_pdf_rect:
-                    rect_to_erase = original_pdf_rect
-                    already_internal = False
-                else:
-                    rect_to_erase = None
-                    already_internal = False
-                
-                if rect_to_erase and self.pdf_doc:
-                    self.pdf_doc._save_snapshot()
-                    self.pdf_doc.erase_text_transparent(
-                        self.current_page,
-                        rect_to_erase,
-                        save_snapshot=False,
-                        already_internal=already_internal
-                    )
-            
-            # Convertir a overlay (si no lo era)
-            if not is_overlay_now:
-                text_item.is_overlay = True
-            
-            # Actualizar propiedades
-            text_item.pending_write = True
-            text_item.needs_erase = False  # Ya borramos el original (si había)
-            text_item.pdf_rect = new_pdf_rect
-            
-            # Actualizar los datos guardados
-            self._update_text_data(text_item)
-            
-            # Re-renderizar para mostrar el PDF actualizado (sin el texto original)
-            if needs_erase and not is_overlay_now:
-                self.render_page()
-            else:
-                # Solo forzar repintado del item
-                text_item.update()
-            
+            self._apply_text_edit(text_item, new_text, new_font_size, new_is_bold)
+    
+    def _apply_text_edit(
+        self, 
+        text_item: EditableTextItem, 
+        new_text: str, 
+        new_font_size: float, 
+        new_is_bold: bool,
+        was_truncated: bool = False,
+        warnings: list = None
+    ):
+        """Aplica los cambios de edición al texto.
+        
+        Extraído de _edit_text_content para poder ser usado tanto
+        por el diálogo básico como por el mejorado.
+        """
+        # Si el texto está vacío, ELIMINAR el texto del PDF y el item
+        if not new_text:
+            self._remove_empty_text_item(text_item)
             self.documentModified.emit()
+            return
+        
+        current_is_bold = getattr(text_item, 'is_bold', False)
+        
+        # Verificar si hay cambios (tolerancia de 0.5 para tamaño de fuente)
+        text_changed = new_text != text_item.text
+        size_changed = abs(new_font_size - text_item.font_size) > 0.5
+        bold_changed = new_is_bold != current_is_bold
+        
+        if not (text_changed or size_changed or bold_changed):
+            return
+        
+        # Actualizar propiedades del item
+        text_item.text = new_text
+        text_item.font_size = new_font_size
+        text_item.is_bold = new_is_bold
+        # Determinar el nombre de fuente según negrita
+        text_item.font_name = "hebo" if new_is_bold else "helv"
+        
+        # Detectar si es PDF de imagen
+        is_image_pdf = self.pdf_doc.is_image_based_pdf() if self.pdf_doc else False
+        
+        # IMPORTANTE: Calcular tamaño basado en métricas de Qt para evitar recorte
+        # El rectángulo debe ser lo suficientemente grande para mostrar todo el texto
+        font = QFont("Helvetica", int(new_font_size))
+        if new_is_bold:
+            font.setBold(True)
+        metrics = QFontMetrics(font)
+        min_text_width = metrics.horizontalAdvance(new_text) + 10  # padding
+        min_text_height = metrics.height() + 4  # padding
+        
+        current_scene_rect = text_item.sceneBoundingRect()
+        current_pdf_rect = text_item.pdf_rect
+        
+        # Determinar si es overlay ANTES de calcular el rect
+        is_overlay_now = getattr(text_item, 'is_overlay', False)
+        
+        if current_pdf_rect:
+            # Obtener posición actual en coordenadas de vista
+            current_view_rect = self.pdf_to_view_rect(current_pdf_rect)
+            
+            # CRÍTICO: Para overlays (PDFs de imagen), SIEMPRE usar el tamaño mínimo
+            # Para evitar fragmentación al arrastrar
+            if is_overlay_now:
+                # Overlay: usar EXACTAMENTE el tamaño necesario
+                new_view_width = min_text_width
+                new_view_height = min_text_height
+            else:
+                # Editable normal: usar el máximo entre actual y mínimo requerido
+                new_view_width = max(current_view_rect.width(), min_text_width)
+                new_view_height = max(current_view_rect.height(), min_text_height)
+            
+            new_view_rect = QRectF(
+                current_view_rect.x(),
+                current_view_rect.y(),
+                new_view_width,
+                new_view_height
+            )
+            
+            # Convertir a PDF rect
+            new_pdf_rect = self.view_to_pdf_rect(new_view_rect)
+            
+        else:
+            # Si no hay pdf_rect, crear uno nuevo
+            new_view_rect = QRectF(
+                current_scene_rect.x(),
+                current_scene_rect.y(),
+                min_text_width,
+                min_text_height
+            )
+            new_pdf_rect = self.view_to_pdf_rect(new_view_rect)
+        
+        # Actualizar el rectángulo visual
+        text_item.setRect(QRectF(0, 0, new_view_rect.width(), new_view_rect.height()))
+        text_item.setPos(new_view_rect.x(), new_view_rect.y())
+        
+        
+        # SISTEMA UNIFICADO: SIEMPRE usar overlay para ediciones
+        # El texto solo se escribe al PDF cuando se GUARDA el documento
+        # Esto evita duplicación y cambios de formato
+        
+        needs_erase = getattr(text_item, 'needs_erase', False)
+        
+        # Si el texto viene del PDF original y nunca fue modificado, borrar el original
+        if needs_erase and not is_overlay_now:
+            
+            internal_pdf_rect = getattr(text_item, 'internal_pdf_rect', None)
+            original_pdf_rect = getattr(text_item, 'original_pdf_rect', None)
+            
+            if internal_pdf_rect:
+                rect_to_erase = internal_pdf_rect
+                already_internal = True
+            elif original_pdf_rect:
+                rect_to_erase = original_pdf_rect
+                already_internal = False
+            else:
+                rect_to_erase = None
+                already_internal = False
+            
+            if rect_to_erase and self.pdf_doc:
+                self.pdf_doc._save_snapshot()
+                self.pdf_doc.erase_text_transparent(
+                    self.current_page,
+                    rect_to_erase,
+                    save_snapshot=False,
+                    already_internal=already_internal
+                )
+        
+        # Convertir a overlay (si no lo era)
+        if not is_overlay_now:
+            text_item.is_overlay = True
+        
+        # Actualizar propiedades
+        text_item.pending_write = True
+        text_item.needs_erase = False  # Ya borramos el original (si había)
+        text_item.pdf_rect = new_pdf_rect
+        
+        # Actualizar los datos guardados
+        self._update_text_data(text_item)
+        
+        # Re-renderizar para mostrar el PDF actualizado (sin el texto original)
+        if needs_erase and not is_overlay_now:
+            self.render_page()
+        else:
+            # Solo forzar repintado del item
+            text_item.update()
+        
+        self.documentModified.emit()
     
     def _update_text_in_pdf(self, text_item: EditableTextItem):
         """Actualiza la posición del texto en el PDF después de moverlo.
