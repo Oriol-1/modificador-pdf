@@ -1,0 +1,23 @@
+{
+  "default": true,
+  "MD022": {
+    "lines": 1
+  },
+  "MD031": true,
+  "MD032": true,
+  "MD040": true,
+  "MD060": {
+    "style": "consistent"
+  },
+  "MD009": {
+    "br_spaces": 2,
+    "list_item_empty_lines": false,
+    "strict": false
+  },
+  "MD012": {
+    "maximum": 1
+  },
+  "MD013": false,
+  "MD034": true,
+  "MD036": true
+}
