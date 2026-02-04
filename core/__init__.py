@@ -1,4 +1,5 @@
 """Módulo core del editor de PDF."""
-from .pdf_handler import PDFDocument, TextBlock, EditOperation
+from .models import TextBlock, EditOperation
+from .pdf_handler import PDFDocument
 
 __all__ = ['PDFDocument', 'TextBlock', 'EditOperation']

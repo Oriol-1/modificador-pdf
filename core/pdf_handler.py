@@ -4,11 +4,13 @@ Maneja la lectura, edición y guardado de documentos PDF preservando estructura 
 """
 
 import fitz  # PyMuPDF
-from dataclasses import dataclass
 from typing import List, Tuple, Optional, Dict, Any
 import copy
 import tempfile
 import os
+
+# Importar modelos de datos
+from .models import TextBlock, EditOperation
 
 # Intentar importar pikepdf para reparación de PDFs
 try:
@@ -16,39 +18,6 @@ try:
     PIKEPDF_AVAILABLE = True
 except ImportError:
     PIKEPDF_AVAILABLE = False
-
-
-@dataclass
-class TextBlock:
-    """Representa un bloque de texto en el PDF."""
-    text: str
-    rect: fitz.Rect
-    font_name: str
-    font_size: float
-    color: Tuple[float, float, float]
-    flags: int  # bold, italic, etc.
-    page_num: int
-    block_no: int
-    line_no: int
-    span_no: int
-    
-    @property
-    def is_bold(self) -> bool:
-        return bool(self.flags & 2 ** 4)
-    
-    @property
-    def is_italic(self) -> bool:
-        return bool(self.flags & 2 ** 1)
-
-
-@dataclass
-class EditOperation:
-    """Representa una operación de edición para deshacer/rehacer."""
-    operation_type: str  # 'highlight', 'delete', 'edit'
-    page_num: int
-    original_data: Any
-    new_data: Any
-    rect: fitz.Rect
 
 
 class PDFDocument:
