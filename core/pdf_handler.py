@@ -11,6 +11,7 @@ import os
 
 # Importar modelos de datos
 from .models import TextBlock, EditOperation
+from .font_manager import FontManager, FontDescriptor, get_font_manager
 
 # Intentar importar pikepdf para reparación de PDFs
 try:
@@ -1504,3 +1505,178 @@ class PDFDocument:
             self.erase_area(page_num, rect, color=(1, 1, 1), save_snapshot=False)
             # Añadir texto SIN guardar snapshot adicional
             return self.add_text_to_page(page_num, rect, new_text, font_size, color, save_snapshot=False)
+
+    def get_text_run_descriptors(self, page_num: int, rect: fitz.Rect) -> List[FontDescriptor]:
+        """
+        Extrae descriptores de fuente de todas las corridas de texto en un área.
+        
+        Integración con FontManager para obtener información de fuentes en PDF.
+        
+        Args:
+            page_num: Número de página (0-indexed)
+            rect: Rectángulo del área a analizar
+            
+        Returns:
+            Lista de FontDescriptor con información de cada corrida de texto
+        """
+        descriptors: List[FontDescriptor] = []
+        
+        if not self.doc or page_num >= self.page_count():
+            return descriptors
+        
+        try:
+            page = self.doc[page_num]
+            font_manager = get_font_manager()
+            
+            # Obtener bloques de texto
+            blocks = page.get_text("dict")["blocks"]
+            
+            for block in blocks:
+                if block["type"] != 0:  # Solo bloques de texto
+                    continue
+                
+                # Procesar líneas dentro del bloque
+                for line in block.get("lines", []):
+                    line_rect = fitz.Rect(line["bbox"])
+                    
+                    # Verificar si la línea intersecta con el área
+                    if not line_rect.intersects(rect):
+                        continue
+                    
+                    # Procesar caracteres en la línea
+                    for span in line.get("spans", []):
+                        # Crear estructura compatible con font_manager
+                        span_dict = {
+                            "font": span.get("font", ""),
+                            "size": span.get("size", 12.0),
+                            "color": span.get("color", 0),
+                            "flags": span.get("flags", 0),
+                        }
+                        
+                        # Detectar fuente usando FontManager
+                        descriptor = font_manager.detect_font(span_dict)
+                        descriptors.append(descriptor)
+            
+            return descriptors
+        
+        except Exception as e:
+            self._last_error = f"Error extracting font descriptors: {str(e)}"
+            return []
+
+    def replace_text_preserving_metrics(
+        self, 
+        page_num: int, 
+        old_text: str, 
+        new_text: str,
+        preserve_bold: bool = True
+    ) -> bool:
+        """
+        Reemplaza texto preservando métricas de fuente y estilos (bold, itálica).
+        
+        Integración con FontManager para mantener consistencia visual durante reemplazo.
+        
+        Args:
+            page_num: Número de página
+            old_text: Texto a reemplazar
+            new_text: Texto nuevo
+            preserve_bold: Si True, mantiene bold si fue detectado
+            
+        Returns:
+            True si la operación fue exitosa
+        """
+        if not self.doc or page_num >= self.page_count():
+            return False
+        
+        try:
+            page = self.doc[page_num]
+            font_manager = get_font_manager()
+            
+            # Buscar todas las ocurrencias del texto
+            search_results = self.search_text(old_text, page_num)
+            
+            if not search_results:
+                self._last_error = f"Text '{old_text}' not found on page {page_num}"
+                return False
+            
+            self._save_snapshot()
+            
+            # Procesar cada ocurrencia (de atrás hacia adelante para evitar offset)
+            for page_idx, rect in reversed(search_results):
+                if page_idx != page_num:
+                    continue
+                
+                # Obtener descriptores del texto original
+                descriptors = self.get_text_run_descriptors(page_num, rect)
+                
+                if not descriptors:
+                    # Si no hay descriptores, usar valores por defecto
+                    self.edit_text(page_num, rect, new_text)
+                else:
+                    # Usar el primer descriptor como referencia
+                    first_desc = descriptors[0]
+                    color = int(first_desc.color.lstrip("#"), 16) if first_desc.color else 0
+                    
+                    # Aplicar bold si estaba presente y preserve_bold es True
+                    if preserve_bold and first_desc.possible_bold:
+                        # Usar handle_bold para aplicar el estilo
+                        bold_text, _ = font_manager.handle_bold(
+                            new_text, 
+                            first_desc,
+                            True
+                        )
+                        self.edit_text(
+                            page_num, rect, bold_text,
+                            first_desc.name, first_desc.size, color
+                        )
+                    else:
+                        self.edit_text(
+                            page_num, rect, new_text,
+                            first_desc.name, first_desc.size, color
+                        )
+            
+            self.modified = True
+            return True
+        
+        except Exception as e:
+            self._last_error = f"Error replacing text with metrics: {str(e)}"
+            return False
+
+    def detect_bold_in_span(self, page_num: int, rect: fitz.Rect) -> Optional[bool]:
+        """
+        Detecta si el texto en un área está en negrita usando heurísticas.
+        
+        Utiliza FontManager para aplicar heurísticas de detección de bold
+        (análisis de nombre de fuente, comparación de ancho, etc.).
+        
+        Args:
+            page_num: Número de página
+            rect: Rectángulo del área a analizar
+            
+        Returns:
+            True si parece estar en bold, False si no, None si no se puede determinar
+        """
+        if not self.doc or page_num >= self.page_count():
+            return None
+        
+        try:
+            font_manager = get_font_manager()
+            descriptors = self.get_text_run_descriptors(page_num, rect)
+            
+            if not descriptors:
+                return None
+            
+            # Usar el primer descriptor para análisis
+            first_desc = descriptors[0]
+            
+            # Utilizar método de FontManager para detectar bold
+            possible_bold = font_manager.detect_possible_bold({
+                "font": first_desc.fallback_from or first_desc.name,
+                "size": first_desc.size,
+                "flags": 0,
+            })
+            
+            return possible_bold
+        
+        except Exception as e:
+            self._last_error = f"Error detecting bold: {str(e)}"
+            return None
