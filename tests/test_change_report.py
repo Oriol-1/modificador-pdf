@@ -11,8 +11,7 @@ Cobertura:
 """
 
 import pytest
-from datetime import datetime, timedelta
-import json
+from datetime import datetime
 import tempfile
 import os
 

@@ -8,10 +8,12 @@ from .graphics_items import (
     HighlightRect, TextEditDialog, EditableTextItem
 )
 from .coordinate_utils import CoordinateConverter
+from .font_dialog import FontDialog, TextFormatDialog, FontPreviewWidget, ColorButton
 
 __all__ = [
     'MainWindow', 'PDFPageView', 'ThumbnailPanel', 'EditorToolBar',
     'SelectionRect', 'DeletePreviewRect', 'FloatingLabel',
     'HighlightRect', 'TextEditDialog', 'EditableTextItem',
-    'CoordinateConverter'
+    'CoordinateConverter',
+    'FontDialog', 'TextFormatDialog', 'FontPreviewWidget', 'ColorButton'
 ]
