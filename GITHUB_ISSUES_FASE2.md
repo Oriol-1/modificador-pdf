@@ -2,13 +2,14 @@
 
 **Milestone**: PDF Editor Pro v1.3.0  
 **Período**: 4 semanas (2 sprints)  
-**Estado**: Ready for Development  
+**Estado**: Ready for Development
 
 ---
 
 ## 🔧 BACKEND - FontManager (Critical Path)
 
 ### [TASK] Implementar FontManager - core/font_manager.py
+
 **ID**: PHASE2-101  
 **Asignado a**: Backend Engineer  
 **Prioridad**: CRÍTICA  
