@@ -11,7 +11,7 @@ import pytest
 import tempfile
 import os
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 import sys
 
 # Asegurar que core está en el path
@@ -131,15 +131,10 @@ class TestReplaceTextPreservingMetrics:
             result = doc.replace_text_preserving_metrics(0, "notfound", "new")
             assert result is False
     
-    @patch('core.pdf_handler.PDFDocument.search_text')
-    @patch('core.pdf_handler.PDFDocument.get_text_run_descriptors')
-    @patch('core.pdf_handler.PDFDocument.edit_text')
-    def test_replace_text_with_descriptors(self, mock_edit, mock_desc, mock_search):
+    def test_replace_text_with_descriptors(self):
         """Reemplaza texto usando descriptores disponibles."""
-        # Setup mocks
         import fitz
         rect = fitz.Rect(0, 0, 100, 50)
-        mock_search.return_value = [(0, rect)]
         
         descriptor = FontDescriptor(
             name="Arial",
@@ -150,25 +145,27 @@ class TestReplaceTextPreservingMetrics:
             fallback_from=None,
             possible_bold=False
         )
-        mock_desc.return_value = [descriptor]
-        mock_edit.return_value = True
         
         doc = PDFDocument()
-        with patch.object(doc, 'doc', True):
+        mock_doc = MagicMock()
+        mock_doc.__getitem__ = MagicMock(return_value=MagicMock())
+        
+        with patch.object(doc, 'doc', mock_doc):
             with patch.object(doc, 'page_count', return_value=1):
                 with patch.object(doc, '_save_snapshot'):
-                    result = doc.replace_text_preserving_metrics(0, "old", "new")
-                    
-                    # Si la búsqueda fue exitosa, debe llamar edit_text
-                    assert mock_edit.called or result is True
+                    with patch.object(doc, 'search_text', return_value=[(0, rect)]):
+                        with patch.object(doc, 'get_text_run_descriptors', return_value=[descriptor]):
+                            with patch.object(doc, 'edit_text', return_value=True) as mock_edit:
+                                result = doc.replace_text_preserving_metrics(0, "old", "new")
+                                
+                                # Verificar que edit_text fue llamado
+                                assert mock_edit.called
+                                assert result is True
     
-    @patch('core.pdf_handler.PDFDocument.search_text')
-    @patch('core.pdf_handler.PDFDocument.get_text_run_descriptors')
-    def test_replace_text_preserves_bold(self, mock_desc, mock_search):
+    def test_replace_text_preserves_bold(self):
         """Preserva bold cuando preserve_bold=True."""
         import fitz
         rect = fitz.Rect(0, 0, 100, 50)
-        mock_search.return_value = [(0, rect)]
         
         descriptor = FontDescriptor(
             name="Arial",
@@ -179,42 +176,50 @@ class TestReplaceTextPreservingMetrics:
             fallback_from=None,
             possible_bold=True  # Bold detectado
         )
-        mock_desc.return_value = [descriptor]
         
         doc = PDFDocument()
-        with patch.object(doc, 'doc', True):
+        mock_doc = MagicMock()
+        mock_doc.__getitem__ = MagicMock(return_value=MagicMock())
+        
+        with patch.object(doc, 'doc', mock_doc):
             with patch.object(doc, 'page_count', return_value=1):
                 with patch.object(doc, '_save_snapshot'):
-                    with patch.object(doc, 'edit_text') as mock_edit:
-                        doc.replace_text_preserving_metrics(
-                            0, "old", "new",
-                            preserve_bold=True
-                        )
-                        
-                        # Verificar que se llamó edit_text
-                        assert mock_edit.called
+                    with patch.object(doc, 'search_text', return_value=[(0, rect)]):
+                        with patch.object(doc, 'get_text_run_descriptors', return_value=[descriptor]):
+                            with patch.object(doc, 'edit_text', return_value=True) as mock_edit:
+                                result = doc.replace_text_preserving_metrics(
+                                    0, "old", "new",
+                                    preserve_bold=True
+                                )
+                                
+                                # Verificar que se llamó edit_text
+                                assert mock_edit.called
+                                assert result is True
     
     def test_replace_text_sets_modified_flag(self):
         """Establece la bandera modified en True."""
-        doc = PDFDocument()
+        import fitz
+        rect = fitz.Rect(0, 0, 100, 50)
         
-        with patch.object(doc, 'doc', True):
+        descriptor = FontDescriptor(
+            name="Arial", size=12.0, color="#000000",
+            flags=0, was_fallback=False,
+            fallback_from=None, possible_bold=False
+        )
+        
+        doc = PDFDocument()
+        doc.modified = False  # Asegurar estado inicial
+        mock_doc = MagicMock()
+        mock_doc.__getitem__ = MagicMock(return_value=MagicMock())
+        
+        with patch.object(doc, 'doc', mock_doc):
             with patch.object(doc, 'page_count', return_value=1):
                 with patch.object(doc, '_save_snapshot'):
-                    with patch.object(doc, 'search_text') as mock_search:
-                        import fitz
-                        mock_search.return_value = [(0, fitz.Rect(0, 0, 100, 50))]
-                        
-                        with patch.object(doc, 'get_text_run_descriptors') as mock_desc:
-                            descriptor = FontDescriptor(
-                                name="Arial", size=12.0, color="#000000",
-                                flags=0, was_fallback=False,
-                                fallback_from=None, possible_bold=False
-                            )
-                            mock_desc.return_value = [descriptor]
-                            
+                    with patch.object(doc, 'search_text', return_value=[(0, rect)]):
+                        with patch.object(doc, 'get_text_run_descriptors', return_value=[descriptor]):
                             with patch.object(doc, 'edit_text', return_value=True):
-                                doc.replace_text_preserving_metrics(0, "old", "new")
+                                result = doc.replace_text_preserving_metrics(0, "old", "new")
+                                assert result is True
                                 assert doc.modified is True
 
 
@@ -357,11 +362,16 @@ class TestErrorHandling:
     def test_replace_text_sets_error_message(self):
         """Establece _last_error si el texto no se encuentra."""
         doc = PDFDocument()
-        with patch.object(doc, 'doc', True):
+        doc._last_error = ""  # Limpiar estado
+        mock_doc = MagicMock()
+        mock_doc.__getitem__ = MagicMock(return_value=MagicMock())
+        
+        with patch.object(doc, 'doc', mock_doc):
             with patch.object(doc, 'page_count', return_value=1):
                 with patch.object(doc, 'search_text', return_value=[]):
-                    doc.replace_text_preserving_metrics(0, "notfound", "new")
-                    assert "not found" in doc._last_error
+                    result = doc.replace_text_preserving_metrics(0, "notfound", "new")
+                    assert result is False
+                    assert "not found" in doc._last_error.lower()
     
     def test_detect_bold_sets_error_message(self):
         """Establece _last_error en caso de excepción."""
