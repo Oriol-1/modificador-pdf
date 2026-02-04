@@ -14,9 +14,9 @@
 | ---------------------- | ------------ | ---------- | --------------- |
 | dist/PDF_Editor_Pro.exe | Ejecutable | 54.34 MB | ✅ Compilado |
 
-### Scripts de Compilación Disponibles
+## Scripts de Compilación
 
-#### Windows
+### Windows
 
 - `build.bat` - Compilar ejecutable EXE (ya compilado ✅)
 
@@ -24,7 +24,7 @@
 
 - `build_installer.bat` - Compilar instalador Inno Setup
 
-#### Linux
+### Linux
 
 - `build_linux.sh` - Build general
 

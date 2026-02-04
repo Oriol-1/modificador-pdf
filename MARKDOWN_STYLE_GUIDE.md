@@ -14,6 +14,7 @@ contenido sin línea en blanco
 ```
 
 ✅ **Correcto:**
+
 ```markdown
 Contenido anterior.
 
@@ -58,11 +59,9 @@ Contenido posterior.
 
 ```markdown
 Texto anterior
-
 ```python
 code
 ```
-
 Texto posterior
 ```
 
@@ -300,86 +299,3 @@ Añade esto a tu `.vscode/settings.json`:
 1. **markdownlint** (David Anson) - Validación en tiempo real
 2. **Markdown Preview Enhanced** - Vista previa mejorada
 3. **Prettier** - Formato automático (opcional)
-
----
-
-## Plantilla para Nuevos Documentos
-
-```markdown
-# Título Principal
-
-Párrafo introductorio.
-
-## Sección 1
-
-Contenido de la sección.
-
-- Item 1
-- Item 2
-- Item 3
-
-Más contenido.
-
-```python
-código_ejemplo = "con lenguaje especificado"
-```
-
-Explicación del código.
-
-## Sección 2
-
-Contenido de la segunda sección.
-
-### Subsección
-
-Contenido anidado.
-
-## Referencias
-
-- [Enlace descriptivo](https://ejemplo.com)
-```
-
----
-
-## Checklist antes de Commit
-
-- [ ] ¿Todos los encabezados tienen líneas en blanco antes y después?
-- [ ] ¿Todas las listas están rodeadas de líneas en blanco?
-- [ ] ¿Todos los bloques de código tienen lenguaje especificado?
-- [ ] ¿Todos los bloques de código están rodeados de líneas en blanco?
-- [ ] ¿No hay espacios finales en las líneas?
-- [ ] ¿Las tablas tienen espacios consistentes?
-- [ ] ¿Los URLs están entre `[]()` o `<>`?
-- [ ] ¿No hay énfasis usado como encabezados?
-
----
-
-## Configuración Automática en VS Code
-
-Añade esto a tu `.vscode/settings.json`:
-
-```json
-{
-  "editor.trimAutoWhitespace": true,
-  "[markdown]": {
-    "editor.trimAutoWhitespace": true,
-    "editor.formatOnSave": false,
-    "editor.renderWhitespace": "boundary",
-    "editor.insertSpaces": true,
-    "editor.tabSize": 2
-  },
-  "markdownlint.config": {
-    "MD022": {"lines": 1},
-    "MD031": true,
-    "MD032": true,
-    "MD040": true
-  }
-}
-```
-
-## Extensiones Recomendadas
-
-1. **markdownlint** (David Anson) - Validación en tiempo real
-2. **Markdown Preview Enhanced** - Vista previa mejorada
-3. **Prettier** - Formato automático (opcional)
-

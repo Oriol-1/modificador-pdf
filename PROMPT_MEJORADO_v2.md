@@ -78,7 +78,7 @@ Permitir que usuarios **editen contenido textual** en un PDF sin:
     "Courier"      → "cour" (Courier)
     "Symbol", "Wingdings" → "symbols" (Symbol)
     [otros]        → "helv" (fallback seguro)
-    ```text
+    ```
 
   - **Cuando se use fallback, loguear advertencia**:
     `"Fuente 'Custom' no disponible en PDF, usando Helvetica"`
@@ -125,14 +125,16 @@ Definir de forma clara y consistente:
 
 - Calcular relleno disponible: `QFontMetrics.boundingRect(new_text).width()`
 
-- Si excede: **mostrar diálogo**:  ```text
-  "El texto no cabe en el área original.
-  Opciones:
-  [A] Recortar con '...' (perder contenido)
-  [B] Reducir espaciado (tracking: -5%, -10%, -15%, -20%)
-  [C] Reducir tamaño (usuario autoriza % reducción)
-  [Cancelar]"
-  ```text
+- Si excede: **mostrar diálogo**:
+
+    ```text
+    "El texto no cabe en el área original.
+    Opciones:
+    [A] Recortar con '...' (perder contenido)
+    [B] Reducir espaciado (tracking: -5%, -10%, -15%, -20%)
+    [C] Reducir tamaño (usuario autoriza % reducción)
+    [Cancelar]"
+    ```
 
 - **Valor por defecto recomendado**: [B] espaciado (-10%)
 
