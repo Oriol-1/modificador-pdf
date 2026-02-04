@@ -8,7 +8,7 @@
 
 ## 📦 Compilables Generados
 
-### Windows
+### Ejecutables Generados
 
 | Archivo | Tipo | Tamaño | Estado |
 | ---------------------- | ------------ | ---------- | --------------- |
