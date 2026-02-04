@@ -45,7 +45,7 @@ class FontManager:
         "Arial": "helv",
         "Times New Roman": "times",
         "Courier": "cour",
-        # ... (ver tabla en PROMPT_MEJORADO_v2.md línea 380)
+        # ... (ver tabla en PROMPT_MEJORADO_v2.md línea 380) [c]: See reference link
     }
 
     def detect_font(self, span: dict) -> FontDescriptor:
@@ -180,7 +180,7 @@ class TextChangeReport:
 
 **Criterio de aceptación**:
 
-- ✅ Estructura captures todos los cambios
+- ✅ Estructura captura todos los cambios
 - ✅ `as_dict()` serializa sin errores
 - ✅ Fácil de mostrar en UI
 
@@ -252,7 +252,7 @@ class EnhancedTextEditDialog(QDialog):
 - Cuando usuario escribe, preview se actualiza en tiempo real
 - Si no cabe, mostrar dialog tipo:
 
-```
+```text
 ⚠️ Texto muy largo (no cabe en área original)
   
   Opciones:
@@ -509,6 +509,29 @@ def test_paste_rtf_with_formatting():
 
 ## 📅 TIMELINE INTEGRADO (2 sprints = 4 semanas)
 
+### Semana 1: Backend (Tareas 1.1-1.3) {#week-1-backend}
+
+- Lunes-Miércoles: Backend Task 1.1 (FontManager)
+- Jueves-Viernes: Backend Task 1.2 + 1.3
+
+### Semana 2: Inicio Frontend + QA paralelo {#week-2-frontend-qa}
+
+- Lunes-Miércoles: Frontend Task 2.1 (Dialog)
+- Martes-Viernes: QA Task 3.1-3.2 (tests unitarios + fixtures)
+- **Bloqueo**: Frontend no avanza hasta Backend Task 1.1 esté listo
+
+### Semana 3: Frontend + Integración {#week-3-integration}
+
+- Lunes-Martes: Frontend Task 2.2 (copy/paste)
+- Miércoles-Viernes: Frontend Task 2.3 + integración con Backend
+
+### Semana 4: Testing final + Bug fixes {#week-4-testing}
+
+- Lunes-Miércoles: QA Task 3.3-3.4 (integration tests)
+- Jueves-Viernes: Bug fixes, documentación, release prep
+
+---
+
 ### Sprint 1 (Semana 1-2)
 
 **Semana 1: Backend (Tareas 1.1-1.3)**
@@ -538,7 +561,7 @@ def test_paste_rtf_with_formatting():
 
 ## 🔄 Dependencias
 
-```
+```text
 Backend Task 1.1 (FontManager)
     ↓
 Frontend Task 2.1 (Dialog)

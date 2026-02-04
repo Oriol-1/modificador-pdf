@@ -10,6 +10,8 @@
 
 ### [TASK] Implementar FontManager - core/font_manager.py
 
+Blank line added for MD022 spacing
+
 **ID**: PHASE2-101  
 **Asignado a**: Backend Engineer  
 **Prioridad**: CRÍTICA  
@@ -20,6 +22,7 @@
 Módulo centralizado para gestión de fuentes con fallbacks inteligentes y detección de negritas.
 
 **Requerimientos**:
+
 - [ ] Crear clase `FontManager` en `core/font_manager.py`
 - [ ] Método `detect_font(span)` → extrae nombre, tamaño, color
 - [ ] Tabla de mappeos `FONT_MAPPING` (Arial→helv, Times→times, etc.)
@@ -31,6 +34,7 @@ Módulo centralizado para gestión de fuentes con fallbacks inteligentes y detec
 - [ ] Tests unitarios: `tests/test_font_manager.py` (80%+ cobertura)
 
 **Aceptación**:
+
 - ✅ Detecta fuentes estándar sin errores
 - ✅ Fallback a Helvetica para custom fonts
 - ✅ Heurística bold retorna True/False/None (nunca falla)
@@ -44,6 +48,7 @@ Módulo centralizado para gestión de fuentes con fallbacks inteligentes y detec
 ---
 
 ### [TASK] Extender PDFDocument con 3 métodos
+
 **ID**: PHASE2-102  
 **Asignado a**: Backend Engineer  
 **Prioridad**: CRÍTICA  
@@ -55,6 +60,7 @@ Módulo centralizado para gestión de fuentes con fallbacks inteligentes y detec
 Agregar métodos a `core/pdf_handler.py` para trabajar con fuentes y validar reemplazos.
 
 **Requerimientos**:
+
 - [ ] Método `get_text_run_descriptors(page_num, area_rect)` → List[FontDescriptor]
 - [ ] Método `replace_text_preserving_metrics(page_num, old_text, new_text, descriptor)` → (bool, warnings)
 - [ ] Método `detect_bold_in_span(span)` → Optional[bool]
@@ -63,6 +69,7 @@ Agregar métodos a `core/pdf_handler.py` para trabajar con fuentes y validar ree
 - [ ] Tests: `tests/test_pdf_handler.py` (agregar a existentes)
 
 **Aceptacion**:
+
 - ✅ `get_text_run_descriptors()` retorna descriptores de todos los spans en área
 - ✅ `replace_text_preserving_metrics()` valida que cabe el texto
 - ✅ `detect_bold_in_span()` retorna bool o None sin excepciones
@@ -75,6 +82,7 @@ Agregar métodos a `core/pdf_handler.py` para trabajar con fuentes y validar ree
 ---
 
 ### [TASK] Sistema de reportes de cambios
+
 **ID**: PHASE2-103  
 **Asignado a**: Backend Engineer  
 **Prioridad**: IMPORTANTE  
@@ -86,6 +94,7 @@ Agregar métodos a `core/pdf_handler.py` para trabajar con fuentes y validar ree
 Crear estructura `TextChangeReport` para documentar todos los cambios realizados en una edición.
 
 **Requerimientos**:
+
 - [ ] Crear `core/change_report.py`
 - [ ] Dataclass `TextChangeReport` con campos:
   - `old_text`, `new_text`
@@ -169,6 +178,7 @@ Al hacer Ctrl+V, detectar si clipboard contiene HTML/RTF con bold/italic y mapea
 - [ ] Tests: `tests/test_clipboard.py`
 
 **Aceptación**:
+
 - ✅ Detecta bold en HTML pasted
 - ✅ Detecta bold en RTF pasted
 - ✅ Dialog abre con "apply_bold: True" si se detectó bold
@@ -179,6 +189,7 @@ Al hacer Ctrl+V, detectar si clipboard contiene HTML/RTF con bold/italic y mapea
 ---
 
 ### [TASK] Diálogo "Resumen de cambios antes de guardar"
+
 **ID**: PHASE2-203  
 **Asignado a**: Frontend Engineer  
 **Prioridad**: IMPORTANTE  
@@ -190,6 +201,7 @@ Al hacer Ctrl+V, detectar si clipboard contiene HTML/RTF con bold/italic y mapea
 Muestra tabla de cambios (TextChangeReport) antes de guardar PDF.
 
 **Requerimientos**:
+
 - [ ] Crear `ui/save_summary_dialog.py`
 - [ ] Tabla con columnas: Original | Nuevo | Fuente | Cambios
 - [ ] Mostrar warnings en rojo (fuentes fallback, ajustes)
@@ -257,6 +269,7 @@ PDFs de ejemplo para testing de detección de fuentes y bold.
   - Texto con negritas y cursivas (para heurística)
 
 **Aceptación**:
+
 - ✅ 3 PDFs creados y válidos
 - ✅ Legibles en Adobe Reader
 - ✅ Contienen texto extraíble (no imágenes)
@@ -287,6 +300,7 @@ Tests de flujo completo (Gherkin) que cubren escenarios reales de usuario.
 - [ ] Mínimo 10 escenarios
 
 **Aceptación**:
+
 - ✅ 10+ escenarios cubiertos
 - ✅ Todos pasan
 - ✅ Cobertura integration: >70%

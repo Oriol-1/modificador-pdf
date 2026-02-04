@@ -32,9 +32,9 @@ Características implementadas:
 **Tests**: `tests/test_font_manager.py`
 
 - ✅ 22/22 tests PASANDO
-  - 7 tests de detección de fuentes
-  - 8 tests de fallback inteligente
-  - 7 tests de detección de bold
+- 7 tests de detección de fuentes
+- 8 tests de fallback inteligente
+- 7 tests de detección de bold
 - ✅ Cobertura: 80%+ (objetivo alcanzado)
 
 **Correcciones aplicadas**:
@@ -90,7 +90,7 @@ Características implementadas:
 ### 📊 ESTADÍSTICAS DE AVANCE
 
 | Métrica | Valor |
-|---------|-------|
+| ------- | ----- |
 | Líneas de código nuevas | 550+ |
 | Métodos implementados | 12 (9 FontManager + 3 PDFDocument) |
 | Test cases creados | 72 (50 FontManager + 22 PDFHandler) |
@@ -121,30 +121,27 @@ Características implementadas:
 
 ### 🎯 SIGUIENTES PASOS
 
-**Inmediatos** (5-10 min):
-1. ✅ Ajustar los 4 tests fallando en PHASE2-102
+**Inmediatos** (5-10 min):1. ✅ Ajustar los 4 tests fallando en PHASE2-102
    - Mejorar mocking de search_text() para retornar lista de tuplas
    - Verificar que page_count() se llama correctamente
    - Validar que modified flag se establece en el flujo
 
-**Corto plazo** (30-45 min):
-2. ⏳ PHASE2-103: ChangeReport Class
+**Corto plazo** (30-45 min):2. ⏳ PHASE2-103: ChangeReport Class
    - Crear `core/change_report.py`
    - Implementar tracking de cambios (fuente, posición, contenido)
    - Crear tests complementarios
 
-3. ⏳ PHASE2-201: Enhanced Dialog
+1. ⏳ PHASE2-201: Enhanced Dialog
    - Extender `ui/main_window.py` con diálogos mejorados
    - Integrar FontManager en UI
    - Crear selectores de fuente con preview
 
-**Largo plazo** (1-2 horas):
-4. ⏳ PHASE2-202: Copy/Paste with Styles
+**Largo plazo** (1-2 horas):4. ⏳ PHASE2-202: Copy/Paste with Styles
    - Implementar clipboard handler
    - Preservar estilos durante copy/paste
    - Integración con Qt clipboard
 
-5. ⏳ PHASE2-203: Summary Dialog
+1. ⏳ PHASE2-203: Summary Dialog
    - Diálogo de resumen de cambios
    - Análisis de métricas (fuentes usadas, cambios por página)
    - Validación de consistencia
@@ -154,17 +151,20 @@ Características implementadas:
 ### 📝 NOTAS IMPORTANTES
 
 **Logros principales**:
+
 - ✅ FontManager completamente funcional y testeado (90%+ cobertura)
 - ✅ Integración correcta con PDFDocument
 - ✅ Arquitectura modular y reutilizable
 - ✅ Manejo robusto de excepciones sin dependencies externas críticas
 
 **Áreas de mejora**:
+
 - Los 4 tests fallando en PHASE2-102 son issues de mocking, no del código real
 - Necesario simplificar o refactorizar mocking de métodos complejos
 - Considerar usar fixtures más realistas o integration tests
 
 **Código listo para producción**:
+
 - FontManager: SÍ (100%)
 - PDFDocument methods: SÍ (funcionan correctamente, solo tests tienen issues)
 
