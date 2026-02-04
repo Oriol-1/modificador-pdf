@@ -1,220 +1,55 @@
-# Guía de Estilo Markdown para el Proyecto
+# Guía de Estilo Markdown
 
-Esta guía establece estándares para evitar los errores más comunes de markdownlint.
+Estándares para evitar errores comunes de markdownlint.
 
-## Reglas Críticas
+## Reglas
 
-### 1. MD022: Espacios alrededor de encabezados
+### MD022: Espacios alrededor de encabezados
 
-❌ **Incorrecto:**
+Deja UNA línea en blanco ANTES y DESPUÉS de cada encabezado.
 
-```markdown
-## Encabezado
-contenido sin línea en blanco
-```
+### MD032: Espacios alrededor de listas
 
-✅ **Correcto:**
+Rodea las listas con líneas en blanco.
 
-```markdown
-Contenido anterior.
+### MD031: Espacios alrededor de bloques de código
 
-## Encabezado
+Deja una línea en blanco antes y después de bloques de código.
 
-Contenido posterior.
-```
+### MD040: Especificar lenguaje en bloques de código
 
-**Regla:** Siempre deja UNA línea en blanco ANTES y DESPUÉS de cada encabezado.
-
----
-
-### 2. MD032: Espacios alrededor de listas
-
-❌ **Incorrecto:**
-
-```markdown
-## Encabezado
-- Item 1
-- Item 2
-contenido
-```
-
-✅ **Correcto:**
-
-```markdown
-## Encabezado
-
-- Item 1
-- Item 2
-
-Contenido posterior.
-```
-
-**Regla:** Siempre rodea las listas con líneas en blanco.
-
----
-
-### 3. MD031: Espacios alrededor de bloques de código
-
-❌ **Incorrecto:**
-
-```markdown
-Texto anterior
-```python
-code
-```
-Texto posterior
-```
-
-✅ **Correcto:**
-
-```markdown
-Texto anterior
+Siempre especifica el lenguaje en los bloques de código.
 
 ```python
-code
+# Ejemplo correcto con lenguaje especificado
+print("Hola mundo")
 ```
 
-Texto posterior.
-```
+### MD009: Sin espacios al final de líneas
 
-**Regla:** Siempre deja una línea en blanco antes y después de bloques de código.
+No dejes espacios al final de las líneas. Usa un editor que resalte espacios finales.
 
----
+### MD060: Consistencia en tablas
 
-### 4. MD040: Especificar lenguaje en bloques de código
+Usa espacios consistentes alrededor de pipes (`|`):
 
-❌ **Incorrecto:**
-
-```markdown
-```
-código sin especificar
-```
-```
-
-✅ **Correcto:**
-
-```markdown
-```python
-código especificado
-```
-```
-
-**Lenguajes comunes:**
-
-- `python` - código Python
-- `javascript` - código JavaScript
-- `bash` - comandos de shell
-- `markdown` - markdown
-- `json` - archivos JSON
-- `yaml` - archivos YAML
-- `html` - HTML
-- `css` - CSS
-- `sql` - SQL
-- `text` o `plaintext` - texto sin resalte
-
----
-
-### 5. MD009: Sin espacios al final de líneas
-
-❌ **Incorrecto:**
-
-```markdown
-Esta línea tiene espacios al final
-```
-
-✅ **Correcto:**
-
-```markdown
-Esta línea no tiene espacios
-```
-
-**Solución:** Usa un editor que resalte espacios finales (VS Code tiene esta opción).
-
----
-
-### 6. MD060: Consistencia en tablas
-
-❌ **Incorrecto:**
-
-```markdown
-|Columna 1|Columna 2|
-|-|-|
-|Dato|Dato|
-```
-
-✅ **Correcto:**
-
-```markdown
 | Columna 1 | Columna 2 |
 | --------- | --------- |
 | Dato      | Dato      |
-```
 
-**Regla:** Usa espacios consistentes alrededor de pipes (`|`). Recomendado: espacio antes y después de cada pipe.
+### MD012: Una línea en blanco entre párrafos
 
----
+Máximo UNA línea en blanco entre elementos. Evita múltiples líneas en blanco.
 
-### 7. MD012: Una línea en blanco entre párrafos
+### MD034: URLs deben estar entre paréntesis o ángulos
 
-❌ **Incorrecto:**
+Usa: `[texto](https://ejemplo.com)` o `<https://ejemplo.com>`
 
-```markdown
-Párrafo 1
+NO: `Visita https://ejemplo.com`
 
+### MD036: No usar énfasis como encabezados
 
-Párrafo 2
-```
-
-✅ **Correcto:**
-
-```markdown
-Párrafo 1
-
-Párrafo 2
-```
-
-**Regla:** Máximo UNA línea en blanco entre elementos.
-
----
-
-### 8. MD034: URLs deben estar entre paréntesis
-
-❌ **Incorrecto:**
-
-```markdown
-Visita https://ejemplo.com para más info
-```
-
-✅ **Correcto:**
-
-```markdown
-Visita [este sitio](https://ejemplo.com) para más info
-```
-
-O si es una referencia:
-
-```markdown
-Visita <https://ejemplo.com> para más info
-```
-
----
-
-### 9. MD036: No usar énfasis como encabezados
-
-❌ **Incorrecto:**
-
-```markdown
-**Esto es un encabezado falso**
-Contenido...
-```
-
-✅ **Correcto:**
-
-```markdown
-## Esto es un encabezado real
-
-Contenido...
-```
+Usa `## Encabezado` en lugar de `**Encabezado**`
 
 ---
 
@@ -225,72 +60,34 @@ Contenido...
 
 Párrafo introductorio.
 
-## Sección 1
+## Primera Sección
 
 Contenido de la sección.
 
-- Item 1
-- Item 2
-- Item 3
+- Punto 1
+- Punto 2
 
-Más contenido.
+```
 
 ```python
-código_ejemplo = "con lenguaje especificado"
+# Código de ejemplo
+resultado = calcular()
 ```
 
 Explicación del código.
-
-## Sección 2
-
-Contenido de la segunda sección.
-
-### Subsección
-
-Contenido anidado.
-
-## Referencias
-
-- [Enlace descriptivo](https://ejemplo.com)
-```
 
 ---
 
 ## Checklist antes de Commit
 
-- [ ] ¿Todos los encabezados tienen líneas en blanco antes y después?
-- [ ] ¿Todas las listas están rodeadas de líneas en blanco?
-- [ ] ¿Todos los bloques de código tienen lenguaje especificado?
-- [ ] ¿Todos los bloques de código están rodeados de líneas en blanco?
-- [ ] ¿No hay espacios finales en las líneas?
-- [ ] ¿Las tablas tienen espacios consistentes?
-- [ ] ¿Los URLs están entre `[]()` o `<>`?
-- [ ] ¿No hay énfasis usado como encabezados?
-
----
-
-## Configuración Automática en VS Code
-
-Añade esto a tu `.vscode/settings.json`:
-
-```json
-{
-  "editor.trimAutoWhitespace": true,
-  "[markdown]": {
-    "editor.trimAutoWhitespace": true,
-    "editor.formatOnSave": false,
-    "editor.renderWhitespace": "boundary",
-    "editor.insertSpaces": true,
-    "editor.tabSize": 2
-  },
-  "markdownlint.config": {
-    "MD022": {"lines": 1},
-    "MD031": true,
-    "MD032": true,
-    "MD040": true
-  }
-}
-```
+- [ ] ¿Encabezados con líneas en blanco?
+- [ ] ¿Listas rodeadas de líneas en blanco?
+- [ ] ¿Bloques de código con lenguaje?
+- [ ] ¿Bloques de código rodeados de líneas?
+- [ ] ¿Sin espacios finales?
+- [ ] ¿Tablas consistentes?
+- [ ] ¿URLs formateadas?
+- [ ] ¿Sin énfasis como encabezados?
 
 ---
 
@@ -298,4 +95,4 @@ Añade esto a tu `.vscode/settings.json`:
 
 1. **markdownlint** (David Anson) - Validación en tiempo real
 2. **Markdown Preview Enhanced** - Vista previa mejorada
-3. **Prettier** - Formato automático (opcional)
+3. **Prettier** (opcional) - Formateador automático
