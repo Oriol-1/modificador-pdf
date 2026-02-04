@@ -7,9 +7,11 @@ from .graphics_items import (
     SelectionRect, DeletePreviewRect, FloatingLabel, 
     HighlightRect, TextEditDialog, EditableTextItem
 )
+from .coordinate_utils import CoordinateConverter
 
 __all__ = [
     'MainWindow', 'PDFPageView', 'ThumbnailPanel', 'EditorToolBar',
     'SelectionRect', 'DeletePreviewRect', 'FloatingLabel',
-    'HighlightRect', 'TextEditDialog', 'EditableTextItem'
+    'HighlightRect', 'TextEditDialog', 'EditableTextItem',
+    'CoordinateConverter'
 ]

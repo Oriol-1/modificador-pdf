@@ -14,11 +14,12 @@ from PyQt5.QtGui import (
 )
 import fitz
 
-# Importar elementos gráficos desde módulo separado
+# Importar elementos gráficos y utilidades desde módulos separados
 from .graphics_items import (
     SelectionRect, DeletePreviewRect, FloatingLabel, HighlightRect,
     TextEditDialog, EditableTextItem
 )
+from .coordinate_utils import CoordinateConverter
 
 
 class PDFPageView(QGraphicsView):
@@ -106,6 +107,9 @@ class PDFPageView(QGraphicsView):
         self.page_transform_matrix = None
         self.page_derotation_matrix = None
         
+        # Convertidor de coordenadas
+        self.coord_converter = CoordinateConverter(self.zoom_level, self.page_rotation)
+        
         # Items gráficos
         self.page_item = None
         self.selection_rect = None
@@ -171,6 +175,13 @@ class PDFPageView(QGraphicsView):
         self.highlight_items = []
         
         # Limpiar textos editables
+        self.clear_editable_texts_data()
+        
+        # Reiniciar página
+        self.current_page = 0
+    
+    def clear_editable_texts_data(self):
+        """Limpia los datos de textos editables (usado al hacer undo/redo)."""
         self.editable_texts_data = {}
         self.editable_text_items = []
         self.selected_text_item = None
@@ -178,9 +189,6 @@ class PDFPageView(QGraphicsView):
         self.drag_start_pos = None
         self.drag_original_rect = None
         self.text_was_moved = False
-        
-        # Reiniciar página
-        self.current_page = 0
     
     def load_page(self, page_num: int):
         """Carga y muestra una página específica."""
@@ -222,6 +230,9 @@ class PDFPageView(QGraphicsView):
             self.page_cropbox = None
             self.page_transform_matrix = None
             self.page_derotation_matrix = None
+        
+        # Actualizar convertidor de coordenadas
+        self.coord_converter.update(zoom_level=self.zoom_level, page_rotation=self.page_rotation)
         
         # Renderizar página
         pixmap = self.pdf_doc.render_page(self.current_page, self.zoom_level)
@@ -354,6 +365,7 @@ class PDFPageView(QGraphicsView):
             return
         
         self.zoom_level = max(self.min_zoom, min(zoom, self.max_zoom))
+        self.coord_converter.update(zoom_level=self.zoom_level)
         self.render_page()
         self.zoomChanged.emit(self.zoom_level)
     
@@ -621,42 +633,16 @@ class PDFPageView(QGraphicsView):
     def view_to_pdf_rect(self, view_rect: QRectF) -> fitz.Rect:
         """
         Convierte un rectángulo de coordenadas de vista (pixmap) a coordenadas de PDF.
-        
-        IMPORTANTE: PyMuPDF maneja las coordenadas de página internamente considerando
-        la rotación. Las coordenadas de page.rect ya están en el sistema "visual".
-        Por lo tanto, solo necesitamos escalar por el zoom.
+        Usa CoordinateConverter internamente.
         """
-        # El pixmap es el PDF renderizado con zoom, así que dividimos por zoom
-        x0 = view_rect.x() / self.zoom_level
-        y0 = view_rect.y() / self.zoom_level
-        x1 = view_rect.right() / self.zoom_level
-        y1 = view_rect.bottom() / self.zoom_level
-        
-        # Debug info
-        print(f"=== Conversión de coordenadas ===")
-        print(f"View rect: ({view_rect.x():.1f}, {view_rect.y():.1f}) -> ({view_rect.right():.1f}, {view_rect.bottom():.1f})")
-        print(f"Zoom: {self.zoom_level}")
-        print(f"Rotación página: {self.page_rotation}°")
-        print(f"PDF rect (escalado): ({x0:.1f}, {y0:.1f}) -> ({x1:.1f}, {y1:.1f})")
-        
-        # Crear el rectángulo - PyMuPDF maneja la rotación internamente
-        pdf_rect = fitz.Rect(x0, y0, x1, y1)
-        
-        print(f"PDF rect final: {pdf_rect}")
-        return pdf_rect
+        return self.coord_converter.view_to_pdf_rect(view_rect, debug=True)
     
     def pdf_to_view_rect(self, pdf_rect: fitz.Rect) -> QRectF:
         """
         Convierte un rectángulo de coordenadas de PDF a coordenadas de vista.
-        Operación inversa a view_to_pdf_rect.
+        Usa CoordinateConverter internamente.
         """
-        # Simplemente aplicar el zoom
-        x0 = pdf_rect.x0 * self.zoom_level
-        y0 = pdf_rect.y0 * self.zoom_level
-        x1 = pdf_rect.x1 * self.zoom_level
-        y1 = pdf_rect.y1 * self.zoom_level
-        
-        return QRectF(x0, y0, x1 - x0, y1 - y0)
+        return self.coord_converter.pdf_to_view_rect(pdf_rect)
     
     def edit_selection(self, pdf_rect: fitz.Rect, blocks=None):
         """Edita o añade texto en el área seleccionada. Funciona para PDFs con texto e imágenes."""

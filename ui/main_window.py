@@ -1461,6 +1461,8 @@ class MainWindow(QMainWindow):
         """Deshace la última acción."""
         if self.pdf_doc.undo():
             current_page = self.pdf_viewer.current_page
+            # Limpiar datos de textos editables al deshacer
+            self.pdf_viewer.clear_editable_texts_data()
             self.pdf_viewer.render_page()
             self.thumbnail_panel.refresh_thumbnail(current_page)
             self.update_undo_redo_state()
@@ -1470,6 +1472,8 @@ class MainWindow(QMainWindow):
         """Rehace la última acción."""
         if self.pdf_doc.redo():
             current_page = self.pdf_viewer.current_page
+            # Limpiar datos de textos editables al rehacer
+            self.pdf_viewer.clear_editable_texts_data()
             self.pdf_viewer.render_page()
             self.thumbnail_panel.refresh_thumbnail(current_page)
             self.update_undo_redo_state()
