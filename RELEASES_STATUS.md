@@ -2,23 +2,31 @@
 
 ## ✅ RELEASES DISPONIBLES EN GITHUB
 
-| Versión  | Tag             | Estado         | Descripción                        |
-|----------|-----------------|----------------|------------------------------------|
-| v1.0.0 | v1.0.0 | ✅ Estable | Release inicial |
-| v1.0.0 | v1.0.0-stable | ✅ Estable | Versión estable 1.0.0 |
-| v1.0.1 | v1.0.1 | ✅ Estable | Correcciones de markdownlint |
-| v1.0.1 | v1.0.1-release | ✅ Estable | Maintenance update |
-| v1.1.0 | v1.1.0 | ✅ Estable | Licencia Propietaria + Linux |
-| v1.1.1 | v1.1.1 | ✅ Estable | Añadir builds de Linux |
-| v1.1.2 | v1.1.2 | ✅ Estable | Fix build Linux |
-| **v1.2.0** | **v1.2.0** | 🆕 **ACTUAL** | **Sistema de guardado mejorado** |
-| v1.3.0 | v1.3.0 | ✅ Estable | Editor de texto con formato |
+|Versión|Tag|Estado|Descripción|
+|-------|---|------|-----------|
+|v1.0.0|v1.0.0|✅ Estable|Release inicial|
+|v1.0.0|v1.0.0-stable|✅ Estable|Versión estable 1.0.0|
+|v1.0.1|v1.0.1|✅ Estable|Correcciones de markdownlint|
+|v1.0.1|v1.0.1-release|✅ Estable|Maintenance update|
+|v1.1.0|v1.1.0|✅ Estable|Licencia Propietaria + Linux|
+|v1.1.1|v1.1.1|✅ Estable|Añadir builds de Linux|
+|v1.1.2|v1.1.2|✅ Estable|Fix build Linux|
+|**v1.2.0**|**v1.2.0**|🆕 **ACTUAL**|**Sistema de guardado mejorado**|
+|v1.3.0|v1.3.0|✅ Estable|Editor de texto con formato|
 
-**Total de releases: 9**
+### Resumen de Releases
 
-**Rama actual: main**
+#### Total de releases
 
-**Commit actual: v1.2.0**
+9
+
+#### Rama actual
+
+main
+
+#### Commit actual
+
+v1.2.0
 
 ---
 
@@ -155,7 +163,7 @@ macOS:
 
 Para crear un release con instalables:
 
-### Windows
+#### Compilar en Windows
 
 ```bash
 # Portable
@@ -165,7 +173,7 @@ Para crear un release con instalables:
 .\build_installer.bat
 ```
 
-### Linux
+#### Compilar en Linux
 
 ```bash
 # AppImage
@@ -178,7 +186,7 @@ Para crear un release con instalables:
 ./build_portable_linux.sh
 ```
 
-### macOS
+#### Compilar en macOS
 
 ```bash
 ./build_mac.sh
