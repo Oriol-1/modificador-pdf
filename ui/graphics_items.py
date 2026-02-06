@@ -107,11 +107,11 @@ class TextEditDialog(QDialog):
         format_group = QGroupBox("Formato")
         format_layout = QHBoxLayout(format_group)
         
-        # Tamaño de fuente
+        # Tamaño de fuente - permitir desde 1pt para máxima flexibilidad
         size_layout = QHBoxLayout()
         size_label = QLabel("Tamaño:")
         self.size_spin = QSpinBox()
-        self.size_spin.setRange(6, 72)
+        self.size_spin.setRange(1, 144)  # Rango ampliado: 1pt a 144pt
         self.size_spin.setValue(int(font_size))
         self.size_spin.setSuffix(" pt")
         size_layout.addWidget(size_label)
@@ -223,6 +223,8 @@ class EditableTextItem(QGraphicsRectItem):
         
         CRÍTICO para PDFs de imagen: asegurar que el rect sea lo suficientemente
         grande y que el texto se dibuje COMPLETAMENTE sin fragmentación.
+        Soporta texto multilínea con saltos de línea (\n).
+        Si tiene text_runs, dibuja cada run con su estilo individual.
         """
         # Primero dibujar el rectángulo base (bordes de selección)
         super().paint(painter, option, widget)
@@ -231,37 +233,119 @@ class EditableTextItem(QGraphicsRectItem):
         if self.is_overlay and self.text:
             rect = self.rect()
             
-            # Asegurar que el rect sea lo suficientemente grande
-            # Si el rect es muy pequeño, expandir lo justo para el texto
-            font = QFont("Helvetica", int(self.font_size))
-            if self.is_bold:
-                font.setBold(True)
-            
             from PyQt5.QtGui import QFontMetrics
-            metrics = QFontMetrics(font)
-            text_width = metrics.horizontalAdvance(self.text)
-            text_height = metrics.height()
             
-            # Si el rect es más pequeño que el texto necesario, es un problema
-            # pero aun así intentar dibujarlo sin clipping
+            # Verificar si tiene estilos mixtos (text_runs)
+            text_runs = getattr(self, 'text_runs', None)
+            has_mixed = getattr(self, 'has_mixed_styles', False) and text_runs
             
+            if has_mixed and text_runs:
+                # Dibujar con múltiples estilos usando text_runs
+                self._paint_with_runs(painter, rect, text_runs)
+            else:
+                # Dibujar con estilo uniforme
+                self._paint_uniform(painter, rect)
+    
+    def _paint_uniform(self, painter, rect):
+        """Dibuja el texto con estilo uniforme."""
+        from PyQt5.QtGui import QFontMetrics
+        
+        # Configurar fuente
+        font = QFont("Helvetica", int(self.font_size))
+        if self.is_bold:
+            font.setBold(True)
+        painter.setFont(font)
+        
+        metrics = QFontMetrics(font)
+        
+        # Configurar color
+        r, g, b = self.text_color
+        # Convertir de 0-1 a 0-255 si es necesario
+        if max(r, g, b) <= 1:
+            r, g, b = int(r * 255), int(g * 255), int(b * 255)
+        painter.setPen(QColor(r, g, b))
+        
+        # Dibujar texto multilínea línea por línea
+        lines = self.text.split('\n')
+        line_height = metrics.height()
+        y_offset = metrics.ascent()  # Empezar desde el baseline de la primera línea
+        
+        for i, line in enumerate(lines):
+            if line:  # Solo dibujar si la línea tiene contenido
+                painter.drawText(
+                    int(rect.x()), 
+                    int(rect.y() + y_offset + i * line_height), 
+                    line
+                )
+    
+    def _paint_with_runs(self, painter, rect, text_runs):
+        """Dibuja el texto usando runs con estilos individuales."""
+        from PyQt5.QtGui import QFontMetrics
+        
+        x_offset = int(rect.x())
+        current_line_y = 0
+        last_line_y = None
+        
+        # Fuente base para calcular line_height
+        base_font = QFont("Helvetica", int(self.font_size))
+        base_metrics = QFontMetrics(base_font)
+        line_height = base_metrics.height()
+        y_offset = base_metrics.ascent()
+        
+        for run in text_runs:
+            run_text = run.get('text', '')
+            if not run_text:
+                continue
+            
+            # Detectar cambio de línea
+            line_y = run.get('line_y', 0)
+            if last_line_y is not None and line_y != last_line_y:
+                # Nueva línea - reiniciar x y avanzar y
+                x_offset = int(rect.x())
+                current_line_y += line_height
+            last_line_y = line_y
+            
+            # Configurar fuente del run
+            font_size = run.get('font_size', self.font_size)
+            is_bold = run.get('is_bold', False)
+            is_italic = run.get('is_italic', False)
+            
+            font = QFont("Helvetica", int(font_size))
+            if is_bold:
+                font.setBold(True)
+            if is_italic:
+                font.setItalic(True)
             painter.setFont(font)
             
-            # Configurar color
-            r, g, b = self.text_color
-            # Convertir de 0-1 a 0-255 si es necesario
-            if max(r, g, b) <= 1:
-                r, g, b = int(r * 255), int(g * 255), int(b * 255)
-            painter.setPen(QColor(r, g, b))
+            metrics = QFontMetrics(font)
             
-            # CRÍTICO: Usar TextDontClip para que el texto NUNCA se recorte
-            # Esto es esencial para que no se fragmente
-            text_flags = Qt.AlignLeft | Qt.AlignVCenter | Qt.TextDontClip
-            painter.drawText(rect, text_flags, self.text)
+            # Configurar color del run
+            color_str = run.get('color', '#000000')
+            try:
+                if isinstance(color_str, str):
+                    color = QColor(color_str)
+                else:
+                    r, g, b = color_str
+                    if max(r, g, b) <= 1:
+                        r, g, b = int(r * 255), int(g * 255), int(b * 255)
+                    color = QColor(r, g, b)
+            except:
+                color = QColor(0, 0, 0)
+            painter.setPen(color)
             
-            # DEBUG: Si el rect es muy pequeño comparado con el texto, avisar
-            if rect.width() < text_width - 5 or rect.height() < text_height - 4:
-                # El rect es insuficiente - esto causará fragmentación
-                # Pero ya usamos TextDontClip, así que el texto se dibuja fuera del rect
-                pass
+            # Dibujar el texto del run (manejar saltos de línea internos)
+            run_lines = run_text.split('\n')
+            for i, line in enumerate(run_lines):
+                if i > 0:
+                    # Salto de línea interno - nueva línea
+                    x_offset = int(rect.x())
+                    current_line_y += line_height
+                
+                if line:
+                    painter.drawText(
+                        x_offset, 
+                        int(rect.y() + y_offset + current_line_y), 
+                        line
+                    )
+                    x_offset += metrics.horizontalAdvance(line)
 

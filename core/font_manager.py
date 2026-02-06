@@ -4,22 +4,45 @@ FontManager - Gestión centralizada de fuentes para PDF Editor Pro
 Responsable de:
 1. Detectar fuentes en PDFs (nombre, tamaño, color)
 2. Mapear fuentes custom a equivalentes estándar (fallback)
-3. Detectar negritas (con heurísticas)
+3. Detectar negritas (con heurísticas y métricas precisas)
 4. Calcular tamaño real de texto usando QFontMetrics
 5. Manejar estrategias de fallback para bold/italic
+6. Integración con text_engine para extracción precisa de fuentes
 
 Limitación técnica importante:
 - PyMuPDF NO puede detectar automáticamente si una fuente es bold
 - Usamos heurísticas: nombre contiene "Bold", comparar widths, flags PDF
 - Resultado puede ser True (probablemente bold) / False (no bold) / None (incierto)
+
+Fase 3B: Integración con text_engine
+- FontDescriptor extendido con métricas precisas
+- Detección de estado de embedding (embedded/subset/external)
+- Métricas precisas desde el PDF (ascender, descender, widths)
 """
 
-from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Dict, Optional, Tuple, Any, TYPE_CHECKING
 from enum import Enum
 import logging
 
 from PyQt5.QtGui import QFont, QFontMetrics
+
+# Import text_engine components (con TYPE_CHECKING para evitar circular imports)
+if TYPE_CHECKING:
+    from core.text_engine import EmbeddedFontExtractor
+
+# Try to import text_engine components
+try:
+    from core.text_engine import (
+        EmbeddedFontExtractor,
+        EmbeddingStatus,
+        is_subset_font,
+        get_clean_font_name,
+    )
+    TEXT_ENGINE_AVAILABLE = True
+except ImportError:
+    TEXT_ENGINE_AVAILABLE = False
+    EmbeddingStatus = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +54,51 @@ class BoldStrategy(Enum):
     WARNING_FALLBACK = "warning"         # Advertencia, no se aplicó
 
 
+class FontEmbeddingStatus(Enum):
+    """Estado de embedding de la fuente en el PDF."""
+    EMBEDDED = "embedded"       # Fuente completamente embebida
+    SUBSET = "subset"           # Fuente embebida como subset
+    EXTERNAL = "external"       # Fuente no embebida (referencia externa)
+    UNKNOWN = "unknown"         # No se pudo determinar
+
+
+@dataclass
+class PreciseMetrics:
+    """
+    Métricas precisas extraídas directamente del PDF.
+    
+    Estas métricas vienen del diccionario de fuente del PDF,
+    no de Qt, por lo que son más precisas para el documento.
+    """
+    ascender: float = 0.0          # Altura sobre baseline (unidades de fuente)
+    descender: float = 0.0         # Profundidad bajo baseline (negativo)
+    line_height: float = 0.0       # Altura de línea calculada
+    avg_char_width: float = 0.0    # Ancho promedio de caracteres
+    cap_height: float = 0.0        # Altura de mayúsculas
+    x_height: float = 0.0          # Altura de minúsculas (x)
+    stem_v: float = 0.0            # Grosor de stems verticales (indica bold)
+    stem_h: float = 0.0            # Grosor de stems horizontales
+    italic_angle: float = 0.0      # Ángulo de italics (0 = no italic)
+    
+    @property
+    def is_bold_by_stem(self) -> Optional[bool]:
+        """Detecta bold según grosor de stem (>100 generalmente bold)."""
+        if self.stem_v <= 0:
+            return None  # Sin info
+        return self.stem_v > 100
+    
+    @property  
+    def is_italic_by_angle(self) -> bool:
+        """Detecta italic según ángulo."""
+        return abs(self.italic_angle) > 5
+
+
 @dataclass
 class FontDescriptor:
     """
     Descriptor de fuente extraído de un span de PDF.
+    
+    Fase 3B: Extendido con métricas precisas y estado de embedding.
     
     Attributes:
         name: Nombre de fuente detectado (ej: "Arial", "MyriadPro")
@@ -44,6 +108,17 @@ class FontDescriptor:
         was_fallback: True si se usó fallback de fuente
         fallback_from: Fuente original si fue reemplazada
         possible_bold: True/False/None (detección heurística)
+        
+        # Fase 3B - Nuevos campos
+        embedding_status: Estado de embedding (embedded/subset/external)
+        precise_metrics: Métricas precisas del PDF (no Qt)
+        char_spacing: Espaciado entre caracteres (Tc)
+        word_spacing: Espaciado entre palabras (Tw)
+        baseline_y: Posición Y del baseline
+        bbox: Bounding box del texto [x0, y0, x1, y1]
+        original_font_name: Nombre exacto en el PDF (puede incluir subset prefix)
+        is_subset: True si la fuente es subset (XXXXXX+FontName)
+        glyph_widths: Dict de anchos de glifos {char: width}
     """
     name: str
     size: float
@@ -52,14 +127,65 @@ class FontDescriptor:
     was_fallback: bool = False
     fallback_from: Optional[str] = None
     possible_bold: Optional[bool] = None
+    
+    # Fase 3B - Nuevos campos con valores por defecto
+    embedding_status: FontEmbeddingStatus = FontEmbeddingStatus.UNKNOWN
+    precise_metrics: Optional[PreciseMetrics] = None
+    char_spacing: float = 0.0
+    word_spacing: float = 0.0
+    baseline_y: Optional[float] = None
+    bbox: Optional[Tuple[float, float, float, float]] = None
+    original_font_name: Optional[str] = None
+    is_subset: bool = False
+    glyph_widths: Dict[str, float] = field(default_factory=dict)
 
     def __repr__(self) -> str:
         fallback_str = f" (fallback from {self.fallback_from})" if self.was_fallback else ""
-        return f"FontDescriptor({self.name} {self.size}pt{fallback_str})"
+        embedding = f" [{self.embedding_status.value}]" if self.embedding_status != FontEmbeddingStatus.UNKNOWN else ""
+        return f"FontDescriptor({self.name} {self.size}pt{fallback_str}{embedding})"
+    
+    def has_precise_metrics(self) -> bool:
+        """Verifica si tiene métricas precisas disponibles."""
+        return self.precise_metrics is not None
+    
+    def get_line_height(self) -> float:
+        """Obtiene altura de línea (precisa si disponible, sino estimada)."""
+        if self.precise_metrics and self.precise_metrics.line_height > 0:
+            return self.precise_metrics.line_height * self.size / 1000
+        return self.size * 1.2  # Estimación estándar
+    
+    def is_bold_detected(self) -> Optional[bool]:
+        """
+        Determina si la fuente es bold usando todas las fuentes de info.
+        
+        Prioridad:
+        1. Métricas precisas (stem_v)
+        2. possible_bold (heurística de nombre)
+        3. flags PDF
+        """
+        # 1. Métricas precisas (más confiable)
+        if self.precise_metrics:
+            stem_bold = self.precise_metrics.is_bold_by_stem
+            if stem_bold is not None:
+                return stem_bold
+        
+        # 2. Heurística de nombre
+        if self.possible_bold is not None:
+            return self.possible_bold
+            
+        # 3. Flags PDF
+        if self.flags & 0x40:  # Flag bold típico
+            return True
+            
+        return None
 
 
 class FontManager:
-    """Gestión centralizada de fuentes con fallbacks inteligentes."""
+    """
+    Gestión centralizada de fuentes con fallbacks inteligentes.
+    
+    Fase 3B: Integrado con text_engine para extracción precisa.
+    """
 
     # Tabla de mappeos: nombre PDF → nombre PyMuPDF (estándar)
     FONT_MAPPING: Dict[str, str] = {
@@ -101,18 +227,55 @@ class FontManager:
         "Consolas": "cour",              # Monospace similar a Courier
     }
 
-    def __init__(self):
-        """Inicializar FontManager."""
+    def __init__(self, doc: Any = None):
+        """
+        Inicializar FontManager.
+        
+        Args:
+            doc: Documento fitz (opcional, para extracción de fuentes embebidas)
+        """
         self.logger = logger
-        self._font_cache = {}  # Cache de QFont para evitar recrear
+        self._font_cache: Dict[str, QFont] = {}
+        self._doc = doc
+        self._font_extractor: Optional[Any] = None
+        self._font_info_cache: Dict[str, Any] = {}
+        
+        # Inicializar extractor si text_engine está disponible
+        if TEXT_ENGINE_AVAILABLE and doc is not None:
+            try:
+                self._font_extractor = EmbeddedFontExtractor(doc)
+            except Exception as e:
+                self.logger.warning(f"Could not initialize font extractor: {e}")
+    
+    def set_document(self, doc: Any) -> None:
+        """
+        Establece el documento PDF para extracción de fuentes.
+        
+        Args:
+            doc: Documento fitz.Document
+        """
+        self._doc = doc
+        self._font_info_cache.clear()
+        
+        if TEXT_ENGINE_AVAILABLE and doc is not None:
+            try:
+                self._font_extractor = EmbeddedFontExtractor(doc)
+            except Exception as e:
+                self.logger.warning(f"Could not initialize font extractor: {e}")
+        else:
+            self._font_extractor = None
 
-    def detect_font(self, span: dict) -> FontDescriptor:
+    def detect_font(self, span: dict, page_num: int = 0) -> FontDescriptor:
         """
         Extrae información de fuente de un span de PyMuPDF.
+        
+        Fase 3B: Ahora extrae métricas precisas y estado de embedding
+        cuando text_engine está disponible.
 
         Args:
             span: Dict del texto extraído con get_text("dict")
                   Contiene: "font", "size", "color", "flags", etc.
+            page_num: Número de página (para cache de fuentes)
 
         Returns:
             FontDescriptor con información detectada y fallback aplicado si es necesario
@@ -127,13 +290,48 @@ class FontManager:
             color_hex = self._color_to_hex(color)
 
             flags = span.get("flags", 0)
+            
+            # Extraer bbox si está disponible
+            bbox = None
+            if "bbox" in span:
+                bbox = tuple(span["bbox"])
+            
+            # Extraer baseline si está disponible (origin es la posición del texto)
+            baseline_y = None
+            if "origin" in span:
+                baseline_y = span["origin"][1]
 
             # Detectar si es estándar o custom
             actual_font = self.smart_fallback(font_name)
             was_fallback = actual_font != font_name
 
-            # Detectar posible bold
+            # Detectar posible bold (heurística básica)
             possible_bold = self.detect_possible_bold(span)
+            
+            # Fase 3B: Extraer información precisa si text_engine está disponible
+            embedding_status = FontEmbeddingStatus.UNKNOWN
+            precise_metrics = None
+            is_subset = False
+            original_font_name = font_name
+            glyph_widths: Dict[str, float] = {}
+            
+            if TEXT_ENGINE_AVAILABLE:
+                # Detectar subset
+                is_subset = is_subset_font(font_name)
+                if is_subset:
+                    original_font_name = font_name
+                    # Limpiar nombre para mapeo
+                    clean_name = get_clean_font_name(font_name)
+                    actual_font = self.smart_fallback(clean_name)
+                
+                # Extraer información de fuente embebida
+                if self._font_extractor:
+                    try:
+                        embedding_status = self.detect_embedded_status(font_name, page_num)
+                        precise_metrics = self.get_precise_metrics(font_name, page_num)
+                        glyph_widths = self._get_glyph_widths_dict(font_name, page_num)
+                    except Exception as e:
+                        self.logger.debug(f"Could not extract precise metrics: {e}")
 
             descriptor = FontDescriptor(
                 name=actual_font,
@@ -143,7 +341,21 @@ class FontManager:
                 was_fallback=was_fallback,
                 fallback_from=font_name if was_fallback else None,
                 possible_bold=possible_bold,
+                # Fase 3B campos
+                embedding_status=embedding_status,
+                precise_metrics=precise_metrics,
+                char_spacing=0.0,  # Se extrae de content stream
+                word_spacing=0.0,  # Se extrae de content stream
+                baseline_y=baseline_y,
+                bbox=bbox,
+                original_font_name=original_font_name,
+                is_subset=is_subset,
+                glyph_widths=glyph_widths,
             )
+            
+            # Mejorar detección de bold con métricas precisas
+            if precise_metrics and precise_metrics.is_bold_by_stem is not None:
+                descriptor.possible_bold = precise_metrics.is_bold_by_stem
 
             # Log si fue fallback
             if was_fallback:
@@ -163,6 +375,198 @@ class FontManager:
                 was_fallback=True,
                 fallback_from=span.get("font", "unknown"),
             )
+
+    # ========== Fase 3B: Nuevos métodos de integración ==========
+
+    def detect_embedded_status(
+        self, font_name: str, page_num: int = 0
+    ) -> FontEmbeddingStatus:
+        """
+        Detecta el estado de embedding de una fuente.
+        
+        Usa EmbeddedFontExtractor para determinar si la fuente está:
+        - Completamente embebida
+        - Embebida como subset
+        - Es externa (no embebida)
+        
+        Args:
+            font_name: Nombre de la fuente
+            page_num: Número de página
+            
+        Returns:
+            FontEmbeddingStatus indicando el estado
+        """
+        if not TEXT_ENGINE_AVAILABLE or not self._font_extractor:
+            return FontEmbeddingStatus.UNKNOWN
+        
+        try:
+            # Usar cache si disponible
+            cache_key = f"embed_{font_name}_{page_num}"
+            if cache_key in self._font_info_cache:
+                return self._font_info_cache[cache_key]
+            
+            # Obtener info de fuente
+            font_info = self._font_extractor.get_font_info(font_name, page_num)
+            
+            if font_info is None:
+                status = FontEmbeddingStatus.EXTERNAL
+            elif font_info.embedding_status == EmbeddingStatus.SUBSET:
+                status = FontEmbeddingStatus.SUBSET
+            elif font_info.embedding_status == EmbeddingStatus.EMBEDDED:
+                status = FontEmbeddingStatus.EMBEDDED
+            elif font_info.embedding_status == EmbeddingStatus.NOT_EMBEDDED:
+                status = FontEmbeddingStatus.EXTERNAL
+            else:
+                status = FontEmbeddingStatus.UNKNOWN
+            
+            self._font_info_cache[cache_key] = status
+            return status
+            
+        except Exception as e:
+            self.logger.debug(f"Error detecting embedded status: {e}")
+            return FontEmbeddingStatus.UNKNOWN
+
+    def get_precise_metrics(
+        self, font_name: str, page_num: int = 0
+    ) -> Optional[PreciseMetrics]:
+        """
+        Obtiene métricas precisas de una fuente desde el PDF.
+        
+        Extrae métricas del diccionario de fuente del PDF,
+        que son más precisas que las aproximaciones de Qt.
+        
+        Args:
+            font_name: Nombre de la fuente
+            page_num: Número de página
+            
+        Returns:
+            PreciseMetrics con las métricas extraídas, o None si no disponible
+        """
+        if not TEXT_ENGINE_AVAILABLE or not self._font_extractor:
+            return None
+        
+        try:
+            # Usar cache si disponible
+            cache_key = f"metrics_{font_name}_{page_num}"
+            if cache_key in self._font_info_cache:
+                return self._font_info_cache[cache_key]
+            
+            # Obtener info de fuente
+            font_info = self._font_extractor.get_font_info(font_name, page_num)
+            
+            if font_info is None or font_info.metrics is None:
+                return None
+            
+            metrics = font_info.metrics
+            
+            precise = PreciseMetrics(
+                ascender=metrics.ascender,
+                descender=metrics.descender,
+                line_height=metrics.ascender - metrics.descender,
+                avg_char_width=metrics.avg_width,
+                cap_height=metrics.cap_height,
+                x_height=metrics.x_height,
+                stem_v=metrics.stem_v,
+                stem_h=metrics.stem_h,
+                italic_angle=metrics.italic_angle,
+            )
+            
+            self._font_info_cache[cache_key] = precise
+            return precise
+            
+        except Exception as e:
+            self.logger.debug(f"Error getting precise metrics: {e}")
+            return None
+
+    def _get_glyph_widths_dict(
+        self, font_name: str, page_num: int = 0
+    ) -> Dict[str, float]:
+        """
+        Obtiene diccionario de anchos de glifos de una fuente.
+        
+        Args:
+            font_name: Nombre de la fuente
+            page_num: Número de página
+            
+        Returns:
+            Dict mapping char -> width (en unidades de fuente)
+        """
+        if not TEXT_ENGINE_AVAILABLE or not self._font_extractor:
+            return {}
+        
+        try:
+            # Usar cache si disponible
+            cache_key = f"widths_{font_name}_{page_num}"
+            if cache_key in self._font_info_cache:
+                return self._font_info_cache[cache_key]
+            
+            # Obtener anchos
+            glyph_widths = self._font_extractor.get_glyph_widths(font_name, page_num)
+            
+            # Convertir a dict de strings si necesario
+            result: Dict[str, float] = {}
+            for char_code, width in glyph_widths.items():
+                if isinstance(char_code, int):
+                    try:
+                        result[chr(char_code)] = width
+                    except ValueError:
+                        pass
+                else:
+                    result[str(char_code)] = width
+            
+            self._font_info_cache[cache_key] = result
+            return result
+            
+        except Exception as e:
+            self.logger.debug(f"Error getting glyph widths: {e}")
+            return {}
+
+    def can_reuse_font(self, font_name: str, page_num: int = 0) -> bool:
+        """
+        Verifica si una fuente puede ser reutilizada para insertar texto.
+        
+        Una fuente puede ser reutilizada si:
+        - Está completamente embebida (no subset)
+        - Tiene todos los glifos necesarios
+        
+        Args:
+            font_name: Nombre de la fuente
+            page_num: Número de página
+            
+        Returns:
+            True si la fuente puede ser reutilizada
+        """
+        if not TEXT_ENGINE_AVAILABLE or not self._font_extractor:
+            return False
+        
+        try:
+            return self._font_extractor.can_reuse_font(font_name, page_num)
+        except Exception:
+            return False
+
+    def get_font_info_for_text(
+        self, text: str, font_name: str, page_num: int = 0
+    ) -> Optional[Any]:
+        """
+        Obtiene información completa de fuente para un texto específico.
+        
+        Args:
+            text: Texto a renderizar
+            font_name: Nombre de la fuente
+            page_num: Número de página
+            
+        Returns:
+            FontInfo del text_engine o None
+        """
+        if not TEXT_ENGINE_AVAILABLE or not self._font_extractor:
+            return None
+        
+        try:
+            return self._font_extractor.get_font_info(font_name, page_num)
+        except Exception:
+            return None
+
+    # ========== Fin métodos Fase 3B ==========
 
     def smart_fallback(self, font_name: str) -> str:
         """
@@ -203,15 +607,23 @@ class FontManager:
         self.logger.debug(f"Font fallback (unknown): {font_name} → helv (default)")
         return "helv"
 
-    def detect_possible_bold(self, span: dict) -> Optional[bool]:
+    def detect_possible_bold(
+        self, span: dict, use_metrics: bool = True
+    ) -> Optional[bool]:
         """
-        Intenta detectar si fuente es bold usando heurísticas.
+        Intenta detectar si fuente es bold usando heurísticas y métricas.
 
+        Fase 3B: Ahora puede usar métricas precisas del PDF.
+        
         IMPORTANTE: PyMuPDF NO expone directamente el weight de la fuente.
-        Usamos heurísticas basadas en:
-        1. Nombre contiene "Bold" / "B" / "Heavy"
-        2. Comparar ancho esperado vs. actual (widths)
+        Usamos múltiples estrategias en orden de confiabilidad:
+        1. Métricas precisas (stem_v > 100 indica bold) - MÁS CONFIABLE
+        2. Nombre contiene "Bold" / "B" / "Heavy"
         3. Flags PDF si están disponibles
+        
+        Args:
+            span: Dict del span con información de fuente
+            use_metrics: Si True, intenta usar métricas precisas (default True)
 
         Returns:
             True (probablemente bold)
@@ -219,9 +631,21 @@ class FontManager:
             None (incierto, preguntar al usuario)
         """
         font_name = span.get("font", "")
+        
+        # Fase 3B: Usar métricas precisas si disponibles (más confiable)
+        if use_metrics and TEXT_ENGINE_AVAILABLE and self._font_extractor:
+            try:
+                precise = self.get_precise_metrics(font_name)
+                if precise and precise.is_bold_by_stem is not None:
+                    self.logger.debug(
+                        f"Bold detected by stem_v={precise.stem_v}: {font_name}"
+                    )
+                    return precise.is_bold_by_stem
+            except Exception:
+                pass  # Fallback a heurísticas
 
         # Heurística 1: Nombre contiene indicadores de bold
-        bold_indicators = ["bold", "-b", "_b", "heavy", "black", "extra"]
+        bold_indicators = ["bold", "-b", "_b", "heavy", "black", "extra", "demi", "semi"]
         if any(ind in font_name.lower() for ind in bold_indicators):
             self.logger.debug(f"Bold detected by name: {font_name}")
             return True
@@ -238,6 +662,16 @@ class FontManager:
         if flags & 0x40:
             self.logger.debug(f"Bold detected by flags: {flags}")
             return True
+        
+        # Heurística 4: Verificar si font_name limpio tiene indicadores
+        if TEXT_ENGINE_AVAILABLE:
+            try:
+                clean_name = get_clean_font_name(font_name)
+                if any(ind in clean_name.lower() for ind in bold_indicators):
+                    self.logger.debug(f"Bold detected by clean name: {clean_name}")
+                    return True
+            except Exception:
+                pass
 
         # No se pudo determinar → retornar None (incierto)
         return None

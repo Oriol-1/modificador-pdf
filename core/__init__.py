@@ -18,6 +18,12 @@ from .clipboard_handler import (
     copy_text, paste_text, has_clipboard_content
 )
 
+# Phase 3: Text Engine
+from .text_engine import (
+    TextSpanMetrics, RenderMode, FontEmbeddingStatus,
+    create_span_from_pymupdf, create_empty_span,
+)
+
 __all__ = [
     'PDFDocument', 'TextBlock', 'EditOperation',
     'DEBUG_NONE', 'DEBUG_RENDER', 'DEBUG_COORDS', 'DEBUG_EDIT',
@@ -29,5 +35,8 @@ __all__ = [
     'get_change_report', 'reset_change_report',
     'StyledTextData', 'ClipboardHandler', 'STYLED_TEXT_MIME',
     'get_clipboard_handler', 'reset_clipboard_handler',
-    'copy_text', 'paste_text', 'has_clipboard_content'
+    'copy_text', 'paste_text', 'has_clipboard_content',
+    # Phase 3: Text Engine
+    'TextSpanMetrics', 'RenderMode', 'FontEmbeddingStatus',
+    'create_span_from_pymupdf', 'create_empty_span',
 ]

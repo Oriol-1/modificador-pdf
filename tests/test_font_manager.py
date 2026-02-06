@@ -417,5 +417,314 @@ class TestSingleton:
         assert fm1 is fm2
 
 
+# ========== Fase 3B: Tests para nuevas funcionalidades ==========
+
+
+class TestFontEmbeddingStatus:
+    """Tests para FontEmbeddingStatus enum."""
+
+    def test_embedding_status_values(self):
+        """Verifica valores del enum."""
+        from core.font_manager import FontEmbeddingStatus
+        
+        assert FontEmbeddingStatus.EMBEDDED.value == "embedded"
+        assert FontEmbeddingStatus.SUBSET.value == "subset"
+        assert FontEmbeddingStatus.EXTERNAL.value == "external"
+        assert FontEmbeddingStatus.UNKNOWN.value == "unknown"
+
+
+class TestPreciseMetrics:
+    """Tests para PreciseMetrics dataclass."""
+
+    def test_precise_metrics_creation(self):
+        """Crear PreciseMetrics con valores por defecto."""
+        from core.font_manager import PreciseMetrics
+        
+        metrics = PreciseMetrics()
+        assert metrics.ascender == 0.0
+        assert metrics.descender == 0.0
+        assert metrics.stem_v == 0.0
+        assert metrics.italic_angle == 0.0
+
+    def test_precise_metrics_with_values(self):
+        """Crear PreciseMetrics con valores específicos."""
+        from core.font_manager import PreciseMetrics
+        
+        metrics = PreciseMetrics(
+            ascender=800,
+            descender=-200,
+            line_height=1000,
+            avg_char_width=500,
+            stem_v=120,
+            italic_angle=-12.0
+        )
+        
+        assert metrics.ascender == 800
+        assert metrics.descender == -200
+        assert metrics.stem_v == 120
+        assert metrics.italic_angle == -12.0
+
+    def test_is_bold_by_stem_true(self):
+        """stem_v > 100 indica bold."""
+        from core.font_manager import PreciseMetrics
+        
+        metrics = PreciseMetrics(stem_v=120)
+        assert metrics.is_bold_by_stem is True
+
+    def test_is_bold_by_stem_false(self):
+        """stem_v <= 100 indica no bold."""
+        from core.font_manager import PreciseMetrics
+        
+        metrics = PreciseMetrics(stem_v=80)
+        assert metrics.is_bold_by_stem is False
+
+    def test_is_bold_by_stem_unknown(self):
+        """stem_v == 0 retorna None (desconocido)."""
+        from core.font_manager import PreciseMetrics
+        
+        metrics = PreciseMetrics(stem_v=0)
+        assert metrics.is_bold_by_stem is None
+
+    def test_is_italic_by_angle_true(self):
+        """italic_angle > 5 indica italic."""
+        from core.font_manager import PreciseMetrics
+        
+        metrics = PreciseMetrics(italic_angle=-12.0)
+        assert metrics.is_italic_by_angle is True
+
+    def test_is_italic_by_angle_false(self):
+        """italic_angle <= 5 indica no italic."""
+        from core.font_manager import PreciseMetrics
+        
+        metrics = PreciseMetrics(italic_angle=0.0)
+        assert metrics.is_italic_by_angle is False
+
+
+class TestFontDescriptorPhase3B:
+    """Tests para campos nuevos de FontDescriptor (Fase 3B)."""
+
+    def test_font_descriptor_new_fields_defaults(self):
+        """Nuevos campos tienen valores por defecto."""
+        from core.font_manager import FontDescriptor, FontEmbeddingStatus
+        
+        descriptor = FontDescriptor(name="helv", size=12.0)
+        
+        assert descriptor.embedding_status == FontEmbeddingStatus.UNKNOWN
+        assert descriptor.precise_metrics is None
+        assert descriptor.char_spacing == 0.0
+        assert descriptor.word_spacing == 0.0
+        assert descriptor.baseline_y is None
+        assert descriptor.bbox is None
+        assert descriptor.original_font_name is None
+        assert descriptor.is_subset is False
+        assert descriptor.glyph_widths == {}
+
+    def test_font_descriptor_with_new_fields(self):
+        """Crear FontDescriptor con todos los campos nuevos."""
+        from core.font_manager import (
+            FontDescriptor, 
+            FontEmbeddingStatus,
+            PreciseMetrics
+        )
+        
+        metrics = PreciseMetrics(ascender=800, descender=-200)
+        descriptor = FontDescriptor(
+            name="helv",
+            size=12.0,
+            embedding_status=FontEmbeddingStatus.SUBSET,
+            precise_metrics=metrics,
+            char_spacing=0.5,
+            word_spacing=1.0,
+            baseline_y=100.5,
+            bbox=(10, 20, 200, 30),
+            original_font_name="ABCDEF+ArialMT",
+            is_subset=True,
+            glyph_widths={"A": 600, "B": 650}
+        )
+        
+        assert descriptor.embedding_status == FontEmbeddingStatus.SUBSET
+        assert descriptor.precise_metrics.ascender == 800
+        assert descriptor.char_spacing == 0.5
+        assert descriptor.is_subset is True
+        assert descriptor.glyph_widths["A"] == 600
+
+    def test_font_descriptor_has_precise_metrics(self):
+        """has_precise_metrics() funciona correctamente."""
+        from core.font_manager import FontDescriptor, PreciseMetrics
+        
+        # Sin métricas
+        desc1 = FontDescriptor(name="helv", size=12.0)
+        assert desc1.has_precise_metrics() is False
+        
+        # Con métricas
+        desc2 = FontDescriptor(
+            name="helv", 
+            size=12.0,
+            precise_metrics=PreciseMetrics()
+        )
+        assert desc2.has_precise_metrics() is True
+
+    def test_font_descriptor_get_line_height_precise(self):
+        """get_line_height() usa métricas precisas si disponibles."""
+        from core.font_manager import FontDescriptor, PreciseMetrics
+        
+        metrics = PreciseMetrics(line_height=1000)
+        descriptor = FontDescriptor(
+            name="helv",
+            size=12.0,
+            precise_metrics=metrics
+        )
+        
+        # line_height = 1000 * 12 / 1000 = 12
+        assert descriptor.get_line_height() == 12.0
+
+    def test_font_descriptor_get_line_height_estimated(self):
+        """get_line_height() usa estimación si no hay métricas."""
+        descriptor = FontDescriptor(name="helv", size=10.0)
+        
+        # Estimación: size * 1.2 = 12.0
+        assert descriptor.get_line_height() == 12.0
+
+    def test_font_descriptor_is_bold_detected_by_metrics(self):
+        """is_bold_detected() prioriza métricas precisas."""
+        from core.font_manager import FontDescriptor, PreciseMetrics
+        
+        # Bold por stem_v
+        metrics = PreciseMetrics(stem_v=120)
+        descriptor = FontDescriptor(
+            name="helv",
+            size=12.0,
+            precise_metrics=metrics,
+            possible_bold=False  # Heurística dice no
+        )
+        
+        # Métricas tienen prioridad
+        assert descriptor.is_bold_detected() is True
+
+    def test_font_descriptor_is_bold_detected_by_heuristic(self):
+        """is_bold_detected() usa heurística si no hay métricas."""
+        descriptor = FontDescriptor(
+            name="helv",
+            size=12.0,
+            possible_bold=True
+        )
+        
+        assert descriptor.is_bold_detected() is True
+
+    def test_font_descriptor_repr_with_embedding(self):
+        """repr incluye estado de embedding."""
+        from core.font_manager import FontDescriptor, FontEmbeddingStatus
+        
+        descriptor = FontDescriptor(
+            name="helv",
+            size=12.0,
+            embedding_status=FontEmbeddingStatus.SUBSET
+        )
+        
+        repr_str = repr(descriptor)
+        assert "[subset]" in repr_str
+
+
+class TestFontManagerSetDocument:
+    """Tests para set_document()."""
+
+    def test_set_document_clears_cache(self, font_manager):
+        """set_document() limpia cache de fuentes."""
+        # Agregar algo al cache
+        font_manager._font_info_cache["test"] = "value"
+        
+        font_manager.set_document(None)
+        
+        assert "test" not in font_manager._font_info_cache
+
+    def test_set_document_resets_extractor(self, font_manager):
+        """set_document(None) resetea extractor."""
+        font_manager.set_document(None)
+        
+        assert font_manager._font_extractor is None
+
+
+class TestDetectEmbeddedStatus:
+    """Tests para detect_embedded_status()."""
+
+    def test_detect_embedded_status_no_extractor(self, font_manager):
+        """Sin extractor retorna UNKNOWN."""
+        from core.font_manager import FontEmbeddingStatus
+        
+        status = font_manager.detect_embedded_status("Arial", 0)
+        
+        assert status == FontEmbeddingStatus.UNKNOWN
+
+
+class TestGetPreciseMetrics:
+    """Tests para get_precise_metrics()."""
+
+    def test_get_precise_metrics_no_extractor(self, font_manager):
+        """Sin extractor retorna None."""
+        metrics = font_manager.get_precise_metrics("Arial", 0)
+        
+        assert metrics is None
+
+
+class TestCanReuseFont:
+    """Tests para can_reuse_font()."""
+
+    def test_can_reuse_font_no_extractor(self, font_manager):
+        """Sin extractor retorna False."""
+        can_reuse = font_manager.can_reuse_font("Arial", 0)
+        
+        assert can_reuse is False
+
+
+class TestDetectFontWithBbox:
+    """Tests para detect_font con bbox y baseline."""
+
+    def test_detect_font_extracts_bbox(self, font_manager):
+        """detect_font extrae bbox del span."""
+        span = {
+            "font": "Arial",
+            "size": 12.0,
+            "color": 0,
+            "bbox": (10, 20, 100, 32)
+        }
+        
+        descriptor = font_manager.detect_font(span)
+        
+        assert descriptor.bbox == (10, 20, 100, 32)
+
+    def test_detect_font_extracts_baseline(self, font_manager):
+        """detect_font extrae baseline_y de origin."""
+        span = {
+            "font": "Arial",
+            "size": 12.0,
+            "color": 0,
+            "origin": (10, 30)  # x, y donde y es baseline
+        }
+        
+        descriptor = font_manager.detect_font(span)
+        
+        assert descriptor.baseline_y == 30
+
+
+class TestImprovedBoldDetection:
+    """Tests para detección mejorada de bold (Fase 3B)."""
+
+    def test_detect_bold_demi_indicator(self, font_manager):
+        """'Demi' en nombre indica bold."""
+        span = {"font": "Arial-DemiBold", "flags": 0}
+        
+        result = font_manager.detect_possible_bold(span)
+        
+        assert result is True
+
+    def test_detect_bold_semi_indicator(self, font_manager):
+        """'Semi' en nombre indica bold."""
+        span = {"font": "Arial-SemiBold", "flags": 0}
+        
+        result = font_manager.detect_possible_bold(span)
+        
+        assert result is True
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

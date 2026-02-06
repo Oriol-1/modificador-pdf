@@ -1506,6 +1506,253 @@ class PDFDocument:
             # Añadir texto SIN guardar snapshot adicional
             return self.add_text_to_page(page_num, rect, new_text, font_size, color, save_snapshot=False)
 
+    def add_text_runs_to_page(
+        self, 
+        page_num: int, 
+        base_rect: fitz.Rect, 
+        runs: List[Dict[str, Any]],
+        save_snapshot: bool = True
+    ) -> bool:
+        """
+        Añade múltiples runs de texto con diferentes estilos a una página.
+        
+        Permite escribir texto con partes en diferentes formatos (ej: algunas palabras en negrita).
+        Preserva saltos de línea, tabulaciones e indentaciones.
+        
+        Args:
+            page_num: Número de página
+            base_rect: Área base donde colocar el texto
+            runs: Lista de dicts con: text, is_bold, is_italic, font_size, color, needs_newline, indent
+            save_snapshot: Si True, guarda snapshot para undo
+            
+        Returns:
+            True si se añadió correctamente
+        """
+        page = self.get_page(page_num)
+        if not page or not runs:
+            return False
+        
+        try:
+            if save_snapshot:
+                self._save_snapshot()
+            
+            # Posición inicial de inserción
+            start_x = base_rect.x0 + 2
+            current_x = start_x
+            current_y = base_rect.y0
+            
+            # Calcular altura base para el baseline
+            base_font_size = runs[0].get('font_size', 12)
+            line_height = base_font_size * 1.2  # Espaciado de línea estándar
+            current_y += base_font_size
+            
+            for run in runs:
+                text = run.get('text', '')
+                if not text:
+                    continue
+                
+                # Manejar salto de línea
+                needs_newline = run.get('needs_newline', False)
+                if needs_newline:
+                    current_y += line_height
+                    current_x = start_x
+                
+                # Manejar indentación
+                indent = run.get('indent', 0)
+                is_line_start = run.get('is_line_start', False)
+                if is_line_start and indent > 0:
+                    current_x = start_x + indent
+                
+                is_bold = run.get('is_bold', run.get('bold', False))
+                is_italic = run.get('is_italic', run.get('italic', False))
+                font_size = run.get('font_size', base_font_size)
+                
+                # Convertir color
+                color = run.get('color', '#000000')
+                if isinstance(color, str) and color.startswith('#'):
+                    r = int(color[1:3], 16) / 255.0
+                    g = int(color[3:5], 16) / 255.0
+                    b = int(color[5:7], 16) / 255.0
+                    color_tuple = (r, g, b)
+                elif isinstance(color, tuple):
+                    color_tuple = color
+                else:
+                    color_tuple = (0, 0, 0)
+                
+                # Seleccionar fuente según estilo
+                if is_bold and is_italic:
+                    font_name = "hebi"  # Helvetica-BoldOblique
+                elif is_bold:
+                    font_name = "hebo"  # Helvetica-Bold
+                elif is_italic:
+                    font_name = "heit"  # Helvetica-Oblique
+                else:
+                    font_name = "helv"  # Helvetica
+                
+                # Calcular ancho del texto para posicionar el siguiente run
+                from PyQt5.QtGui import QFont, QFontMetrics
+                qfont = QFont("Helvetica", int(font_size))
+                if is_bold:
+                    qfont.setBold(True)
+                if is_italic:
+                    qfont.setItalic(True)
+                metrics = QFontMetrics(qfont)
+                text_width = metrics.horizontalAdvance(text)
+                
+                # Insertar el texto
+                insert_point = fitz.Point(current_x, current_y)
+                rc = page.insert_text(
+                    insert_point,
+                    text,
+                    fontsize=font_size,
+                    fontname=font_name,
+                    color=color_tuple
+                )
+                
+                if rc <= 0:
+                    print(f"Warning: insert_text failed for run '{text}' with rc={rc}")
+                
+                # Avanzar la posición X
+                # Usar factor de escala para ajustar diferencia Qt vs PDF
+                current_x += text_width * 0.75  # Factor de ajuste empírico
+                
+                # Si es fin de línea, preparar para siguiente línea
+                is_line_end = run.get('is_line_end', False)
+                if is_line_end:
+                    # El siguiente run que sea is_line_start manejará el posicionamiento
+                    pass
+            
+            self.modified = True
+            return True
+            
+        except Exception as e:
+            print(f"add_text_runs_to_page - ERROR: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def get_text_spans_in_rect(self, page_num: int, rect: fitz.Rect) -> List[Dict[str, Any]]:
+        """
+        Extrae todos los spans de texto en un área con su información completa.
+        
+        Cada span representa un fragmento de texto con estilo consistente.
+        Esto permite reconstruir texto con múltiples estilos (ej: parcialmente en negrita).
+        Preserva tabulaciones, indentaciones y saltos de línea.
+        
+        Args:
+            page_num: Número de página (0-indexed)
+            rect: Rectángulo del área a analizar
+            
+        Returns:
+            Lista de dicts con: text, font_name, font_size, is_bold, is_italic, color, rect, 
+                               indent, is_line_start, is_line_end
+        """
+        spans_info: List[Dict[str, Any]] = []
+        
+        if not self.doc or page_num >= self.page_count():
+            return spans_info
+        
+        try:
+            page = self.doc[page_num]
+            text_dict = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)
+            
+            # Calcular el margen izquierdo mínimo del área para detectar indentación
+            area_left = rect.x0
+            prev_line_y = None
+            
+            for block in text_dict.get("blocks", []):
+                if block.get("type") != 0:
+                    continue
+                
+                block_rect = fitz.Rect(block.get("bbox", (0, 0, 0, 0)))
+                if not block_rect.intersects(rect):
+                    continue
+                
+                lines = block.get("lines", [])
+                for line_idx, line in enumerate(lines):
+                    line_rect = fitz.Rect(line.get("bbox", (0, 0, 0, 0)))
+                    
+                    # Verificar si la línea está dentro del área
+                    if not line_rect.intersects(rect):
+                        continue
+                    
+                    # Calcular indentación de esta línea
+                    line_left = line_rect.x0
+                    line_indent = max(0, line_left - area_left)
+                    
+                    # Detectar si hay salto de línea (diferente Y)
+                    is_new_line = False
+                    if prev_line_y is not None and abs(line_rect.y0 - prev_line_y) > 2:
+                        is_new_line = True
+                    prev_line_y = line_rect.y0
+                    
+                    spans = line.get("spans", [])
+                    for span_idx, span in enumerate(spans):
+                        span_rect = fitz.Rect(span["bbox"])
+                        
+                        # Verificar si el span intersecta con el área
+                        if not span_rect.intersects(rect):
+                            continue
+                        
+                        text = span.get("text", "")
+                        if not text:
+                            continue
+                        
+                        # Extraer información de estilo
+                        font_name = span.get("font", "")
+                        font_size = span.get("size", 12.0)
+                        flags = span.get("flags", 0)
+                        
+                        # Detectar bold/italic desde flags
+                        is_bold = bool(flags & 16) or "bold" in font_name.lower() or "bd" in font_name.lower()
+                        is_italic = bool(flags & 2) or "italic" in font_name.lower() or "oblique" in font_name.lower()
+                        
+                        # Convertir color
+                        color_val = span.get("color", 0)
+                        if isinstance(color_val, int):
+                            r = (color_val >> 16) & 255
+                            g = (color_val >> 8) & 255
+                            b = color_val & 255
+                            color = f"#{r:02x}{g:02x}{b:02x}"
+                        else:
+                            color = "#000000"
+                        
+                        # Marcar posición en la línea
+                        is_line_start = (span_idx == 0)
+                        is_line_end = (span_idx == len(spans) - 1)
+                        
+                        # Si es el primer span de una nueva línea, agregar salto de línea
+                        needs_newline = is_new_line and is_line_start
+                        
+                        spans_info.append({
+                            'text': text,
+                            'font_name': font_name,
+                            'font_size': font_size,
+                            'is_bold': is_bold,
+                            'is_italic': is_italic,
+                            'color': color,
+                            'rect': span_rect,
+                            'flags': flags,
+                            'indent': line_indent,
+                            'is_line_start': is_line_start,
+                            'is_line_end': is_line_end,
+                            'needs_newline': needs_newline,
+                            'line_y': line_rect.y0
+                        })
+                        
+                        # Solo marcar nueva línea para el primer span
+                        if is_new_line:
+                            is_new_line = False
+            
+            # Ordenar por posición vertical primero, luego horizontal
+            spans_info.sort(key=lambda s: (s['line_y'], s['rect'].x0))
+            
+            return spans_info
+        
+        except Exception as e:
+            self._last_error = f"Error extracting text spans: {str(e)}"
+            return []
+
     def get_text_run_descriptors(self, page_num: int, rect: fitz.Rect) -> List[FontDescriptor]:
         """
         Extrae descriptores de fuente de todas las corridas de texto en un área.
