@@ -13,7 +13,7 @@ Características:
 
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit,
-    QPushButton, QGroupBox, QFrame, QMessageBox
+    QPushButton, QGroupBox, QFrame, QMessageBox, QMenu, QToolButton
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from PyQt5.QtGui import (
@@ -420,26 +420,41 @@ class RichTextEditDialog(QDialog):
         toolbar_layout = QHBoxLayout(toolbar_frame)
         toolbar_layout.setContentsMargins(10, 5, 10, 5)
         
-        # Botón Negrita
-        self.bold_btn = QPushButton("B")
-        self.bold_btn.setCheckable(True)
-        self.bold_btn.setFixedSize(35, 35)
-        self.bold_btn.setStyleSheet("""
+        # Estilo común para botones de formato
+        format_btn_style = """
             QPushButton {
-                font-weight: bold;
-                font-size: 16px;
+                font-size: 15px;
                 background: #3d3d3d;
-                border: 1px solid #555;
-                border-radius: 4px;
+                border: 2px solid #555;
+                border-radius: 6px;
+                color: #cccccc;
+                padding: 2px;
+            }
+            QPushButton:hover {
+                background: #4a4a4a;
+                border-color: #0078d4;
                 color: white;
             }
             QPushButton:checked {
-                background: #0078d4;
-                border-color: #0078d4;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #1a8cff, stop:1 #0066cc);
+                border: 2px solid #00aaff;
+                color: white;
+                font-weight: bold;
             }
-            QPushButton:hover {
-                background: #4d4d4d;
+            QPushButton:checked:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #3399ff, stop:1 #0078d4);
+                border-color: #66ccff;
             }
+        """
+        
+        # Botón Negrita
+        self.bold_btn = QPushButton("B")
+        self.bold_btn.setCheckable(True)
+        self.bold_btn.setFixedSize(36, 36)
+        self.bold_btn.setStyleSheet(format_btn_style + """
+            QPushButton { font-weight: bold; }
         """)
         self.bold_btn.setToolTip("Negrita (Ctrl+B)")
         toolbar_layout.addWidget(self.bold_btn)
@@ -447,26 +462,126 @@ class RichTextEditDialog(QDialog):
         # Botón Cursiva
         self.italic_btn = QPushButton("I")
         self.italic_btn.setCheckable(True)
-        self.italic_btn.setFixedSize(35, 35)
-        self.italic_btn.setStyleSheet("""
-            QPushButton {
-                font-style: italic;
-                font-size: 16px;
-                background: #3d3d3d;
-                border: 1px solid #555;
-                border-radius: 4px;
-                color: white;
-            }
-            QPushButton:checked {
-                background: #0078d4;
-                border-color: #0078d4;
-            }
-            QPushButton:hover {
-                background: #4d4d4d;
-            }
+        self.italic_btn.setFixedSize(36, 36)
+        self.italic_btn.setStyleSheet(format_btn_style + """
+            QPushButton { font-style: italic; font-family: Georgia, serif; }
         """)
         self.italic_btn.setToolTip("Cursiva (Ctrl+I)")
         toolbar_layout.addWidget(self.italic_btn)
+        
+        # Separador visual
+        separator = QLabel("|")
+        separator.setStyleSheet("color: #555; margin: 0 8px;")
+        toolbar_layout.addWidget(separator)
+        
+        # Botón de Símbolos
+        self.symbol_btn = QToolButton()
+        self.symbol_btn.setText("☐")
+        self.symbol_btn.setToolTip("Insertar símbolo")
+        self.symbol_btn.setPopupMode(QToolButton.InstantPopup)
+        self.symbol_btn.setFixedSize(36, 36)
+        self.symbol_btn.setStyleSheet("""
+            QToolButton {
+                font-size: 16px;
+                background: #3d3d3d;
+                border: 2px solid #555;
+                border-radius: 6px;
+                color: #cccccc;
+            }
+            QToolButton:hover {
+                background: #4a4a4a;
+                border-color: #0078d4;
+                color: white;
+            }
+            QToolButton::menu-indicator {
+                subcontrol-position: right center;
+                right: 2px;
+            }
+        """)
+        
+        # Menú de símbolos
+        symbol_menu = QMenu(self)
+        symbol_menu.setStyleSheet("""
+            QMenu {
+                background: #2d2d30;
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 5px;
+                color: white;
+            }
+            QMenu::item {
+                padding: 8px 20px;
+                border-radius: 3px;
+            }
+            QMenu::item:selected {
+                background: #0078d4;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: #555;
+                margin: 5px 10px;
+            }
+        """)
+        
+        # Checkboxes
+        checkbox_menu = symbol_menu.addMenu("☑ Checkboxes")
+        checkbox_menu.setStyleSheet(symbol_menu.styleSheet())
+        checkbox_symbols = [
+            ("☐", "Casilla vacía"), ("☑", "Casilla marcada"), ("☒", "Casilla con X"),
+            ("□", "Cuadrado vacío"), ("■", "Cuadrado lleno"),
+        ]
+        for sym, desc in checkbox_symbols:
+            action = checkbox_menu.addAction(f"{sym}  {desc}")
+            action.triggered.connect(lambda checked, s=sym: self._insert_symbol(s))
+        
+        # Viñetas
+        bullet_menu = symbol_menu.addMenu("• Viñetas")
+        bullet_menu.setStyleSheet(symbol_menu.styleSheet())
+        bullet_symbols = [
+            ("•", "Punto"), ("◦", "Círculo vacío"), ("▪", "Cuadrado"),
+            ("➤", "Flecha"), ("★", "Estrella"), ("◆", "Rombo"),
+        ]
+        for sym, desc in bullet_symbols:
+            action = bullet_menu.addAction(f"{sym}  {desc}")
+            action.triggered.connect(lambda checked, s=sym: self._insert_symbol(s))
+        
+        # Flechas
+        arrow_menu = symbol_menu.addMenu("→ Flechas")
+        arrow_menu.setStyleSheet(symbol_menu.styleSheet())
+        arrow_symbols = [
+            ("→", "Derecha"), ("←", "Izquierda"), ("↑", "Arriba"), ("↓", "Abajo"),
+            ("⇒", "Doble derecha"), ("➜", "Flecha gruesa"),
+        ]
+        for sym, desc in arrow_symbols:
+            action = arrow_menu.addAction(f"{sym}  {desc}")
+            action.triggered.connect(lambda checked, s=sym: self._insert_symbol(s))
+        
+        # Estados
+        status_menu = symbol_menu.addMenu("✓ Estados")
+        status_menu.setStyleSheet(symbol_menu.styleSheet())
+        status_symbols = [
+            ("✓", "Check"), ("✔", "Check grueso"), ("✗", "Cruz"), ("✘", "Cruz gruesa"),
+            ("⚠", "Advertencia"), ("ℹ", "Info"),
+        ]
+        for sym, desc in status_symbols:
+            action = status_menu.addAction(f"{sym}  {desc}")
+            action.triggered.connect(lambda checked, s=sym: self._insert_symbol(s))
+        
+        symbol_menu.addSeparator()
+        
+        # Otros
+        other_menu = symbol_menu.addMenu("⚙ Otros")
+        other_menu.setStyleSheet(symbol_menu.styleSheet())
+        other_symbols = [
+            ("©", "Copyright"), ("®", "Registrado"), ("™", "Trademark"),
+            ("°", "Grado"), ("€", "Euro"), ("£", "Libra"),
+        ]
+        for sym, desc in other_symbols:
+            action = other_menu.addAction(f"{sym}  {desc}")
+            action.triggered.connect(lambda checked, s=sym: self._insert_symbol(s))
+        
+        self.symbol_btn.setMenu(symbol_menu)
+        toolbar_layout.addWidget(self.symbol_btn)
         
         toolbar_layout.addStretch()
         
@@ -642,6 +757,13 @@ class RichTextEditDialog(QDialog):
     def on_italic_clicked(self):
         """Aplica cursiva a la selección."""
         self.rich_editor.toggle_italic()
+        self.update_preview()
+    
+    def _insert_symbol(self, symbol: str):
+        """Inserta un símbolo en la posición actual."""
+        cursor = self.rich_editor.textCursor()
+        cursor.insertText(symbol)
+        self.rich_editor.setTextCursor(cursor)
         self.update_preview()
     
     def on_text_changed(self):

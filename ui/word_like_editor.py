@@ -12,7 +12,7 @@ Un editor completo que preserva el formato original del PDF:
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit,
     QPushButton, QToolBar, QAction, QFontComboBox, QSpinBox,
-    QColorDialog, QFrame, QSplitter, QWidget, QToolButton
+    QColorDialog, QFrame, QSplitter, QWidget, QToolButton, QMenu
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from PyQt5.QtGui import (
@@ -124,43 +124,62 @@ class WordLikeToolBar(QToolBar):
     colorChanged = pyqtSignal(QColor)
     listToggled = pyqtSignal(str)  # 'bullet', 'number', 'none'
     indentChanged = pyqtSignal(int)  # +1 o -1
+    symbolInserted = pyqtSignal(str)  # Símbolo a insertar
     
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMovable(False)
         self.setStyleSheet("""
             QToolBar {
-                background: #f0f0f0;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                padding: 4px;
-                spacing: 2px;
+                background: #f5f5f5;
+                border: 1px solid #d0d0d0;
+                border-radius: 6px;
+                padding: 5px;
+                spacing: 3px;
             }
             QToolButton {
-                background: transparent;
-                border: 1px solid transparent;
-                border-radius: 3px;
-                padding: 4px 6px;
-                min-width: 28px;
-                min-height: 28px;
+                background: #ffffff;
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                padding: 5px 7px;
+                min-width: 30px;
+                min-height: 30px;
+                color: #333333;
             }
             QToolButton:hover {
-                background: #e0e0e0;
-                border-color: #ccc;
+                background: #e8f4fc;
+                border-color: #0078d4;
+                color: #0078d4;
             }
-            QToolButton:pressed, QToolButton:checked {
-                background: #d0d0d0;
-                border-color: #999;
+            QToolButton:pressed {
+                background: #cce4f7;
+                border-color: #005a9e;
+            }
+            QToolButton:checked {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #1a8cff, stop:1 #0066cc);
+                border: 2px solid #00aaff;
+                color: white;
+                font-weight: bold;
+            }
+            QToolButton:checked:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #3399ff, stop:1 #0078d4);
+                border-color: #66ccff;
             }
             QComboBox, QSpinBox {
                 border: 1px solid #ccc;
-                border-radius: 3px;
-                padding: 3px 6px;
+                border-radius: 4px;
+                padding: 4px 8px;
                 background: white;
-                min-height: 24px;
+                min-height: 26px;
             }
             QComboBox:hover, QSpinBox:hover {
                 border-color: #0078d4;
+                background: #f8fbfe;
+            }
+            QComboBox:focus, QSpinBox:focus {
+                border: 2px solid #0078d4;
             }
         """)
         
@@ -229,7 +248,22 @@ class WordLikeToolBar(QToolBar):
         self.color_btn.setStyleSheet("""
             QToolButton {
                 font-weight: bold;
-                border-bottom: 3px solid #000000;
+                font-size: 14px;
+                background: #ffffff;
+                border: 1px solid #d0d0d0;
+                border-bottom: 4px solid #000000;
+                border-radius: 4px;
+                padding: 4px 6px;
+                min-width: 30px;
+                min-height: 26px;
+            }
+            QToolButton:hover {
+                background: #e8f4fc;
+                border-color: #0078d4;
+                border-bottom-width: 4px;
+            }
+            QToolButton:pressed {
+                background: #cce4f7;
             }
         """)
         self.color_btn.clicked.connect(self._choose_color)
@@ -296,6 +330,166 @@ class WordLikeToolBar(QToolBar):
         self.increase_indent.setToolTip("Aumentar sangría")
         self.increase_indent.triggered.connect(lambda: self.indentChanged.emit(1))
         self.addAction(self.increase_indent)
+        
+        self.addSeparator()
+        
+        # === SECCIÓN: Símbolos especiales ===
+        self.symbol_btn = QToolButton()
+        self.symbol_btn.setText("☐")
+        self.symbol_btn.setToolTip("Insertar símbolo")
+        self.symbol_btn.setPopupMode(QToolButton.InstantPopup)
+        self.symbol_btn.setStyleSheet("""
+            QToolButton {
+                font-size: 16px;
+                background: #ffffff;
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                padding: 4px 8px;
+                min-width: 36px;
+                min-height: 30px;
+            }
+            QToolButton:hover {
+                background: #e8f4fc;
+                border-color: #0078d4;
+            }
+            QToolButton::menu-indicator {
+                subcontrol-position: right center;
+                subcontrol-origin: padding;
+                right: 2px;
+            }
+        """)
+        
+        # Menú de símbolos
+        symbol_menu = QMenu(self)
+        symbol_menu.setStyleSheet("""
+            QMenu {
+                background: white;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                padding: 5px;
+            }
+            QMenu::item {
+                padding: 8px 20px;
+                border-radius: 3px;
+            }
+            QMenu::item:selected {
+                background: #e8f4fc;
+                color: #0078d4;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: #ddd;
+                margin: 5px 10px;
+            }
+        """)
+        
+        # Checkboxes y formularios
+        checkbox_menu = symbol_menu.addMenu("☑ Checkboxes")
+        checkbox_symbols = [
+            ("☐", "Casilla vacía"),
+            ("☑", "Casilla marcada"),
+            ("☒", "Casilla con X"),
+            ("□", "Cuadrado vacío"),
+            ("■", "Cuadrado lleno"),
+            ("▢", "Cuadrado redondeado"),
+        ]
+        for sym, desc in checkbox_symbols:
+            action = checkbox_menu.addAction(f"{sym}  {desc}")
+            action.triggered.connect(lambda checked, s=sym: self.symbolInserted.emit(s))
+        
+        # Viñetas y listas
+        bullet_menu = symbol_menu.addMenu("• Viñetas")
+        bullet_symbols = [
+            ("•", "Punto"),
+            ("◦", "Círculo vacío"),
+            ("▪", "Cuadrado pequeño"),
+            ("▸", "Triángulo"),
+            ("➤", "Flecha sólida"),
+            ("★", "Estrella"),
+            ("✦", "Estrella 4 puntas"),
+            ("◆", "Rombo"),
+        ]
+        for sym, desc in bullet_symbols:
+            action = bullet_menu.addAction(f"{sym}  {desc}")
+            action.triggered.connect(lambda checked, s=sym: self.symbolInserted.emit(s))
+        
+        # Flechas
+        arrow_menu = symbol_menu.addMenu("→ Flechas")
+        arrow_symbols = [
+            ("→", "Derecha"),
+            ("←", "Izquierda"),
+            ("↑", "Arriba"),
+            ("↓", "Abajo"),
+            ("↔", "Doble horizontal"),
+            ("↕", "Doble vertical"),
+            ("⇒", "Doble derecha"),
+            ("⇐", "Doble izquierda"),
+            ("➜", "Flecha gruesa"),
+            ("➔", "Flecha ancha"),
+        ]
+        for sym, desc in arrow_symbols:
+            action = arrow_menu.addAction(f"{sym}  {desc}")
+            action.triggered.connect(lambda checked, s=sym: self.symbolInserted.emit(s))
+        
+        # Iconos de estado
+        status_menu = symbol_menu.addMenu("✓ Estados")
+        status_symbols = [
+            ("✓", "Check"),
+            ("✔", "Check grueso"),
+            ("✗", "Cruz"),
+            ("✘", "Cruz gruesa"),
+            ("⚠", "Advertencia"),
+            ("ℹ", "Información"),
+            ("⊕", "Más en círculo"),
+            ("⊖", "Menos en círculo"),
+            ("✪", "Estrella en círculo"),
+        ]
+        for sym, desc in status_symbols:
+            action = status_menu.addAction(f"{sym}  {desc}")
+            action.triggered.connect(lambda checked, s=sym: self.symbolInserted.emit(s))
+        
+        symbol_menu.addSeparator()
+        
+        # Símbolos matemáticos comunes
+        math_menu = symbol_menu.addMenu("± Matemáticos")
+        math_symbols = [
+            ("±", "Más/menos"),
+            ("×", "Multiplicar"),
+            ("÷", "Dividir"),
+            ("≠", "Diferente"),
+            ("≈", "Aproximado"),
+            ("≤", "Menor o igual"),
+            ("≥", "Mayor o igual"),
+            ("∞", "Infinito"),
+            ("%", "Porcentaje"),
+            ("€", "Euro"),
+            ("£", "Libra"),
+            ("¥", "Yen"),
+        ]
+        for sym, desc in math_symbols:
+            action = math_menu.addAction(f"{sym}  {desc}")
+            action.triggered.connect(lambda checked, s=sym: self.symbolInserted.emit(s))
+        
+        # Otros símbolos útiles
+        other_menu = symbol_menu.addMenu("⚙ Otros")
+        other_symbols = [
+            ("©", "Copyright"),
+            ("®", "Registrado"),
+            ("™", "Trademark"),
+            ("§", "Sección"),
+            ("¶", "Párrafo"),
+            ("†", "Cruz"),
+            ("‡", "Doble cruz"),
+            ("°", "Grado"),
+            ("·", "Punto medio"),
+            ("…", "Puntos suspensivos"),
+        ]
+        for sym, desc in other_symbols:
+            action = other_menu.addAction(f"{sym}  {desc}")
+            action.triggered.connect(lambda checked, s=sym: self.symbolInserted.emit(s))
+        
+        self.symbol_btn.setMenu(symbol_menu)
+        self.addWidget(self.symbol_btn)
     
     def _choose_color(self):
         """Abre el selector de color."""
@@ -305,7 +499,22 @@ class WordLikeToolBar(QToolBar):
             self.color_btn.setStyleSheet(f"""
                 QToolButton {{
                     font-weight: bold;
-                    border-bottom: 3px solid {color.name()};
+                    font-size: 14px;
+                    background: #ffffff;
+                    border: 1px solid #d0d0d0;
+                    border-bottom: 4px solid {color.name()};
+                    border-radius: 4px;
+                    padding: 4px 6px;
+                    min-width: 30px;
+                    min-height: 26px;
+                }}
+                QToolButton:hover {{
+                    background: #e8f4fc;
+                    border-color: #0078d4;
+                    border-bottom: 4px solid {color.name()};
+                }}
+                QToolButton:pressed {{
+                    background: #cce4f7;
                 }}
             """)
             self.colorChanged.emit(color)
@@ -616,6 +825,13 @@ class RichDocumentEditor(QTextEdit):
         block_fmt.setIndent(new_indent)
         cursor.setBlockFormat(block_fmt)
     
+    def insert_symbol(self, symbol: str):
+        """Inserta un símbolo en la posición actual del cursor."""
+        cursor = self.textCursor()
+        cursor.insertText(symbol)
+        self.setTextCursor(cursor)
+        self.formatChanged.emit()
+    
     def _merge_format(self, fmt: QTextCharFormat):
         """Aplica formato a la selección o al cursor."""
         cursor = self.textCursor()
@@ -850,6 +1066,7 @@ class WordLikeEditorDialog(QDialog):
         self.toolbar.alignmentChanged.connect(self.editor.set_alignment)
         self.toolbar.listToggled.connect(self.editor.toggle_list)
         self.toolbar.indentChanged.connect(self.editor.change_indent)
+        self.toolbar.symbolInserted.connect(self.editor.insert_symbol)
         
         # Editor -> UI
         self.editor.formatChanged.connect(self._update_toolbar_state)

@@ -83,6 +83,16 @@ try:
 except ImportError:
     HAS_SELECTION_OVERLAY = False
 
+# Importar TextEditIntegrator para edición mejorada (Phase 3E)
+try:
+    from core.text_edit_integrator import (
+        TextEditIntegrator, EditPreparation, EditResult,
+        get_text_integrator, create_text_integrator
+    )
+    HAS_TEXT_INTEGRATOR = True
+except ImportError:
+    HAS_TEXT_INTEGRATOR = False
+
 
 class PDFPageView(QGraphicsView):
     """Vista de una página de PDF con capacidades de selección y edición."""
@@ -222,6 +232,10 @@ class PDFPageView(QGraphicsView):
         self._selection_overlay = None
         self._init_selection_overlay()
         
+        # Integrador de edición de texto (Phase 3E)
+        self._text_integrator = None
+        self._init_text_integrator()
+        
         # Habilitar tracking del mouse para hit-testing en hover
         self.setMouseTracking(True)
         
@@ -293,6 +307,97 @@ class PDFPageView(QGraphicsView):
         # Conectar señales
         self.spanClicked.connect(self._on_span_clicked_for_selection)
         self.spanHovered.connect(self._on_span_hovered_for_selection)
+    
+    def _init_text_integrator(self) -> None:
+        """Inicializar el integrador de edición de texto."""
+        if not HAS_TEXT_INTEGRATOR:
+            return
+        
+        self._text_integrator = get_text_integrator()
+    
+    def _update_text_integrator_document(self) -> None:
+        """Actualizar el documento en el integrador."""
+        if self._text_integrator and self.pdf_doc:
+            self._text_integrator.set_document(self.pdf_doc)
+    
+    def _check_text_fits(self, text: str, available_width: float, 
+                         font_name: str = "Helvetica", font_size: float = 12.0) -> tuple:
+        """
+        Verifica si un texto cabe en el ancho disponible.
+        
+        Args:
+            text: Texto a verificar
+            available_width: Ancho disponible en puntos
+            font_name: Nombre de la fuente
+            font_size: Tamaño de fuente
+            
+        Returns:
+            Tupla (cabe: bool, ratio: float, warning: str o None)
+        """
+        if not self._text_integrator or not HAS_TEXT_INTEGRATOR:
+            return (True, 1.0, None)
+        
+        fits, ratio = self._text_integrator.check_text_fits(
+            text=text,
+            available_width=available_width,
+            font_name=font_name,
+            font_size=font_size,
+        )
+        
+        warning = None
+        if not fits:
+            overflow_percent = int((ratio - 1) * 100)
+            warning = f"El texto es {overflow_percent}% más largo que el espacio disponible"
+        elif ratio > 0.9:
+            warning = "El texto cabe pero está muy ajustado"
+        
+        return (fits, ratio, warning)
+    
+    def _prepare_text_edit(
+        self, 
+        original_text: str, 
+        new_text: str,
+        bbox: tuple,
+        font_name: str = "Helvetica",
+        font_size: float = 12.0,
+    ) -> 'EditPreparation':
+        """
+        Prepara una edición de texto con análisis completo.
+        
+        Args:
+            original_text: Texto original
+            new_text: Nuevo texto
+            bbox: Bounding box (x0, y0, x1, y1)
+            font_name: Nombre de la fuente
+            font_size: Tamaño de fuente
+            
+        Returns:
+            EditPreparation con el análisis o None si no está disponible
+        """
+        if not self._text_integrator or not HAS_TEXT_INTEGRATOR:
+            return None
+        
+        return self._text_integrator.prepare_edit(
+            page_num=self.current_page,
+            original_text=original_text,
+            new_text=new_text,
+            bbox=bbox,
+            font_name=font_name,
+            font_size=font_size,
+        )
+    
+    def _validate_before_save(self) -> tuple:
+        """
+        Valida el documento antes de guardar.
+        
+        Returns:
+            Tupla (is_valid: bool, warnings: list, errors: list)
+        """
+        if not self._text_integrator or not HAS_TEXT_INTEGRATOR:
+            return (True, [], [])
+        
+        report = self._text_integrator.validate_before_save()
+        return (report.is_valid, report.warnings, report.errors)
     
     def _on_span_clicked_for_selection(self, span) -> None:
         """Manejar clic en span para selección."""
@@ -592,6 +697,8 @@ class PDFPageView(QGraphicsView):
             )
             # Actualizar hit-tester con el nuevo documento
             self._update_hit_tester_document()
+            # Actualizar integrador de texto con el nuevo documento
+            self._update_text_integrator_document()
             self.load_page(0)
     
     def clear_all_state(self):
@@ -656,6 +763,39 @@ class PDFPageView(QGraphicsView):
         
         self.current_page = page_num
         self.render_page()
+    
+    def _update_pdf_image_only(self):
+        """Actualiza solo la imagen del PDF sin destruir los items gráficos existentes.
+        
+        Esto es útil cuando se borra texto del PDF y queremos refrescar la imagen
+        pero mantener los EditableTextItems activos.
+        """
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+        
+        # Renderizar página
+        pixmap = self.pdf_doc.render_page(self.current_page, self.zoom_level)
+        if not pixmap:
+            return
+        
+        # Convertir a QImage
+        img = QImage(
+            pixmap.samples,
+            pixmap.width,
+            pixmap.height,
+            pixmap.stride,
+            QImage.Format_RGB888
+        )
+        
+        # Actualizar el pixmap existente o crear uno nuevo
+        qpixmap = QPixmap.fromImage(img)
+        if self.page_item:
+            self.page_item.setPixmap(qpixmap)
+        else:
+            self.page_item = QGraphicsPixmapItem(qpixmap)
+            self.scene.addItem(self.page_item)
+            # Asegurar que esté detrás de todo
+            self.page_item.setZValue(-1)
     
     def render_page(self):
         """Renderiza la página actual con el nivel de zoom actual."""
@@ -1131,16 +1271,154 @@ class PDFPageView(QGraphicsView):
         has_text = blocks and blocks[0].text.strip() if blocks else False
         
         if has_text:
-            # Hay texto existente - usar WordLikeEditor para preservar estructura
-            original_text = ' '.join([b.text for b in blocks])
+            # Expandir la selección para incluir texto conectado en la misma línea
+            # PERO evitar capturar columnas/módulos separados
             
+            # Paso 1: Obtener el rango Y de los bloques encontrados
+            min_y = min(block.rect.y0 for block in blocks if hasattr(block, 'rect'))
+            max_y = max(block.rect.y1 for block in blocks if hasattr(block, 'rect'))
+            
+            # Paso 2: Buscar spans cercanos (no toda la página)
+            page = self.pdf_doc.get_page(self.current_page)
+            if page:
+                # VALORES CONSERVADORES para evitar mezclar columnas/titulares
+                HORIZONTAL_MARGIN = 30  # Margen pequeño para buscar texto conectado
+                MAX_GAP = 8  # Máximo hueco entre spans (típico espacio entre palabras)
+                MAX_Y_DIFF = 3  # Máxima diferencia en Y para considerar misma línea
+                
+                search_rect = fitz.Rect(
+                    max(0, pdf_rect.x0 - HORIZONTAL_MARGIN),
+                    min_y - 2,
+                    min(page.rect.width, pdf_rect.x1 + HORIZONTAL_MARGIN),
+                    max_y + 2
+                )
+                print(f"DEBUG edit_selection: rect original={pdf_rect}")
+                print(f"DEBUG edit_selection: search_rect={search_rect}")
+                
+                # Obtener spans en el área de búsqueda
+                nearby_spans = self.pdf_doc.get_text_spans_in_rect(self.current_page, search_rect)
+                
+                if nearby_spans:
+                    # Filtrar: solo incluir spans conectados al área seleccionada
+                    sorted_spans = sorted(nearby_spans, key=lambda s: s.get('rect', pdf_rect).x0)
+                    
+                    # Calcular altura promedio del texto para validación de Y
+                    avg_height = (max_y - min_y) if max_y > min_y else 12
+                    
+                    # Encontrar spans que intersectan o están cerca de la selección
+                    # CRÍTICO: Verificar que estén en la MISMA LÍNEA (similar Y)
+                    connected_spans = []
+                    for span in sorted_spans:
+                        span_rect = span.get('rect')
+                        if not span_rect:
+                            continue
+                        # Verificar que el span esté en la misma línea (diferencia Y pequeña)
+                        y_overlap = (span_rect.y0 <= max_y + MAX_Y_DIFF and span_rect.y1 >= min_y - MAX_Y_DIFF)
+                        if not y_overlap:
+                            continue
+                        # Verificar proximidad horizontal
+                        if span_rect.intersects(pdf_rect) or abs(span_rect.x0 - pdf_rect.x1) < MAX_GAP or abs(pdf_rect.x0 - span_rect.x1) < MAX_GAP:
+                            connected_spans.append(span)
+                    
+                    # Expandir SOLO una vez para incluir spans inmediatamente adyacentes
+                    # NO expandir indefinidamente
+                    if connected_spans:
+                        new_connected = list(connected_spans)
+                        for span in sorted_spans:
+                            if span in new_connected:
+                                continue
+                            span_rect = span.get('rect')
+                            if not span_rect:
+                                continue
+                            # Verificar misma línea
+                            y_overlap = (span_rect.y0 <= max_y + MAX_Y_DIFF and span_rect.y1 >= min_y - MAX_Y_DIFF)
+                            if not y_overlap:
+                                continue
+                            # Solo conectar si está INMEDIATAMENTE adyacente
+                            for cs in connected_spans:
+                                cs_rect = cs.get('rect')
+                                if not cs_rect:
+                                    continue
+                                gap = min(abs(span_rect.x0 - cs_rect.x1), abs(cs_rect.x0 - span_rect.x1))
+                                if gap < MAX_GAP:
+                                    new_connected.append(span)
+                                    break
+                        connected_spans = new_connected
+                    
+                    if connected_spans:
+                        # Calcular rect combinado solo de spans conectados
+                        combined_rect = pdf_rect
+                        connected_spans = sorted(connected_spans, key=lambda s: s.get('rect', pdf_rect).x0)
+                        for span in connected_spans:
+                            span_rect = span.get('rect')
+                            if span_rect:
+                                combined_rect = fitz.Rect(
+                                    min(combined_rect.x0, span_rect.x0),
+                                    min(combined_rect.y0, span_rect.y0),
+                                    max(combined_rect.x1, span_rect.x1),
+                                    max(combined_rect.y1, span_rect.y1)
+                                )
+                        print(f"DEBUG edit_selection: {len(connected_spans)} spans conectados")
+                        print(f"DEBUG edit_selection: rect combinado={combined_rect}")
+                        pdf_rect = combined_rect
+                    else:
+                        # Fallback: usar unión de bloques encontrados
+                        combined_rect = pdf_rect
+                        for block in blocks:
+                            if hasattr(block, 'rect') and block.rect:
+                                combined_rect = fitz.Rect(
+                                    min(combined_rect.x0, block.rect.x0),
+                                    min(combined_rect.y0, block.rect.y0),
+                                    max(combined_rect.x1, block.rect.x1),
+                                    max(combined_rect.y1, block.rect.y1)
+                                )
+                        pdf_rect = combined_rect
+                else:
+                    # Fallback: usar unión de bloques
+                    combined_rect = pdf_rect
+                    for block in blocks:
+                        if hasattr(block, 'rect') and block.rect:
+                            combined_rect = fitz.Rect(
+                                min(combined_rect.x0, block.rect.x0),
+                                min(combined_rect.y0, block.rect.y0),
+                                max(combined_rect.x1, block.rect.x1),
+                                max(combined_rect.y1, block.rect.y1)
+                            )
+                    pdf_rect = combined_rect
+            else:
+                # Fallback si no hay página
+                combined_rect = pdf_rect
+                for block in blocks:
+                    if hasattr(block, 'rect') and block.rect:
+                        combined_rect = fitz.Rect(
+                            min(combined_rect.x0, block.rect.x0),
+                            min(combined_rect.y0, block.rect.y0),
+                            max(combined_rect.x1, block.rect.x1),
+                            max(combined_rect.y1, block.rect.y1)
+                        )
+                pdf_rect = combined_rect
+            
+            # Hay texto existente - usar WordLikeEditor para preservar estructura
             # Obtener spans del PDF para preservar tipografía y estructura
             spans = self._get_text_spans_in_selection(pdf_rect)
+            
+            # Reconstruir texto con saltos de línea desde los spans (preserva estructura)
+            if spans:
+                original_text = ''
+                for span in spans:
+                    if span.get('needs_newline', False) and original_text:
+                        original_text += '\n'
+                    original_text += span.get('text', '')
+            else:
+                # Fallback: usar bloques
+                original_text = '\n'.join([b.text for b in blocks])
             
             # Obtener información base del primer bloque
             block = blocks[0]
             base_font_size = block.font_size or 12
             base_color = block.color or (0, 0, 0)
+            base_font_name = getattr(block, 'font_name', 'helv') or 'helv'
+            base_is_bold = getattr(block, 'is_bold', False)
             
             # PRIORIDAD: Usar WordLikeEditor si está disponible
             if HAS_WORD_LIKE_EDITOR:
@@ -1175,9 +1453,37 @@ class PDFPageView(QGraphicsView):
             if ok and new_text.strip():
                 font_size = base_font_size
                 color = base_color
+                font_name = base_font_name
+                is_bold = base_is_bold
+                
+                # Convertir spans a text_runs para preservar estilos al mover
+                text_runs = None
+                if spans and len(spans) >= 1:
+                    text_runs = []
+                    for span in spans:
+                        text_runs.append({
+                            'text': span.get('text', ''),
+                            'font_name': span.get('font_name', 'Helvetica'),
+                            'font_size': span.get('font_size', font_size),
+                            'is_bold': span.get('is_bold', False),
+                            'is_italic': span.get('is_italic', False),
+                            'color': span.get('color', '#000000'),
+                            'indent': span.get('indent', 0.0),
+                            'needs_newline': span.get('needs_newline', False),
+                            'line_y': span.get('line_y', 0)
+                        })
                 
                 if is_image_pdf:
-                    # PDF de imagen: NO modificar directamente, usar OVERLAY
+                    # PDF de imagen: PRIMERO borrar, LUEGO crear OVERLAY
+                    # CRÍTICO: Borrar el texto original del PDF
+                    if self.pdf_doc:
+                        self.pdf_doc._save_snapshot()
+                        self.pdf_doc.erase_text_transparent(
+                            self.current_page,
+                            pdf_rect,
+                            save_snapshot=False
+                        )
+                    
                     view_rect = self.pdf_to_view_rect(pdf_rect)
                     text_item = self._add_editable_text(
                         view_rect,
@@ -1185,12 +1491,20 @@ class PDFPageView(QGraphicsView):
                         font_size=font_size,
                         color=color,
                         pdf_rect=pdf_rect,
-                        is_from_pdf=True  # Viene del PDF
+                        is_from_pdf=True,  # Viene del PDF
+                        font_name=font_name,
+                        is_bold=is_bold,
+                        text_runs=text_runs
                     )
                     if text_item:
                         text_item.is_overlay = True
                         text_item.pending_write = True
+                        text_item.needs_erase = False  # Ya lo borramos
+                        text_item.internal_pdf_rect = pdf_rect
                         self._update_text_data(text_item)
+                    
+                    # Actualizar solo la imagen del PDF
+                    self._update_pdf_image_only()
                     self.documentModified.emit()
                 else:
                     # PDF normal: editar directamente
@@ -1205,6 +1519,7 @@ class PDFPageView(QGraphicsView):
                         new_text,
                         font_size=font_size,
                         color=color,
+                        is_bold=is_bold,
                         save_snapshot=False
                     )
                     if success:
@@ -1217,7 +1532,10 @@ class PDFPageView(QGraphicsView):
                             font_size=font_size,
                             color=color,
                             pdf_rect=pdf_rect,
-                            is_from_pdf=True  # El texto ya existe en el PDF
+                            is_from_pdf=True,  # El texto ya existe en el PDF
+                            font_name=font_name,
+                            is_bold=is_bold,
+                            text_runs=text_runs
                         )
                         self.render_page()
                         self.documentModified.emit()
@@ -1544,6 +1862,24 @@ class PDFPageView(QGraphicsView):
             # Detectar si es PDF de imagen
             is_image_pdf = self.pdf_doc.is_image_based_pdf()
             
+            # Obtener spans del PDF para preservar estilos
+            spans = self._get_text_spans_in_selection(block.rect)
+            text_runs = None
+            if spans and len(spans) >= 1:
+                text_runs = []
+                for span in spans:
+                    text_runs.append({
+                        'text': span.get('text', ''),
+                        'font_name': span.get('font_name', 'Helvetica'),
+                        'font_size': span.get('font_size', block.font_size or 12),
+                        'is_bold': span.get('is_bold', block.is_bold),
+                        'is_italic': span.get('is_italic', False),
+                        'color': span.get('color', '#000000'),
+                        'indent': span.get('indent', 0.0),
+                        'needs_newline': span.get('needs_newline', False),
+                        'line_y': span.get('line_y', 0)
+                    })
+            
             new_text, ok = QInputDialog.getText(
                 self,
                 'Editar texto',
@@ -1553,8 +1889,16 @@ class PDFPageView(QGraphicsView):
             
             if ok and new_text != block.text:
                 if is_image_pdf:
-                    # PDF de imagen: NO modificar el PDF directamente
-                    # Crear un overlay que tape el texto original y muestre el nuevo
+                    # PDF de imagen: PRIMERO borrar, LUEGO crear overlay
+                    # CRÍTICO: Borrar el texto original del PDF
+                    if self.pdf_doc:
+                        self.pdf_doc._save_snapshot()
+                        self.pdf_doc.erase_text_transparent(
+                            self.current_page,
+                            block.rect,
+                            save_snapshot=False
+                        )
+                    
                     view_rect = self.pdf_to_view_rect(block.rect)
                     text_item = self._add_editable_text(
                         view_rect,
@@ -1562,13 +1906,21 @@ class PDFPageView(QGraphicsView):
                         font_size=block.font_size or 12,
                         color=block.color or (0, 0, 0),
                         pdf_rect=block.rect,
-                        is_from_pdf=True  # Viene del PDF, guardar posición original
+                        is_from_pdf=True,  # Viene del PDF, guardar posición original
+                        font_name=block.font_name or 'helv',
+                        is_bold=block.is_bold,
+                        text_runs=text_runs
                     )
                     if text_item:
                         # Marcar como overlay
                         text_item.is_overlay = True
                         text_item.pending_write = True
+                        text_item.needs_erase = False  # Ya lo borramos
+                        text_item.internal_pdf_rect = block.rect
                         self._update_text_data(text_item)
+                    
+                    # Actualizar solo la imagen del PDF
+                    self._update_pdf_image_only()
                     self.documentModified.emit()
                 else:
                     # PDF normal: editar directamente
@@ -1588,7 +1940,10 @@ class PDFPageView(QGraphicsView):
                             new_text,
                             font_size=block.font_size or 12,
                             color=block.color or (0, 0, 0),
-                            pdf_rect=block.rect
+                            pdf_rect=block.rect,
+                            font_name=block.font_name or 'helv',
+                            is_bold=block.is_bold,
+                            text_runs=text_runs
                         )
                         self.render_page()
                         self.documentModified.emit()
@@ -1808,7 +2163,18 @@ class PDFPageView(QGraphicsView):
             
             if blocks and blocks[0].text.strip():
                 # Hay texto existente - editar
-                original_text = ' '.join([b.text for b in blocks])
+                # Obtener spans para preservar estructura
+                spans = self._get_text_spans_in_selection(pdf_rect)
+                
+                # Reconstruir texto con saltos de línea desde los spans
+                if spans:
+                    original_text = ''
+                    for span in spans:
+                        if span.get('needs_newline', False) and original_text:
+                            original_text += '\n'
+                        original_text += span.get('text', '')
+                else:
+                    original_text = '\n'.join([b.text for b in blocks])
                 
                 new_text, ok = QInputDialog.getText(
                     self,
@@ -1822,6 +2188,23 @@ class PDFPageView(QGraphicsView):
                     font_size = block.font_size or 12
                     color = block.color or (0, 0, 0)
                     
+                    # Crear text_runs para preservar estilos y saltos de línea
+                    text_runs = None
+                    if spans and len(spans) >= 1:
+                        text_runs = []
+                        for span in spans:
+                            text_runs.append({
+                                'text': span.get('text', ''),
+                                'font_name': span.get('font_name', 'Helvetica'),
+                                'font_size': span.get('font_size', font_size),
+                                'is_bold': span.get('is_bold', False),
+                                'is_italic': span.get('is_italic', False),
+                                'color': span.get('color', '#000000'),
+                                'indent': span.get('indent', 0.0),
+                                'needs_newline': span.get('needs_newline', False),
+                                'line_y': span.get('line_y', 0)
+                            })
+                    
                     if is_image_pdf:
                         # PDF de imagen: usar overlay
                         view_rect = self.pdf_to_view_rect(pdf_rect)
@@ -1831,7 +2214,8 @@ class PDFPageView(QGraphicsView):
                             font_size=font_size,
                             color=color,
                             pdf_rect=pdf_rect,
-                            is_from_pdf=True
+                            is_from_pdf=True,
+                            text_runs=text_runs
                         )
                         if text_item:
                             text_item.is_overlay = True
@@ -1858,7 +2242,8 @@ class PDFPageView(QGraphicsView):
                                 font_size=font_size,
                                 color=color,
                                 pdf_rect=pdf_rect,
-                                is_from_pdf=True  # El texto ya existe en el PDF
+                                is_from_pdf=True,  # El texto ya existe en el PDF
+                                text_runs=text_runs
                             )
                             self.render_page()
                             self.documentModified.emit()
@@ -1938,12 +2323,21 @@ class PDFPageView(QGraphicsView):
     # =====================================================
     
     def _find_text_at_position(self, scene_pos: QPointF):
-        """Busca un texto editable en la posición dada, ignorando textos vacíos."""
-        for i, text_item in enumerate(self.editable_text_items):
+        """Busca un texto editable en la posición dada, ignorando textos vacíos.
+        
+        IMPORTANTE - INDEPENDENCIA DE MÓDULOS:
+        - Cada EditableTextItem es un módulo INDEPENDIENTE con un module_id único
+        - El rect de cada módulo se ajusta automáticamente a su contenido
+        - Los módulos NUNCA se mezclan entre sí
+        - Si el texto crece fuera del área inicial, sigue perteneciendo al mismo módulo
+        """
+        for text_item in self.editable_text_items:
             # Ignorar textos vacíos
             if not text_item.text or not text_item.text.strip():
                 continue
-            # Usar sceneBoundingRect() para obtener el rect en coordenadas de escena
+            
+            # Usar sceneBoundingRect() para obtener el rect ACTUAL en coordenadas de escena
+            # El rect ya refleja el tamaño del contenido (ajustado automáticamente)
             scene_rect = text_item.sceneBoundingRect()
             if scene_rect.contains(scene_pos):
                 return text_item
@@ -1971,13 +2365,8 @@ class PDFPageView(QGraphicsView):
     def _convert_pdf_text_to_editable(self, block):
         """Convierte un bloque de texto del PDF en un EditableTextItem.
         
-        IMPORTANTE: Esta función NO borra el texto original del PDF.
-        El texto solo se borra cuando:
-        1. Se mueve el texto (en _update_text_in_pdf)
-        2. Se edita el contenido (en _edit_text_content)
-        
-        Esto permite "capturar" texto para arrastrarlo sin borrarlo
-        inmediatamente, evitando pérdida de datos si el usuario cancela.
+        Captura texto conectado horizontalmente (misma línea) pero NO captura
+        texto de columnas/módulos diferentes que puedan estar en la misma altura Y.
         """
         if not block:
             return None
@@ -1986,22 +2375,125 @@ class PDFPageView(QGraphicsView):
         if not block.text or not block.text.strip():
             return None
         
+        # Obtener el rectángulo inicial del bloque clicado
+        initial_rect = block.rect
         
-        # Obtener el rectángulo del texto (coordenadas visuales para la vista)
+        # Expandir para capturar texto conectado en la misma línea
+        # PERO evitar capturar columnas/módulos separados
+        page = self.pdf_doc.get_page(self.current_page) if self.pdf_doc else None
+        
+        if page and self.pdf_doc:
+            # Buscar spans cercanos al bloque clicado
+            # VALORES CONSERVADORES para evitar mezclar columnas/titulares
+            HORIZONTAL_MARGIN = 30  # Margen pequeño para buscar texto conectado
+            MAX_GAP = 8  # Máximo hueco entre spans (típico espacio entre palabras)
+            MAX_Y_DIFF = 3  # Máxima diferencia en Y para considerar misma línea
+            
+            search_rect = fitz.Rect(
+                max(0, initial_rect.x0 - HORIZONTAL_MARGIN),
+                initial_rect.y0 - 2,
+                min(page.rect.width, initial_rect.x1 + HORIZONTAL_MARGIN),
+                initial_rect.y1 + 2
+            )
+            print(f"DEBUG _convert_pdf_text_to_editable: rect inicial={initial_rect}")
+            print(f"DEBUG _convert_pdf_text_to_editable: search_rect={search_rect}")
+            
+            # Obtener spans en el área de búsqueda
+            nearby_spans = self.pdf_doc.get_text_spans_in_rect(self.current_page, search_rect)
+            
+            if nearby_spans:
+                # Ordenar spans por posición X
+                sorted_spans = sorted(nearby_spans, key=lambda s: s.get('rect', initial_rect).x0)
+                
+                # Calcular altura del texto clicado para validación
+                text_height = initial_rect.height
+                
+                # Encontrar spans que intersectan o están cerca del bloque clicado
+                # CRÍTICO: Verificar que estén en la MISMA LÍNEA (similar Y)
+                connected_spans = []
+                for span in sorted_spans:
+                    span_rect = span.get('rect')
+                    if not span_rect:
+                        continue
+                    # Verificar que el span esté en la misma línea (diferencia Y pequeña)
+                    y_overlap = (span_rect.y0 <= initial_rect.y1 + MAX_Y_DIFF and 
+                                span_rect.y1 >= initial_rect.y0 - MAX_Y_DIFF)
+                    if not y_overlap:
+                        continue
+                    # Verificar proximidad horizontal
+                    if (span_rect.intersects(initial_rect) or 
+                        abs(span_rect.x0 - initial_rect.x1) < MAX_GAP or 
+                        abs(initial_rect.x0 - span_rect.x1) < MAX_GAP):
+                        connected_spans.append(span)
+                
+                # Expandir SOLO una vez para incluir spans inmediatamente adyacentes
+                # NO expandir indefinidamente (esto evita el "efecto cascada")
+                if connected_spans:
+                    new_connected = list(connected_spans)
+                    for span in sorted_spans:
+                        if span in new_connected:
+                            continue
+                        span_rect = span.get('rect')
+                        if not span_rect:
+                            continue
+                        # Verificar misma línea
+                        y_overlap = (span_rect.y0 <= initial_rect.y1 + MAX_Y_DIFF and 
+                                    span_rect.y1 >= initial_rect.y0 - MAX_Y_DIFF)
+                        if not y_overlap:
+                            continue
+                        # Solo conectar si está INMEDIATAMENTE adyacente a alguno existente
+                        for cs in connected_spans:
+                            cs_rect = cs.get('rect')
+                            if not cs_rect:
+                                continue
+                            gap = min(abs(span_rect.x0 - cs_rect.x1), abs(cs_rect.x0 - span_rect.x1))
+                            if gap < MAX_GAP:
+                                new_connected.append(span)
+                                break
+                    connected_spans = new_connected
+                    
+                    # Calcular rect combinado solo de spans conectados
+                    combined_rect = initial_rect
+                    all_text_parts = []
+                    # Reordenar por posición X
+                    connected_spans = sorted(connected_spans, key=lambda s: s.get('rect', initial_rect).x0)
+                    for span in connected_spans:
+                        span_rect = span.get('rect')
+                        if span_rect:
+                            combined_rect = fitz.Rect(
+                                min(combined_rect.x0, span_rect.x0),
+                                min(combined_rect.y0, span_rect.y0),
+                                max(combined_rect.x1, span_rect.x1),
+                                max(combined_rect.y1, span_rect.y1)
+                            )
+                        all_text_parts.append(span.get('text', ''))
+                    
+                    pdf_rect = combined_rect
+                    combined_text = ''.join(all_text_parts)
+                    print(f"DEBUG _convert_pdf_text_to_editable: {len(connected_spans)} spans conectados")
+                    print(f"DEBUG _convert_pdf_text_to_editable: rect combinado={pdf_rect}")
+                    print(f"DEBUG _convert_pdf_text_to_editable: texto='{combined_text[:50]}...'")
+                else:
+                    pdf_rect = initial_rect
+                    combined_text = block.text
+            else:
+                pdf_rect = initial_rect
+                combined_text = block.text
+        else:
+            pdf_rect = initial_rect
+            combined_text = block.text
+        
         # Expandir ligeramente el rect para asegurar que capture todo el texto
-        # Algunas fuentes tienen caracteres que sobresalen del bbox reportado
-        pdf_rect = block.rect
         expanded_pdf_rect = fitz.Rect(
-            pdf_rect.x0 - 2,  # Pequeño margen izquierdo
-            pdf_rect.y0 - 1,  # Pequeño margen superior
-            pdf_rect.x1 + 5,  # Margen derecho más amplio para caracteres finales
-            pdf_rect.y1 + 2   # Pequeño margen inferior
+            pdf_rect.x0 - 2,
+            pdf_rect.y0 - 1,
+            pdf_rect.x1 + 5,
+            pdf_rect.y1 + 2
         )
         view_rect = self.pdf_to_view_rect(expanded_pdf_rect)
         
-        # Obtener las coordenadas internas si están disponibles (para borrado)
-        # IMPORTANTE: Usar el rect original (sin expandir) para el borrado
-        internal_rect = getattr(block, 'internal_rect', pdf_rect)
+        # El rect interno para borrado es el rect combinado
+        internal_rect = pdf_rect
         
         
         # Detectar si el texto original es negrita basándose en el nombre de fuente
@@ -2014,35 +2506,131 @@ class PDFPageView(QGraphicsView):
         if flags & (1 << 4):  # Bit 4 = superscript/bold indicator
             is_bold = True
         
+        # CRÍTICO: Obtener spans del PDF para preservar estilos (negritas, tamaños, colores)
+        # Esto permite que al mover el texto se mantengan todos los estilos originales
+        # Usamos pdf_rect que ya contiene toda la línea
+        spans = []
+        text_runs = None
+        # Variables para usar los valores REALES de los spans
+        real_font_size = block.font_size or 12
+        real_font_name = font_name
+        real_is_bold = is_bold
+        line_spacing = 0.0  # Interlineado calculado
         
-        # Crear el texto editable (el texto original del PDF permanece intacto)
-        # Se borrará solo cuando se confirme un movimiento o edición
+        if self.pdf_doc:
+            try:
+                spans = self.pdf_doc.get_text_spans_in_rect(self.current_page, pdf_rect)
+                print(f"DEBUG _convert_pdf_text_to_editable: spans para text_runs = {len(spans)}")
+                if spans and len(spans) >= 1:
+                    text_runs = []
+                    combined_text_from_runs = ''
+                    
+                    # Extraer valores del primer span como referencia base
+                    first_span = spans[0]
+                    real_font_size = first_span.get('font_size', block.font_size or 12)
+                    real_font_name = first_span.get('font_name', font_name) or font_name
+                    real_is_bold = first_span.get('is_bold', is_bold)
+                    
+                    # Calcular interlineado: diferencia entre line_y de spans consecutivos
+                    line_y_values = []
+                    for span in spans:
+                        line_y = span.get('line_y', 0)
+                        if line_y not in line_y_values:
+                            line_y_values.append(line_y)
+                    
+                    if len(line_y_values) > 1:
+                        line_y_values.sort()
+                        spacings = []
+                        for i in range(1, len(line_y_values)):
+                            spacings.append(line_y_values[i] - line_y_values[i-1])
+                        if spacings:
+                            line_spacing = sum(spacings) / len(spacings)
+                    
+                    print(f"DEBUG: real_font_size={real_font_size}, real_font_name={real_font_name}, line_spacing={line_spacing}")
+                    
+                    for span in spans:
+                        span_text = span.get('text', '')
+                        combined_text_from_runs += span_text
+                        text_runs.append({
+                            'text': span_text,
+                            'font_name': span.get('font_name', 'Helvetica'),
+                            'font_size': span.get('font_size', real_font_size),
+                            'is_bold': span.get('is_bold', real_is_bold),
+                            'is_italic': span.get('is_italic', False),
+                            'color': span.get('color', '#000000'),
+                            'indent': span.get('indent', 0.0),
+                            'needs_newline': span.get('needs_newline', False),
+                            'line_y': span.get('line_y', 0)
+                        })
+                    # Usar el texto combinado de los runs para el item
+                    combined_text = combined_text_from_runs
+                    print(f"DEBUG _convert_pdf_text_to_editable: text_runs creados = {len(text_runs)}")
+                    print(f"DEBUG _convert_pdf_text_to_editable: texto final = '{combined_text}'")
+            except Exception as e:
+                print(f"Error obteniendo spans: {e}")
+        
+        # Crear el texto editable usando los valores REALES detectados de los spans
         text_item = self._add_editable_text(
             view_rect,
-            block.text,
-            font_size=block.font_size or 12,
+            combined_text,  # Usar texto de toda la línea, no solo block.text
+            font_size=real_font_size,  # Usar tamaño REAL del PDF
             color=block.color or (0, 0, 0),
             pdf_rect=pdf_rect,
             is_from_pdf=True,  # Marcar que viene del PDF y aún no ha sido modificado
-            font_name=font_name,
-            is_bold=is_bold
+            font_name=real_font_name,  # Usar nombre de fuente REAL del PDF
+            is_bold=real_is_bold,  # Usar bold REAL del PDF
+            text_runs=text_runs,  # CRÍTICO: Pasar text_runs para preservar estilos
+            line_spacing=line_spacing  # Pasar interlineado calculado
         )
         
-        # Guardar las coordenadas internas para el borrado
+        # Guardar las coordenadas para el borrado (pdf_rect es de toda la línea)
         if text_item:
             text_item.internal_pdf_rect = internal_rect
             # También actualizar los datos guardados
             page_data = self.editable_texts_data.get(self.current_page, [])
             if page_data:
                 page_data[-1]['internal_pdf_rect'] = internal_rect
+            
+            # CRÍTICO: Borrar el texto original del PDF INMEDIATAMENTE para evitar
+            # el efecto de doble renderizado (dos tamaños superpuestos)
+            # El texto se redibujará como overlay
+            # NOTA: internal_rect es el rect combinado de toda la línea
+            if self.pdf_doc:
+                self.pdf_doc._save_snapshot()
+                print(f"DEBUG _convert_pdf_text_to_editable: borrando rect={internal_rect}")
+                self.pdf_doc.erase_text_transparent(
+                    self.current_page,
+                    internal_rect,
+                    save_snapshot=False,
+                    already_internal=False  # Transformar coordenadas porque pdf_rect es visual
+                )
+            
+            # Marcar como overlay para que se dibuje y se escriba al guardar
+            text_item.is_overlay = True
+            text_item.pending_write = True
+            text_item.needs_erase = False  # Ya lo borramos
+            
+            # Actualizar solo la imagen del PDF (sin destruir los items gráficos)
+            # Esto evita el RuntimeError de "object deleted"
+            self._update_pdf_image_only()
         
         return text_item
     
     def _select_text_item(self, text_item: EditableTextItem):
-        """Selecciona un texto editable."""
+        """Selecciona un texto editable.
+        
+        IMPORTANTE - INDEPENDENCIA DE MÓDULOS:
+        - Cada módulo de texto es INDEPENDIENTE y tiene un module_id único
+        - Al seleccionar, el rect se ajusta al contenido actual
+        - El texto editado SIEMPRE pertenece a su módulo, nunca se mezcla con otros
+        """
         # Deseleccionar el anterior
         if self.selected_text_item and self.selected_text_item != text_item:
             self.selected_text_item.set_selected(False)
+        
+        # CRÍTICO: Asegurar que el rect esté ajustado al contenido antes de seleccionar
+        # Esto garantiza que el área de selección refleje el texto actual
+        text_item.adjust_rect_to_content()
         
         # Seleccionar el nuevo
         text_item.set_selected(True)
@@ -2106,7 +2694,8 @@ class PDFPageView(QGraphicsView):
     
     def _add_editable_text(self, view_rect: QRectF, text: str, font_size: float = 12, 
                            color: tuple = (0, 0, 0), pdf_rect=None, is_from_pdf: bool = False,
-                           font_name: str = "helv", is_bold: bool = False):
+                           font_name: str = "helv", is_bold: bool = False, text_runs: list = None,
+                           line_spacing: float = 0.0):
         """
         Añade un texto editable y lo registra en los datos.
         
@@ -2119,10 +2708,43 @@ class PDFPageView(QGraphicsView):
             is_from_pdf: True si el texto fue capturado del PDF y aún no se ha borrado
             font_name: Nombre de la fuente (ej: "helv", "hebo" para bold)
             is_bold: Si el texto es negrita
+            text_runs: Lista de runs con estilos individuales (opcional)
+            line_spacing: Interlineado del texto original (en puntos PDF)
         """
         # NO agregar textos vacíos
         if not text or not text.strip():
             return None
+        
+        # CRÍTICO: Si viene del PDF y no tiene text_runs, obtenerlos automáticamente
+        # Esto asegura que TODOS los caminos preserven estilos (negritas, tamaños, etc.)
+        if is_from_pdf and text_runs is None and pdf_rect is not None and self.pdf_doc:
+            try:
+                spans = self.pdf_doc.get_text_spans_in_rect(self.current_page, pdf_rect)
+                print(f"DEBUG _add_editable_text: Auto-obteniendo spans, encontrados = {len(spans)}")
+                if spans and len(spans) >= 1:
+                    text_runs = []
+                    # Calcular line_spacing si no está definido
+                    if line_spacing <= 0:
+                        line_y_values = sorted(set(s.get('line_y', 0) for s in spans))
+                        if len(line_y_values) > 1:
+                            spacings = [line_y_values[i+1] - line_y_values[i] for i in range(len(line_y_values)-1)]
+                            line_spacing = sum(spacings) / len(spacings)
+                    
+                    for span in spans:
+                        text_runs.append({
+                            'text': span.get('text', ''),
+                            'font_name': span.get('font_name', 'Helvetica'),
+                            'font_size': span.get('font_size', font_size),
+                            'is_bold': span.get('is_bold', is_bold),
+                            'is_italic': span.get('is_italic', False),
+                            'color': span.get('color', '#000000'),
+                            'indent': span.get('indent', 0.0),
+                            'needs_newline': span.get('needs_newline', False),
+                            'line_y': span.get('line_y', 0)
+                        })
+                    print(f"DEBUG _add_editable_text: text_runs creados = {len(text_runs)}, line_spacing={line_spacing}")
+            except Exception as e:
+                print(f"DEBUG _add_editable_text: Error obteniendo spans: {e}")
         
         # Guardar los datos del texto (no el objeto gráfico)
         text_data = {
@@ -2136,7 +2758,10 @@ class PDFPageView(QGraphicsView):
             'font_name': font_name,
             'is_bold': is_bold,
             'is_overlay': False,  # Se establece después si es necesario
-            'pending_write': False
+            'pending_write': False,
+            'text_runs': text_runs,  # Runs con estilos individuales
+            'has_mixed_styles': text_runs is not None and len(text_runs) > 1,
+            'line_spacing': line_spacing  # Interlineado del texto original
         }
         
         if self.current_page not in self.editable_texts_data:
@@ -2153,21 +2778,44 @@ class PDFPageView(QGraphicsView):
     
     def _create_text_item_from_data(self, text_data: dict) -> EditableTextItem:
         """Crea un EditableTextItem a partir de datos guardados."""
+        view_rect = text_data['view_rect']
+        
+        # CRÍTICO: Extraer posición y crear rect normalizado (0, 0, w, h)
+        # La posición se establece con setPos(), no en el rect
+        pos_x = view_rect.x()
+        pos_y = view_rect.y()
+        normalized_rect = QRectF(0, 0, view_rect.width(), view_rect.height())
+        
         text_item = EditableTextItem(
-            text_data['view_rect'],
+            normalized_rect,  # Rect normalizado sin posición
             text_data['text'],
             text_data['font_size'],
             text_data['color'],
             self.current_page,
             font_name=text_data.get('font_name', 'helv'),
-            is_bold=text_data.get('is_bold', False)
+            is_bold=text_data.get('is_bold', False),
+            zoom_level=self.zoom_level,  # Pasar zoom para escalar al dibujar
+            line_spacing=text_data.get('line_spacing', 0.0)  # Interlineado del PDF
         )
+        
+        # CRÍTICO: Establecer la posición del item
+        text_item.setPos(pos_x, pos_y)
+        
         text_item.pdf_rect = text_data['pdf_rect']
         text_item.original_pdf_rect = text_data.get('original_pdf_rect')
         text_item.needs_erase = text_data.get('needs_erase', False)
         text_item.is_overlay = text_data.get('is_overlay', False)
         text_item.pending_write = text_data.get('pending_write', False)
         text_item.data_index = len(self.editable_texts_data.get(self.current_page, [])) - 1
+        # CRÍTICO: Preservar text_runs y has_mixed_styles para estilos al mover
+        text_item.text_runs = text_data.get('text_runs')
+        text_item.has_mixed_styles = text_data.get('has_mixed_styles', False)
+        # Guardar tamaño original para poder escalar al editar
+        text_item._original_font_size = text_data['font_size']
+        
+        # Ajustar caja al tamaño del contenido (solo ajusta w/h, rect ya tiene x=0, y=0)
+        text_item.adjust_rect_to_content()
+        
         return text_item
     
     def _get_text_spans_in_selection(self, pdf_rect: fitz.Rect) -> list:
@@ -2279,6 +2927,7 @@ class PDFPageView(QGraphicsView):
             first_run = runs_data[0]
             font_size = first_run.get('font_size', base_font_size)
             is_bold = first_run.get('is_bold', False)
+            font_name = first_run.get('font_name', 'Helvetica')
             color_str = first_run.get('color', '#000000')
             # Convertir color hex a tuple RGB
             try:
@@ -2288,10 +2937,21 @@ class PDFPageView(QGraphicsView):
         else:
             font_size = base_font_size
             is_bold = False
+            font_name = 'helv'
             color = base_color
         
         if is_image_pdf:
-            # PDF de imagen: crear overlay con los runs
+            # PDF de imagen: PRIMERO borrar el texto original, LUEGO crear overlay
+            # CRÍTICO: Borrar el texto original del PDF para evitar duplicados
+            if self.pdf_doc:
+                self.pdf_doc._save_snapshot()
+                self.pdf_doc.erase_text_transparent(
+                    self.current_page,
+                    pdf_rect,
+                    save_snapshot=False
+                )
+            
+            # Ahora crear el overlay con los runs
             text_item = self._add_editable_text(
                 view_rect,
                 new_text,
@@ -2299,15 +2959,19 @@ class PDFPageView(QGraphicsView):
                 color=color,
                 pdf_rect=pdf_rect,
                 is_from_pdf=True,
-                is_bold=is_bold
+                font_name=font_name,
+                is_bold=is_bold,
+                text_runs=runs_data if has_mixed_styles else None
             )
             if text_item:
                 text_item.is_overlay = True
                 text_item.pending_write = True
-                # Guardar los runs para escritura posterior
-                if has_mixed_styles:
-                    text_item.text_runs = runs_data
+                text_item.needs_erase = False  # Ya lo borramos
+                text_item.internal_pdf_rect = pdf_rect  # Guardar rect para referencia
                 self._update_text_data(text_item)
+            
+            # Actualizar solo la imagen del PDF (sin destruir los items gráficos)
+            self._update_pdf_image_only()
             self.documentModified.emit()
         else:
             # PDF normal: editar directamente
@@ -2331,6 +2995,7 @@ class PDFPageView(QGraphicsView):
                         new_text,
                         font_size=font_size,
                         color=color,
+                        is_bold=is_bold,
                         save_snapshot=False
                     )
             else:
@@ -2341,6 +3006,7 @@ class PDFPageView(QGraphicsView):
                     new_text,
                     font_size=font_size,
                     color=color,
+                    is_bold=is_bold,
                     save_snapshot=False
                 )
             
@@ -2352,10 +3018,10 @@ class PDFPageView(QGraphicsView):
                     color=color,
                     pdf_rect=pdf_rect,
                     is_from_pdf=True,
-                    is_bold=is_bold
+                    font_name=font_name,
+                    is_bold=is_bold,
+                    text_runs=runs_data if has_mixed_styles else None
                 )
-                if text_item and has_mixed_styles:
-                    text_item.text_runs = runs_data
                 self.render_page()
                 self.documentModified.emit()
     
@@ -2452,9 +3118,33 @@ class PDFPageView(QGraphicsView):
 
     def _get_text_spans_for_item(self, text_item: EditableTextItem) -> list:
         """
-        Obtiene los spans de texto del PDF para un item editable.
-        Útil para detectar si el texto tiene múltiples estilos (ej: parcialmente en negrita).
+        Obtiene los spans de texto para un item editable.
+        PRIORIDAD: Usa text_runs guardados si existen (texto ya editado).
+        Solo busca en PDF si no hay text_runs (texto original no editado).
+        
+        Esto preserva estilos cuando se re-edita texto que ya fue modificado.
         """
+        # PRIORIDAD 1: Usar text_runs guardados si existen
+        # Esto preserva estilos de textos que ya fueron editados/movidos
+        text_runs = getattr(text_item, 'text_runs', None)
+        if text_runs and len(text_runs) > 0:
+            # Convertir text_runs al formato de spans esperado
+            spans = []
+            for run in text_runs:
+                spans.append({
+                    'text': run.get('text', ''),
+                    'font_name': run.get('font_name', 'Helvetica'),
+                    'font_size': run.get('font_size', 12),
+                    'is_bold': run.get('is_bold', False),
+                    'is_italic': run.get('is_italic', False),
+                    'color': run.get('color', '#000000'),
+                    'indent': run.get('indent', 0.0),
+                    'needs_newline': run.get('needs_newline', False),
+                    'line_y': run.get('line_y', 0)
+                })
+            return spans
+        
+        # PRIORIDAD 2: Buscar en el PDF original
         if not self.pdf_doc or not text_item.pdf_rect:
             return []
         
@@ -2512,7 +3202,11 @@ class PDFPageView(QGraphicsView):
                             is_bold=span.get('is_bold', False),
                             is_italic=span.get('is_italic', False),
                             color=span.get('color', '#000000'),
-                            indent=span.get('indent', 0.0)
+                            indent=span.get('indent', 0.0),
+                            needs_newline=span.get('needs_newline', False),
+                            line_y=span.get('line_y', 0.0),
+                            is_line_start=span.get('is_line_start', False),
+                            is_line_end=span.get('is_line_end', False)
                         ))
                 else:
                     # Si no hay spans, crear uno con el texto actual
@@ -2534,6 +3228,11 @@ class PDFPageView(QGraphicsView):
                 
                 if result:
                     new_text, runs_data, metadata = result
+                    print(f"DEBUG WordLikeEditor result:")
+                    print(f"  new_text = '{new_text[:50] if new_text else 'None'}...'")
+                    print(f"  runs_data count = {len(runs_data) if runs_data else 0}")
+                    print(f"  has_mixed_styles = {metadata.get('has_mixed_styles', False)}")
+                    print(f"  text_item.text original = '{text_item.text[:50] if text_item.text else 'None'}...'")
                     
                     # Si el usuario aplicó múltiples estilos, guardar como runs
                     if metadata.get('has_mixed_styles', False) and len(runs_data) > 1:
@@ -2685,6 +3384,12 @@ class PDFPageView(QGraphicsView):
         Extraído de _edit_text_content para poder ser usado tanto
         por el diálogo básico como por el mejorado.
         """
+        print(f"DEBUG _apply_text_edit INICIO:")
+        print(f"  new_text = '{new_text[:50] if new_text else 'None'}...'")
+        print(f"  text_item.text = '{text_item.text[:50] if text_item.text else 'None'}...'")
+        print(f"  new_font_size = {new_font_size}")
+        print(f"  new_is_bold = {new_is_bold}")
+        
         # Si el texto está vacío, ELIMINAR el texto del PDF y el item
         if not new_text:
             self._remove_empty_text_item(text_item)
@@ -2698,80 +3403,94 @@ class PDFPageView(QGraphicsView):
         size_changed = abs(new_font_size - text_item.font_size) > 0.5
         bold_changed = new_is_bold != current_is_bold
         
+        print(f"  text_changed = {text_changed}")
+        print(f"  size_changed = {size_changed}")
+        print(f"  bold_changed = {bold_changed}")
+        
         if not (text_changed or size_changed or bold_changed):
+            print("  NO HAY CAMBIOS - retornando")
             return
         
+        # CRÍTICO: Guardar tamaño actual ANTES de actualizarlo (para calcular escala)
+        current_font_size_before = text_item.font_size
+        original_font_size = getattr(text_item, '_original_font_size', current_font_size_before)
+        
+        # CRÍTICO: Si el TEXTO cambió, los text_runs ya no son válidos porque contienen
+        # el texto viejo. Limpiarlos PRIMERO, ANTES de cambiar el texto.
+        # De lo contrario, el setter de text llama a adjust_rect_to_content() con los runs viejos.
+        text_runs = getattr(text_item, 'text_runs', None)
+        if text_runs and text_changed:
+            print(f"  TEXTO CAMBIÓ - limpiando text_runs ANTES de actualizar texto")
+            text_item.text_runs = None
+            text_item.has_mixed_styles = False
+            text_runs = None  # Para que no entre en los bloques siguientes
+        
         # Actualizar propiedades del item
-        text_item.text = new_text
+        # NOTA: El setter de text llama a adjust_rect_to_content() automáticamente
+        text_item._text = new_text  # Establecer directamente sin disparar el setter aún
         text_item.font_size = new_font_size
         text_item.is_bold = new_is_bold
-        # Determinar el nombre de fuente según negrita
-        text_item.font_name = "hebo" if new_is_bold else "helv"
+        
+        # Si cambió el tamaño de fuente (pero NO el texto), actualizar los text_runs
+        # para que conserven sus proporciones relativas
+        if text_runs and size_changed:
+            # Calcular el factor de escala usando el tamaño ORIGINAL antes del cambio
+            if original_font_size and original_font_size > 0:
+                scale_factor = new_font_size / original_font_size
+            else:
+                scale_factor = 1.0
+            
+            print(f"  original_font_size={original_font_size}, new_font_size={new_font_size}")
+            print(f"  Actualizando text_runs con scale_factor={scale_factor}")
+            
+            # Actualizar cada run con el nuevo tamaño proporcional
+            for run in text_runs:
+                original_run_size = run.get('font_size', original_font_size)
+                run['font_size'] = original_run_size * scale_factor
+                # También actualizar bold si cambió
+                if bold_changed:
+                    run['is_bold'] = new_is_bold
+            
+            # Guardar el nuevo tamaño como referencia para futuros cambios
+            text_item._original_font_size = new_font_size
+        elif text_runs and bold_changed:
+            # Solo cambió bold, actualizar todos los runs
+            for run in text_runs:
+                run['is_bold'] = new_is_bold
+        
+        # Preservar nombre de fuente original si es posible
+        # Solo usar helv/hebo como fallback si no hay fuente original
+        current_font_name = getattr(text_item, 'font_name', None)
+        if current_font_name and current_font_name not in ('helv', 'hebo'):
+            # Preservar fuente original del PDF (ej: Arial, Times, etc.)
+            # La negrita se maneja por separado con is_bold
+            pass  # Mantener text_item.font_name
+        else:
+            # Fallback para fuentes estándar
+            text_item.font_name = "hebo" if new_is_bold else "helv"
         
         # Detectar si es PDF de imagen
         is_image_pdf = self.pdf_doc.is_image_based_pdf() if self.pdf_doc else False
         
-        # IMPORTANTE: Calcular tamaño basado en métricas de Qt para evitar recorte
-        # El rectángulo debe ser lo suficientemente grande para mostrar todo el texto
-        font = QFont("Helvetica", int(new_font_size))
-        if new_is_bold:
-            font.setBold(True)
-        metrics = QFontMetrics(font)
-        
-        # FIX: Calcular correctamente para texto multilínea
-        lines = new_text.split('\n')
-        max_line_width = 0
-        for line in lines:
-            line_width = metrics.horizontalAdvance(line)
-            max_line_width = max(max_line_width, line_width)
-        
-        min_text_width = max_line_width + 10  # padding
-        min_text_height = metrics.height() * len(lines) + 4  # altura por cada línea + padding
-        
+        # CRÍTICO: Guardar la posición actual del item ANTES de cualquier ajuste
+        # Ahora que el rect es normalizado (0,0,w,h), la posición real está en pos()
         current_scene_rect = text_item.sceneBoundingRect()
-        current_pdf_rect = text_item.pdf_rect
+        current_pos = text_item.pos()
+        current_pos_x = current_pos.x()
+        current_pos_y = current_pos.y()
         
-        # Determinar si es overlay ANTES de calcular el rect
+        # Determinar si es overlay ANTES de cualquier cambio
         is_overlay_now = getattr(text_item, 'is_overlay', False)
         
-        if current_pdf_rect:
-            # Obtener posición actual en coordenadas de vista
-            current_view_rect = self.pdf_to_view_rect(current_pdf_rect)
-            
-            # CRÍTICO: Para overlays (PDFs de imagen), SIEMPRE usar el tamaño mínimo
-            # Para evitar fragmentación al arrastrar
-            if is_overlay_now:
-                # Overlay: usar EXACTAMENTE el tamaño necesario
-                new_view_width = min_text_width
-                new_view_height = min_text_height
-            else:
-                # Editable normal: usar el máximo entre actual y mínimo requerido
-                new_view_width = max(current_view_rect.width(), min_text_width)
-                new_view_height = max(current_view_rect.height(), min_text_height)
-            
-            new_view_rect = QRectF(
-                current_view_rect.x(),
-                current_view_rect.y(),
-                new_view_width,
-                new_view_height
-            )
-            
-            # Convertir a PDF rect
-            new_pdf_rect = self.view_to_pdf_rect(new_view_rect)
-            
-        else:
-            # Si no hay pdf_rect, crear uno nuevo
-            new_view_rect = QRectF(
-                current_scene_rect.x(),
-                current_scene_rect.y(),
-                min_text_width,
-                min_text_height
-            )
-            new_pdf_rect = self.view_to_pdf_rect(new_view_rect)
+        # CRÍTICO: Llamar a adjust_rect_to_content PRIMERO para calcular el tamaño correcto
+        # Este método ya maneja tabulaciones, múltiples líneas y text_runs
+        text_item.adjust_rect_to_content()
         
-        # Actualizar el rectángulo visual
-        text_item.setRect(QRectF(0, 0, new_view_rect.width(), new_view_rect.height()))
-        text_item.setPos(new_view_rect.x(), new_view_rect.y())
+        # Obtener el rect ajustado al contenido
+        adjusted_rect = text_item.rect()
+        
+        # Establecer la posición correcta (mantener posición original)
+        text_item.setPos(current_pos_x, current_pos_y)
         
         
         # SISTEMA UNIFICADO: SIEMPRE usar overlay para ediciones
@@ -2812,7 +3531,20 @@ class PDFPageView(QGraphicsView):
         # Actualizar propiedades
         text_item.pending_write = True
         text_item.needs_erase = False  # Ya borramos el original (si había)
-        text_item.pdf_rect = new_pdf_rect
+        
+        # CRÍTICO: Llamar a adjust_rect_to_content para que la caja se adapte al nuevo tamaño
+        text_item.adjust_rect_to_content()
+        
+        # IMPORTANTE: Actualizar pdf_rect DESPUÉS de adjust_rect_to_content
+        # para que refleje el tamaño real del texto ajustado
+        adjusted_rect = text_item.rect()
+        adjusted_scene_rect = QRectF(
+            text_item.pos().x(),
+            text_item.pos().y(),
+            adjusted_rect.width(),
+            adjusted_rect.height()
+        )
+        text_item.pdf_rect = self.view_to_pdf_rect(adjusted_scene_rect)
         
         # Actualizar los datos guardados
         self._update_text_data(text_item)
@@ -2850,52 +3582,35 @@ class PDFPageView(QGraphicsView):
             self.documentModified.emit()
             return
         
-        # Guardar los runs en el item para uso posterior
-        text_item.text = new_text
-        text_item.text_runs = runs_data  # Nueva propiedad para guardar runs
-        text_item.has_mixed_styles = True
+        # CRÍTICO: Guardar la posición actual del item ANTES de cualquier ajuste
+        # Ahora que el rect es normalizado (0,0,w,h), la posición real está en pos()
+        current_pos = text_item.pos()
+        current_pos_x = current_pos.x()
+        current_pos_y = current_pos.y()
         
-        # Calcular tamaño basado en el texto completo
-        # Usar el tamaño de fuente promedio/primero
-        base_font_size = runs_data[0].get('font_size', 12) if runs_data else 12
-        has_any_bold = any(r.get('is_bold', False) for r in runs_data)
-        
-        font = QFont("Helvetica", int(base_font_size))
-        if has_any_bold:
-            font.setBold(True)
-        metrics = QFontMetrics(font)
-        
-        # FIX: Calcular correctamente para texto multilínea
-        lines = new_text.split('\n')
-        max_line_width = 0
-        for line in lines:
-            line_width = metrics.horizontalAdvance(line)
-            max_line_width = max(max_line_width, line_width)
-        
-        min_text_width = max_line_width + 10  # padding
-        min_text_height = metrics.height() * len(lines) + 4  # altura por cada línea + padding
-        
-        current_pdf_rect = text_item.pdf_rect
         is_overlay_now = getattr(text_item, 'is_overlay', False)
         needs_erase = getattr(text_item, 'needs_erase', False)
         
-        if current_pdf_rect:
-            current_view_rect = self.pdf_to_view_rect(current_pdf_rect)
-            new_view_rect = QRectF(
-                current_view_rect.x(),
-                current_view_rect.y(),
-                max(current_view_rect.width(), min_text_width),
-                max(current_view_rect.height(), min_text_height)
-            )
-            new_pdf_rect = self.view_to_pdf_rect(new_view_rect)
-        else:
-            scene_rect = text_item.sceneBoundingRect()
-            new_view_rect = QRectF(scene_rect.x(), scene_rect.y(), min_text_width, min_text_height)
-            new_pdf_rect = self.view_to_pdf_rect(new_view_rect)
+        # CRÍTICO: Actualizar los runs PRIMERO, luego el texto
+        # Así cuando adjust_rect_to_content() se llame, usará los runs correctos
+        text_item.text_runs = runs_data
+        text_item.has_mixed_styles = True
+        text_item._text = new_text  # Establecer directamente sin disparar el setter
         
-        # Actualizar rectángulo visual
-        text_item.setRect(QRectF(0, 0, new_view_rect.width(), new_view_rect.height()))
-        text_item.setPos(new_view_rect.x(), new_view_rect.y())
+        # Obtener propiedades de estilo de los runs
+        base_font_size = runs_data[0].get('font_size', 12) if runs_data else 12
+        has_any_bold = any(r.get('is_bold', False) for r in runs_data)
+        
+        # CRÍTICO: Actualizar propiedades de fuente
+        text_item.font_size = base_font_size
+        text_item.is_bold = has_any_bold
+        
+        # CRÍTICO: Ajustar rect al tamaño exacto del texto AHORA
+        # Con los runs correctos ya establecidos
+        text_item.adjust_rect_to_content()
+        
+        # Establecer la posición correcta (mantener posición original)
+        text_item.setPos(current_pos_x, current_pos_y)
         
         # Borrar texto original si es necesario
         if needs_erase and not is_overlay_now and self.pdf_doc:
@@ -2916,9 +3631,17 @@ class PDFPageView(QGraphicsView):
         text_item.is_overlay = True
         text_item.pending_write = True
         text_item.needs_erase = False
-        text_item.pdf_rect = new_pdf_rect
-        text_item.font_size = base_font_size
-        text_item.is_bold = has_any_bold
+        
+        # IMPORTANTE: Actualizar pdf_rect DESPUÉS de ajustar el rect visual
+        # para que refleje el tamaño real del texto ajustado
+        adjusted_rect = text_item.rect()
+        adjusted_scene_rect = QRectF(
+            text_item.pos().x(),
+            text_item.pos().y(),
+            adjusted_rect.width(),
+            adjusted_rect.height()
+        )
+        text_item.pdf_rect = self.view_to_pdf_rect(adjusted_scene_rect)
         
         # Actualizar datos guardados
         self._update_text_data(text_item)
@@ -2960,22 +3683,24 @@ class PDFPageView(QGraphicsView):
         needs_erase = getattr(text_item, 'needs_erase', False)
         
         
-        # CASO 1: Ya es un overlay - solo actualizar posición, MANTENER tamaño
+        # CASO 1: Ya es un overlay - actualizar posición Y AJUSTAR TAMAÑO AL CONTENIDO
         if is_overlay:
             
-            # Mantener el tamaño original, solo cambiar la posición
-            old_pdf_rect = text_item.pdf_rect
-            if old_pdf_rect:
-                # Usar la nueva posición pero el tamaño anterior
-                updated_pdf_rect = fitz.Rect(
-                    new_pdf_rect.x0,
-                    new_pdf_rect.y0,
-                    new_pdf_rect.x0 + old_pdf_rect.width,
-                    new_pdf_rect.y0 + old_pdf_rect.height
-                )
-                text_item.pdf_rect = updated_pdf_rect
-            else:
-                text_item.pdf_rect = new_pdf_rect
+            # CRÍTICO: Ajustar el rect visual al contenido ANTES de calcular el pdf_rect
+            # Esto asegura que si el texto fue editado, el rect refleje el tamaño real
+            text_item.adjust_rect_to_content()
+            
+            # Obtener el rect ajustado al contenido
+            adjusted_rect = text_item.rect()
+            
+            # Usar la posición actual de la escena (donde se movió) y el tamaño ajustado
+            updated_pdf_rect = fitz.Rect(
+                new_pdf_rect.x0,
+                new_pdf_rect.y0,
+                new_pdf_rect.x0 + (adjusted_rect.width() / self.zoom_level),
+                new_pdf_rect.y0 + (adjusted_rect.height() / self.zoom_level)
+            )
+            text_item.pdf_rect = updated_pdf_rect
             
             text_item.pending_write = True
             self._update_text_data(text_item)
@@ -3009,18 +3734,19 @@ class PDFPageView(QGraphicsView):
                 already_internal=already_internal
             )
             
-            # Convertir a overlay - NO añadir al PDF ahora
-            # Mantener el tamaño original del pdf_rect, solo cambiar posición
-            old_pdf_rect = text_item.pdf_rect
-            if old_pdf_rect:
-                updated_pdf_rect = fitz.Rect(
-                    new_pdf_rect.x0,
-                    new_pdf_rect.y0,
-                    new_pdf_rect.x0 + old_pdf_rect.width,
-                    new_pdf_rect.y0 + old_pdf_rect.height
-                )
-            else:
-                updated_pdf_rect = new_pdf_rect
+            # CRÍTICO: Ajustar el rect visual al contenido ANTES de calcular el pdf_rect
+            text_item.adjust_rect_to_content()
+            
+            # Obtener el rect ajustado al contenido
+            adjusted_rect = text_item.rect()
+            
+            # Usar la posición nueva y el tamaño ajustado al contenido (no el tamaño antiguo)
+            updated_pdf_rect = fitz.Rect(
+                new_pdf_rect.x0,
+                new_pdf_rect.y0,
+                new_pdf_rect.x0 + (adjusted_rect.width() / self.zoom_level),
+                new_pdf_rect.y0 + (adjusted_rect.height() / self.zoom_level)
+            )
             
             text_item.is_overlay = True
             text_item.pending_write = True
@@ -3033,10 +3759,20 @@ class PDFPageView(QGraphicsView):
             self.documentModified.emit()
             return
         
-        # CASO 3: Texto que no es overlay ni necesita borrar (no debería pasar)
+        # CASO 3: Texto que no es overlay ni necesita borrar (no debería pasar normalmente)
+        # Aún así, ajustar el rect al contenido por seguridad
+        text_item.adjust_rect_to_content()
+        adjusted_rect = text_item.rect()
+        updated_pdf_rect = fitz.Rect(
+            new_pdf_rect.x0,
+            new_pdf_rect.y0,
+            new_pdf_rect.x0 + (adjusted_rect.width() / self.zoom_level),
+            new_pdf_rect.y0 + (adjusted_rect.height() / self.zoom_level)
+        )
+        
         text_item.is_overlay = True
         text_item.pending_write = True
-        text_item.pdf_rect = new_pdf_rect
+        text_item.pdf_rect = updated_pdf_rect
         self._update_text_data(text_item)
         self.documentModified.emit()
     
@@ -3231,12 +3967,20 @@ class PDFPageView(QGraphicsView):
         if data_index is not None and 0 <= data_index < len(page_data):
             # Actualización directa por índice
             data = page_data[data_index]
+            # DEBUG: Verificar text_runs antes de guardar
+            current_text_runs = getattr(text_item, 'text_runs', None)
+            print(f"DEBUG _update_text_data: data_index={data_index}")
+            print(f"DEBUG _update_text_data: text_item.text_runs existe = {current_text_runs is not None}")
+            if current_text_runs:
+                print(f"DEBUG _update_text_data: len(text_runs) = {len(current_text_runs)}")
             data['text'] = text_item.text
             data['pdf_rect'] = text_item.pdf_rect
             data['view_rect'] = view_rect
             data['font_size'] = text_item.font_size
             data['font_name'] = getattr(text_item, 'font_name', 'helv')
             data['is_bold'] = getattr(text_item, 'is_bold', False)
+            # CRÍTICO: Preservar color al mover
+            data['color'] = getattr(text_item, 'text_color', (0, 0, 0))
             data['needs_erase'] = getattr(text_item, 'needs_erase', False)
             data['original_pdf_rect'] = getattr(text_item, 'original_pdf_rect', None)
             data['internal_pdf_rect'] = getattr(text_item, 'internal_pdf_rect', None)
@@ -3261,6 +4005,8 @@ class PDFPageView(QGraphicsView):
                 data['font_size'] = text_item.font_size
                 data['font_name'] = getattr(text_item, 'font_name', 'helv')
                 data['is_bold'] = getattr(text_item, 'is_bold', False)
+                # CRÍTICO: Preservar color al mover
+                data['color'] = getattr(text_item, 'text_color', (0, 0, 0))
                 data['needs_erase'] = getattr(text_item, 'needs_erase', False)
                 data['original_pdf_rect'] = getattr(text_item, 'original_pdf_rect', None)
                 data['internal_pdf_rect'] = getattr(text_item, 'internal_pdf_rect', None)
@@ -3360,15 +4106,27 @@ class PDFPageView(QGraphicsView):
             else:
                 view_rect = saved_view_rect if saved_view_rect else QRectF(0, 0, 100, 20)
             
+            # CRÍTICO: Extraer posición y crear rect normalizado (0, 0, w, h)
+            # La posición se establece con setPos(), no en el rect
+            pos_x = view_rect.x()
+            pos_y = view_rect.y()
+            normalized_rect = QRectF(0, 0, view_rect.width(), view_rect.height())
+            
             text_item = EditableTextItem(
-                view_rect,
+                normalized_rect,  # Rect normalizado sin posición
                 text_data['text'],
                 font_size,
                 text_data.get('color', (0, 0, 0)),
                 self.current_page,
                 font_name=text_data.get('font_name', 'helv'),
-                is_bold=is_bold
+                is_bold=is_bold,
+                zoom_level=self.zoom_level,  # Pasar zoom para escalar al dibujar
+                line_spacing=text_data.get('line_spacing', 0.0)  # Interlineado del PDF
             )
+            
+            # CRÍTICO: Establecer la posición del item
+            text_item.setPos(pos_x, pos_y)
+            
             text_item.pdf_rect = text_data.get('pdf_rect')
             # Restaurar también los nuevos campos
             text_item.original_pdf_rect = text_data.get('original_pdf_rect')
@@ -3380,6 +4138,15 @@ class PDFPageView(QGraphicsView):
             # CRÍTICO: Restaurar text_runs y has_mixed_styles para mantener estilos
             text_item.text_runs = text_data.get('text_runs', None)
             text_item.has_mixed_styles = text_data.get('has_mixed_styles', False)
+            # Guardar tamaño original para poder escalar al editar
+            text_item._original_font_size = font_size
+            # DEBUG
+            print(f"DEBUG _restore_editable_texts: i={i}, text_runs={text_item.text_runs is not None}, line_spacing={text_item.line_spacing}")
+            if text_item.text_runs:
+                print(f"  len(text_runs)={len(text_item.text_runs)}")
+            
+            # Ajustar caja al tamaño del contenido (solo ajusta w/h, rect ya tiene x=0, y=0)
+            text_item.adjust_rect_to_content()
             
             self.editable_text_items.append(text_item)
             self.scene.addItem(text_item)
@@ -3402,6 +4169,14 @@ class PDFPageView(QGraphicsView):
         if not self.pdf_doc:
             print("No hay pdf_doc, retornando True")
             return True
+        
+        # Validación pre-guardado con el integrador (si está disponible)
+        is_valid, warnings, errors = self._validate_before_save()
+        if warnings:
+            print(f"Advertencias de validación: {warnings}")
+        if errors:
+            print(f"Errores de validación: {errors}")
+            # Solo informativo, no bloquea el guardado
         
         success_count = 0
         error_count = 0
