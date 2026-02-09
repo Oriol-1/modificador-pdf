@@ -1261,94 +1261,231 @@ class PDFPageView(QGraphicsView):
         return self.coord_converter.pdf_to_view_point(pdf_x, pdf_y)
     
     def edit_selection(self, pdf_rect: fitz.Rect, blocks=None):
-        """Edita o añade texto en el área seleccionada. Funciona para PDFs con texto e imágenes."""
+        """Edita o añade texto en el área seleccionada. Funciona para PDFs con texto e imágenes.
+        
+        CRÍTICO: Primero busca EditableTextItems existentes (overlays/textos creados).
+        Si la selección intersecta con un EditableTextItem, ese texto tiene PRIORIDAD
+        porque el comportamiento debe ser IDÉNTICO a cuando se hace clic en un texto existente.
+        """
         if not self.pdf_doc:
             self.clear_selection()
             return
         
+        # PRIORIDAD 0: Buscar EditableTextItems existentes que intersecten con la selección
+        # Esto permite editar texto creado previamente con el mismo comportamiento que clic directo
+        view_rect = self.pdf_to_view_rect(pdf_rect)
+        for text_item in self.editable_text_items:
+            # Ignorar textos vacíos
+            if not text_item.text or not text_item.text.strip():
+                continue
+            
+            # Verificar si el rect de selección intersecta con el texto
+            item_scene_rect = text_item.sceneBoundingRect()
+            if view_rect.intersects(QRectF(item_scene_rect)):
+                print(f"DEBUG edit_selection: Encontrado EditableTextItem existente, redirigiendo a _edit_text_content")
+                # Seleccionar y editar el texto existente
+                self._select_text_item(text_item)
+                self._edit_text_content(text_item)
+                self.clear_selection()
+                return
+        
         # Detectar tipo de PDF para mensajes contextuales
         is_image_pdf = self.pdf_doc.is_image_based_pdf()
         has_text = blocks and blocks[0].text.strip() if blocks else False
+        already_expanded = False  # Flag para saber si ya expandimos el rect
+        connected_spans = []  # Spans encontrados por búsqueda directa
         
-        if has_text:
-            # Expandir la selección para incluir texto conectado en la misma línea
-            # PERO evitar capturar columnas/módulos separados
-            
-            # Paso 1: Obtener el rango Y de los bloques encontrados
-            min_y = min(block.rect.y0 for block in blocks if hasattr(block, 'rect'))
-            max_y = max(block.rect.y1 for block in blocks if hasattr(block, 'rect'))
-            
-            # Paso 2: Buscar spans cercanos (no toda la página)
+        print(f"DEBUG edit_selection: blocks={len(blocks) if blocks else 0}, has_text={has_text}")
+        
+        # NUEVO: Si no encontramos bloques, buscar spans que INTERSECTAN con la selección
+        if not has_text:
             page = self.pdf_doc.get_page(self.current_page)
             if page:
-                # VALORES CONSERVADORES para evitar mezclar columnas/titulares
-                HORIZONTAL_MARGIN = 30  # Margen pequeño para buscar texto conectado
-                MAX_GAP = 8  # Máximo hueco entre spans (típico espacio entre palabras)
-                MAX_Y_DIFF = 3  # Máxima diferencia en Y para considerar misma línea
-                
-                search_rect = fitz.Rect(
-                    max(0, pdf_rect.x0 - HORIZONTAL_MARGIN),
-                    min_y - 2,
-                    min(page.rect.width, pdf_rect.x1 + HORIZONTAL_MARGIN),
-                    max_y + 2
+                # Paso 1: Buscar spans que INTERSECTAN con la selección original
+                initial_rect = fitz.Rect(
+                    pdf_rect.x0 - 5,
+                    pdf_rect.y0 - 5,
+                    pdf_rect.x1 + 5,
+                    pdf_rect.y1 + 5
                 )
-                print(f"DEBUG edit_selection: rect original={pdf_rect}")
-                print(f"DEBUG edit_selection: search_rect={search_rect}")
+                initial_spans = self.pdf_doc.get_text_spans_in_rect(self.current_page, initial_rect)
                 
-                # Obtener spans en el área de búsqueda
-                nearby_spans = self.pdf_doc.get_text_spans_in_rect(self.current_page, search_rect)
+                # Filtrar solo los que realmente intersectan
+                intersecting_spans = []
+                for span in initial_spans:
+                    span_rect = span.get('rect')
+                    if span_rect and span_rect.intersects(pdf_rect):
+                        intersecting_spans.append(span)
                 
-                if nearby_spans:
-                    # Filtrar: solo incluir spans conectados al área seleccionada
-                    sorted_spans = sorted(nearby_spans, key=lambda s: s.get('rect', pdf_rect).x0)
+                print(f"DEBUG edit_selection: spans que intersectan = {len(intersecting_spans)}")
+                
+                if intersecting_spans:
+                    # Paso 2: Expansión ITERATIVA hacia abajo
+                    # Buscar todo el bloque de texto conectado verticalmente
                     
-                    # Calcular altura promedio del texto para validación de Y
-                    avg_height = (max_y - min_y) if max_y > min_y else 12
+                    # Calcular bounds iniciales
+                    min_x = min(s.get('rect').x0 for s in intersecting_spans)
+                    max_x = max(s.get('rect').x1 for s in intersecting_spans)
+                    min_y = min(s.get('rect').y0 for s in intersecting_spans)
+                    max_y = max(s.get('rect').y1 for s in intersecting_spans)
                     
-                    # Encontrar spans que intersectan o están cerca de la selección
-                    # CRÍTICO: Verificar que estén en la MISMA LÍNEA (similar Y)
-                    connected_spans = []
-                    for span in sorted_spans:
-                        span_rect = span.get('rect')
-                        if not span_rect:
-                            continue
-                        # Verificar que el span esté en la misma línea (diferencia Y pequeña)
-                        y_overlap = (span_rect.y0 <= max_y + MAX_Y_DIFF and span_rect.y1 >= min_y - MAX_Y_DIFF)
-                        if not y_overlap:
-                            continue
-                        # Verificar proximidad horizontal
-                        if span_rect.intersects(pdf_rect) or abs(span_rect.x0 - pdf_rect.x1) < MAX_GAP or abs(pdf_rect.x0 - span_rect.x1) < MAX_GAP:
-                            connected_spans.append(span)
+                    connected_spans = list(intersecting_spans)
                     
-                    # Expandir SOLO una vez para incluir spans inmediatamente adyacentes
-                    # NO expandir indefinidamente
-                    if connected_spans:
-                        new_connected = list(connected_spans)
-                        for span in sorted_spans:
-                            if span in new_connected:
-                                continue
+                    # Expandir iterativamente buscando líneas siguientes
+                    MAX_ITERATIONS = 100
+                    for _ in range(MAX_ITERATIONS):
+                        # Buscar spans justo debajo del área actual
+                        search_rect = fitz.Rect(
+                            min_x - 20,  # Margen para tabulaciones
+                            max_y,       # Desde el final actual
+                            max_x + 100, # Más ancho para líneas largas
+                            max_y + 40   # Buscar siguiente línea (altura típica + margen)
+                        )
+                        
+                        next_spans = self.pdf_doc.get_text_spans_in_rect(self.current_page, search_rect)
+                        
+                        # Filtrar spans que no están ya incluidos
+                        new_spans = []
+                        for span in next_spans:
                             span_rect = span.get('rect')
                             if not span_rect:
                                 continue
-                            # Verificar misma línea
-                            y_overlap = (span_rect.y0 <= max_y + MAX_Y_DIFF and span_rect.y1 >= min_y - MAX_Y_DIFF)
-                            if not y_overlap:
-                                continue
-                            # Solo conectar si está INMEDIATAMENTE adyacente
-                            for cs in connected_spans:
-                                cs_rect = cs.get('rect')
-                                if not cs_rect:
-                                    continue
-                                gap = min(abs(span_rect.x0 - cs_rect.x1), abs(cs_rect.x0 - span_rect.x1))
-                                if gap < MAX_GAP:
-                                    new_connected.append(span)
+                            
+                            # Verificar que no es un span ya incluido
+                            already_in = False
+                            for existing in connected_spans:
+                                ex_rect = existing.get('rect')
+                                if ex_rect and span_rect.y0 == ex_rect.y0 and span_rect.x0 == ex_rect.x0:
+                                    already_in = True
                                     break
-                        connected_spans = new_connected
+                            
+                            if not already_in:
+                                # Verificar que está verticalmente cerca (no hay un hueco grande)
+                                if span_rect.y0 <= max_y + 25:  # Gap máximo de 25 pts
+                                    new_spans.append(span)
+                        
+                        if not new_spans:
+                            break  # No hay más líneas conectadas
+                        
+                        # Agregar nuevos spans y actualizar bounds
+                        for span in new_spans:
+                            connected_spans.append(span)
+                            span_rect = span.get('rect')
+                            min_x = min(min_x, span_rect.x0)
+                            max_x = max(max_x, span_rect.x1)
+                            max_y = max(max_y, span_rect.y1)
+                    
+                    print(f"DEBUG edit_selection: total spans conectados = {len(connected_spans)}")
                     
                     if connected_spans:
-                        # Calcular rect combinado solo de spans conectados
+                        # Calcular rect combinado final
+                        combined_rect = fitz.Rect(min_x, min_y, max_x, max_y)
+                        pdf_rect = combined_rect
+                        has_text = True
+                        already_expanded = True
+                        print(f"DEBUG edit_selection: rect expandido FINAL={pdf_rect}")
+        
+        if has_text:
+            # Solo expandir si no lo hicimos ya por búsqueda directa Y tenemos blocks
+            if not already_expanded and blocks:
+                # Expandir la selección para incluir TODO el texto conectado
+                # incluyendo MULTILÍNEA (texto con tabulaciones/saltos de línea)
+                
+                # Paso 1: Obtener el rango de los bloques encontrados
+                min_y = min(block.rect.y0 for block in blocks if hasattr(block, 'rect'))
+                max_y = max(block.rect.y1 for block in blocks if hasattr(block, 'rect'))
+                min_x = min(block.rect.x0 for block in blocks if hasattr(block, 'rect'))
+                max_x = max(block.rect.x1 for block in blocks if hasattr(block, 'rect'))
+            
+                # Paso 2: Buscar spans incluyendo MULTILÍNEA
+                page = self.pdf_doc.get_page(self.current_page)
+                if page:
+                    # VALORES para detectar texto multilínea
+                    HORIZONTAL_MARGIN = 50  # Margen aumentado para buscar texto conectado
+                    MAX_VERTICAL_SEARCH = 500  # AUMENTADO: Máximo hacia abajo para buscar texto conectado
+                    X_TOLERANCE = 100  # AUMENTADO: Tolerancia para considerar mismo margen izquierdo
+                    
+                    # CRÍTICO: Buscar HACIA ABAJO para texto multilínea
+                    # Usar área grande hacia abajo
+                    extended_search_rect = fitz.Rect(
+                        max(0, min_x - HORIZONTAL_MARGIN),
+                        min_y - 5,
+                        min(page.rect.width, max(max_x, pdf_rect.x1) + HORIZONTAL_MARGIN),
+                        min(page.rect.height, max(max_y, pdf_rect.y1) + MAX_VERTICAL_SEARCH)
+                    )
+                    
+                    print(f"DEBUG edit_selection: rect original={pdf_rect}")
+                    print(f"DEBUG edit_selection: extended_search_rect={extended_search_rect}")
+                    
+                    # Buscar TODOS los spans en el área extendida
+                    all_spans = self.pdf_doc.get_text_spans_in_rect(self.current_page, extended_search_rect)
+                    print(f"DEBUG edit_selection: total spans encontrados={len(all_spans)}")
+                    
+                    # NUEVA LÓGICA MEJORADA: Expansión iterativa para texto multilínea
+                    # Ordena por Y y expande progresivamente
+                    if all_spans:
+                        # Ordenar spans por posición Y (de arriba a abajo)
+                        spans_with_rect = [(s, s.get('rect')) for s in all_spans if s.get('rect')]
+                        spans_with_rect.sort(key=lambda x: (x[1].y0, x[1].x0))
+                        
+                        # Calcular margen izquierdo de referencia
+                        intersecting_spans = [s for s, r in spans_with_rect if r.intersects(pdf_rect)]
+                        if intersecting_spans:
+                            ref_left_x = min(s.get('rect').x0 for s in intersecting_spans)
+                        else:
+                            ref_left_x = pdf_rect.x0
+                        
+                        # Fase 1: Incluir todos los que intersectan
+                        connected_spans = []
+                        remaining_spans = []
+                        for span, span_rect in spans_with_rect:
+                            if span_rect.intersects(pdf_rect):
+                                connected_spans.append(span)
+                            else:
+                                remaining_spans.append((span, span_rect))
+                        
+                        # Fase 2: Expansión iterativa - buscar spans hacia abajo
+                        # Repetir hasta que no se añadan más spans
+                        MAX_ITERATIONS = 50  # Límite para evitar bucle infinito
+                        for iteration in range(MAX_ITERATIONS):
+                            added_any = False
+                            new_remaining = []
+                            
+                            if not connected_spans:
+                                break
+                            
+                            # Calcular límite Y actual de los spans conectados
+                            max_connected_y = max(s.get('rect').y1 for s in connected_spans)
+                            
+                            for span, span_rect in remaining_spans:
+                                # Verificar si es candidato por X similar
+                                x_diff = abs(span_rect.x0 - ref_left_x)
+                                
+                                if x_diff <= X_TOLERANCE:
+                                    # Verificar proximidad vertical (contiguidad)
+                                    # Tolerancia de 30 pts entre líneas (altura típica de línea)
+                                    vertical_gap = span_rect.y0 - max_connected_y
+                                    if vertical_gap <= 30:  # Está justo debajo
+                                        connected_spans.append(span)
+                                        added_any = True
+                                        print(f"DEBUG: Iter {iteration}: Añadida línea Y={span_rect.y0:.1f}, gap={vertical_gap:.1f}")
+                                        continue
+                                
+                                new_remaining.append((span, span_rect))
+                            
+                            remaining_spans = new_remaining
+                            
+                            if not added_any:
+                                break  # No se añadieron más, terminar
+                    else:
+                        connected_spans = []
+                    
+                    print(f"DEBUG edit_selection: {len(connected_spans)} spans conectados FINAL")
+                    
+                    if connected_spans:
+                        # Calcular rect combinado de TODOS los spans conectados
                         combined_rect = pdf_rect
-                        connected_spans = sorted(connected_spans, key=lambda s: s.get('rect', pdf_rect).x0)
+                        connected_spans = sorted(connected_spans, key=lambda s: (s.get('rect', pdf_rect).y0, s.get('rect', pdf_rect).x0))
                         for span in connected_spans:
                             span_rect = span.get('rect')
                             if span_rect:
@@ -1358,8 +1495,7 @@ class PDFPageView(QGraphicsView):
                                     max(combined_rect.x1, span_rect.x1),
                                     max(combined_rect.y1, span_rect.y1)
                                 )
-                        print(f"DEBUG edit_selection: {len(connected_spans)} spans conectados")
-                        print(f"DEBUG edit_selection: rect combinado={combined_rect}")
+                        print(f"DEBUG edit_selection: rect combinado FINAL={combined_rect}")
                         pdf_rect = combined_rect
                     else:
                         # Fallback: usar unión de bloques encontrados
@@ -1374,7 +1510,7 @@ class PDFPageView(QGraphicsView):
                                 )
                         pdf_rect = combined_rect
                 else:
-                    # Fallback: usar unión de bloques
+                    # Fallback si no hay página
                     combined_rect = pdf_rect
                     for block in blocks:
                         if hasattr(block, 'rect') and block.rect:
@@ -1385,18 +1521,6 @@ class PDFPageView(QGraphicsView):
                                 max(combined_rect.y1, block.rect.y1)
                             )
                     pdf_rect = combined_rect
-            else:
-                # Fallback si no hay página
-                combined_rect = pdf_rect
-                for block in blocks:
-                    if hasattr(block, 'rect') and block.rect:
-                        combined_rect = fitz.Rect(
-                            min(combined_rect.x0, block.rect.x0),
-                            min(combined_rect.y0, block.rect.y0),
-                            max(combined_rect.x1, block.rect.x1),
-                            max(combined_rect.y1, block.rect.y1)
-                        )
-                pdf_rect = combined_rect
             
             # Hay texto existente - usar WordLikeEditor para preservar estructura
             # Obtener spans del PDF para preservar tipografía y estructura
@@ -1410,15 +1534,36 @@ class PDFPageView(QGraphicsView):
                         original_text += '\n'
                     original_text += span.get('text', '')
             else:
-                # Fallback: usar bloques
-                original_text = '\n'.join([b.text for b in blocks])
+                # Fallback: usar bloques si existen
+                if blocks:
+                    original_text = '\n'.join([b.text for b in blocks])
+                else:
+                    original_text = ''
             
-            # Obtener información base del primer bloque
-            block = blocks[0]
-            base_font_size = block.font_size or 12
-            base_color = block.color or (0, 0, 0)
-            base_font_name = getattr(block, 'font_name', 'helv') or 'helv'
-            base_is_bold = getattr(block, 'is_bold', False)
+            # Obtener información base del primer bloque o usar valores por defecto
+            if blocks:
+                block = blocks[0]
+                base_font_size = block.font_size or 12
+                base_color = block.color or (0, 0, 0)
+                base_font_name = getattr(block, 'font_name', 'helv') or 'helv'
+                base_is_bold = getattr(block, 'is_bold', False)
+            else:
+                # Valores por defecto cuando no hay bloques (búsqueda directa de spans)
+                base_font_size = 12
+                base_color = (0, 0, 0)
+                base_font_name = 'helv'
+                base_is_bold = False
+                # Intentar obtener del primer span si existe
+                if spans:
+                    first_span = spans[0]
+                    base_font_size = first_span.get('font_size', 12)
+                    base_is_bold = first_span.get('is_bold', False)
+                    base_font_name = first_span.get('font_name', 'helv')
+                    color_str = first_span.get('color', '#000000')
+                    try:
+                        base_color = tuple(int(color_str.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
+                    except:
+                        base_color = (0, 0, 0)
             
             # PRIORIDAD: Usar WordLikeEditor si está disponible
             if HAS_WORD_LIKE_EDITOR:
@@ -2967,7 +3112,23 @@ class PDFPageView(QGraphicsView):
                 text_item.is_overlay = True
                 text_item.pending_write = True
                 text_item.needs_erase = False  # Ya lo borramos
-                text_item.internal_pdf_rect = pdf_rect  # Guardar rect para referencia
+                
+                # CRÍTICO: Ajustar rect al contenido real y actualizar TODOS los rects
+                text_item.adjust_rect_to_content()
+                adjusted_rect = text_item.rect()
+                adjusted_scene_rect = QRectF(
+                    text_item.pos().x(),
+                    text_item.pos().y(),
+                    adjusted_rect.width(),
+                    adjusted_rect.height()
+                )
+                expanded_pdf_rect = self.view_to_pdf_rect(adjusted_scene_rect)
+                
+                # CRÍTICO: Actualizar TODOS los rects para que al mover se borre TODO
+                text_item.pdf_rect = expanded_pdf_rect
+                text_item.internal_pdf_rect = expanded_pdf_rect  # Rect expandido para borrado
+                print(f"DEBUG _apply_selection_edit: pdf_rect actualizado a {text_item.pdf_rect}")
+                
                 self._update_text_data(text_item)
             
             # Actualizar solo la imagen del PDF (sin destruir los items gráficos)
@@ -3022,6 +3183,25 @@ class PDFPageView(QGraphicsView):
                     is_bold=is_bold,
                     text_runs=runs_data if has_mixed_styles else None
                 )
+                if text_item:
+                    # CRÍTICO: Ajustar rect al contenido real y actualizar TODOS los rects
+                    text_item.adjust_rect_to_content()
+                    adjusted_rect = text_item.rect()
+                    adjusted_scene_rect = QRectF(
+                        text_item.pos().x(),
+                        text_item.pos().y(),
+                        adjusted_rect.width(),
+                        adjusted_rect.height()
+                    )
+                    expanded_pdf_rect = self.view_to_pdf_rect(adjusted_scene_rect)
+                    
+                    # CRÍTICO: Actualizar TODOS los rects para que al mover se borre TODO
+                    text_item.pdf_rect = expanded_pdf_rect
+                    text_item.internal_pdf_rect = expanded_pdf_rect
+                    text_item.original_pdf_rect = expanded_pdf_rect
+                    print(f"DEBUG _apply_selection_edit (normal): pdf_rect actualizado a {text_item.pdf_rect}")
+                    self._update_text_data(text_item)
+                    
                 self.render_page()
                 self.documentModified.emit()
     
@@ -3031,6 +3211,7 @@ class PDFPageView(QGraphicsView):
     ):
         """
         Aplica el nuevo texto creado desde el editor.
+        CRÍTICO: Después de crear el texto, actualiza pdf_rect al tamaño REAL del contenido.
         """
         if not new_text.strip():
             return
@@ -3070,51 +3251,64 @@ class PDFPageView(QGraphicsView):
                 text_item.pending_write = True
                 if has_mixed_styles:
                     text_item.text_runs = runs_data
+                
+                # CRÍTICO: Ajustar rect al contenido real y actualizar TODOS los rects
+                text_item.adjust_rect_to_content()
+                adjusted_rect = text_item.rect()
+                adjusted_scene_rect = QRectF(
+                    text_item.pos().x(),
+                    text_item.pos().y(),
+                    adjusted_rect.width(),
+                    adjusted_rect.height()
+                )
+                expanded_pdf_rect = self.view_to_pdf_rect(adjusted_scene_rect)
+                
+                # CRÍTICO: Actualizar TODOS los rects para que al mover se borre TODO
+                text_item.pdf_rect = expanded_pdf_rect
+                text_item.internal_pdf_rect = expanded_pdf_rect  # Para borrado
+                # Para overlays nuevos, no hay original_pdf_rect
+                print(f"DEBUG _apply_new_text: pdf_rect actualizado a {text_item.pdf_rect}")
+                
                 self._update_text_data(text_item)
             self.documentModified.emit()
         else:
-            # PDF normal - añadir texto directamente
-            if has_mixed_styles:
-                try:
-                    success = self.pdf_doc.add_text_runs_to_page(
-                        self.current_page,
-                        pdf_rect,
-                        runs_data,
-                        save_snapshot=True
-                    )
-                except AttributeError:
-                    success = self.pdf_doc.add_text_to_page(
-                        self.current_page,
-                        pdf_rect,
-                        new_text,
-                        font_size=font_size,
-                        color=color,
-                        save_snapshot=True
-                    )
-            else:
-                success = self.pdf_doc.add_text_to_page(
-                    self.current_page,
-                    pdf_rect,
-                    new_text,
-                    font_size=font_size,
-                    color=color,
-                    save_snapshot=True
-                )
-            
-            if success:
-                text_item = self._add_editable_text(
-                    view_rect, 
-                    new_text, 
-                    font_size=font_size, 
-                    color=color, 
-                    pdf_rect=pdf_rect,
-                    is_from_pdf=True,
-                    is_bold=is_bold
-                )
-                if text_item and has_mixed_styles:
+            # PDF normal - AHORA TAMBIÉN USA OVERLAY para consistencia
+            # El texto se escribe al PDF solo cuando se GUARDA (commit_overlay_texts)
+            # Esto evita el problema de rect pequeño vs expandido
+            text_item = self._add_editable_text(
+                view_rect, 
+                new_text, 
+                font_size=font_size, 
+                color=color, 
+                pdf_rect=pdf_rect,
+                is_from_pdf=False,  # NO viene del PDF, es nuevo
+                is_bold=is_bold
+            )
+            if text_item:
+                text_item.is_overlay = True
+                text_item.pending_write = True
+                if has_mixed_styles:
                     text_item.text_runs = runs_data
-                self.render_page()
-                self.documentModified.emit()
+                
+                # CRÍTICO: Ajustar rect al contenido real y actualizar TODOS los rects
+                text_item.adjust_rect_to_content()
+                adjusted_rect = text_item.rect()
+                adjusted_scene_rect = QRectF(
+                    text_item.pos().x(),
+                    text_item.pos().y(),
+                    adjusted_rect.width(),
+                    adjusted_rect.height()
+                )
+                expanded_pdf_rect = self.view_to_pdf_rect(adjusted_scene_rect)
+                
+                # CRÍTICO: Actualizar TODOS los rects para que al mover se borre TODO
+                text_item.pdf_rect = expanded_pdf_rect
+                text_item.internal_pdf_rect = expanded_pdf_rect
+                print(f"DEBUG _apply_new_text (normal overlay): pdf_rect actualizado a {text_item.pdf_rect}")
+                
+                self._update_text_data(text_item)
+            
+            self.documentModified.emit()
 
     def _get_text_spans_for_item(self, text_item: EditableTextItem) -> list:
         """
@@ -3759,8 +3953,26 @@ class PDFPageView(QGraphicsView):
             self.documentModified.emit()
             return
         
-        # CASO 3: Texto que no es overlay ni necesita borrar (no debería pasar normalmente)
-        # Aún así, ajustar el rect al contenido por seguridad
+        # CASO 3: Texto que YA FUE ESCRITO al PDF (después de guardar) y se mueve de nuevo
+        # CRÍTICO: Necesitamos borrar la posición ACTUAL (donde está en el PDF)
+        # porque el texto ya fue escrito ahí previamente
+        
+        # Obtener la posición actual donde el texto está escrito en el PDF
+        current_pdf_rect = getattr(text_item, 'pdf_rect', None)
+        
+        if current_pdf_rect and self.pdf_doc:
+            print(f"     CASO 3: Texto ya escrito al PDF, borrando posición actual")
+            
+            # Borrar el texto de su posición actual en el PDF
+            self.pdf_doc._save_snapshot()
+            self.pdf_doc.erase_text_transparent(
+                self.current_page,
+                current_pdf_rect,
+                save_snapshot=False,
+                already_internal=False
+            )
+        
+        # Ajustar el rect al contenido
         text_item.adjust_rect_to_content()
         adjusted_rect = text_item.rect()
         updated_pdf_rect = fitz.Rect(
@@ -3774,6 +3986,11 @@ class PDFPageView(QGraphicsView):
         text_item.pending_write = True
         text_item.pdf_rect = updated_pdf_rect
         self._update_text_data(text_item)
+        
+        # Re-renderizar para mostrar el PDF sin el texto en la posición anterior
+        if current_pdf_rect:
+            self.render_page()
+        
         self.documentModified.emit()
     
     def _remove_empty_text_item(self, text_item: EditableTextItem):
@@ -4236,13 +4453,30 @@ class PDFPageView(QGraphicsView):
                         )
                     
                     if result:
+                        # CRÍTICO: Después de escribir al PDF, el texto ya NO es overlay
+                        # Si se mueve de nuevo, HAY QUE BORRAR donde está escrito
                         text_data['is_overlay'] = False
                         text_data['pending_write'] = False
+                        text_data['needs_erase'] = True  # Si se mueve, borrar del PDF
+                        text_data['internal_pdf_rect'] = pdf_rect  # Posición donde se escribió
                         success_count += 1
-                        print(f"    ✓ Texto escrito al PDF")
+                        print(f"    ✓ Texto escrito al PDF en {pdf_rect}")
                     else:
                         print(f"    ERROR al escribir texto al PDF")
                         error_count += 1
+        
+        # CRÍTICO: Actualizar los EditableTextItems en escena con los nuevos valores
+        # para que al mover sepan que hay que borrar del PDF
+        for item in self.scene.items():
+            if isinstance(item, EditableTextItem):
+                data_index = getattr(item, 'data_index', None)
+                page_data = self.editable_texts_data.get(self.current_page, [])
+                if data_index is not None and 0 <= data_index < len(page_data):
+                    data = page_data[data_index]
+                    item.is_overlay = data.get('is_overlay', False)
+                    item.pending_write = data.get('pending_write', False)
+                    item.needs_erase = data.get('needs_erase', False)
+                    item.internal_pdf_rect = data.get('internal_pdf_rect')
         
         print(f"\n=== RESULTADO COMMIT ===")
         print(f"Total procesados: {total_processed}")

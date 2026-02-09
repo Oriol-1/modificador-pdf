@@ -77,6 +77,57 @@ class TextBlock:
             block.add_run(TextRun.from_dict(run_data))
         return block
     
+    def truncate_to_length(self, max_chars: int, ellipsis: str = "...") -> 'TextBlock':
+        """
+        Trunca el TextBlock a un número máximo de caracteres PRESERVANDO estilos.
+        
+        Args:
+            max_chars: Número máximo de caracteres (sin contar ellipsis)
+            ellipsis: Texto a añadir al final si se trunca
+            
+        Returns:
+            Nuevo TextBlock truncado con estilos preservados
+        """
+        if len(self.get_full_text()) <= max_chars:
+            return self  # No necesita truncar
+        
+        new_block = TextBlock(max_width=self.max_width)
+        chars_remaining = max_chars - len(ellipsis)
+        
+        for run in self.runs:
+            if chars_remaining <= 0:
+                break
+            
+            if len(run.text) <= chars_remaining:
+                # El run cabe completo
+                new_block.add_run(TextRun(
+                    text=run.text,
+                    font_name=run.font_name,
+                    font_size=run.font_size,
+                    is_bold=run.is_bold,
+                    is_italic=run.is_italic,
+                    color=run.color
+                ))
+                chars_remaining -= len(run.text)
+            else:
+                # Truncar este run
+                truncated_text = run.text[:chars_remaining].rstrip() + ellipsis
+                new_block.add_run(TextRun(
+                    text=truncated_text,
+                    font_name=run.font_name,
+                    font_size=run.font_size,
+                    is_bold=run.is_bold,
+                    is_italic=run.is_italic,
+                    color=run.color
+                ))
+                break
+        
+        # Si no se añadió ellipsis, añadirlo al último run
+        if new_block.runs and not new_block.runs[-1].text.endswith(ellipsis):
+            new_block.runs[-1].text = new_block.runs[-1].text.rstrip() + ellipsis
+        
+        return new_block
+    
     @classmethod
     def from_simple_text(cls, text: str, font_name: str = "Helvetica", 
                          font_size: float = 12.0, is_bold: bool = False,
@@ -317,6 +368,109 @@ class RichTextEditor(QTextEdit):
     def _on_selection_changed(self):
         """Maneja cambio de selección."""
         self.formatChanged.emit()
+    
+    # =========================================================================
+    # ALINEACIÓN DE TEXTO
+    # =========================================================================
+    
+    def align_left(self):
+        """Alinea el párrafo actual a la izquierda."""
+        cursor = self.textCursor()
+        block_fmt = cursor.blockFormat()
+        block_fmt.setAlignment(Qt.AlignLeft)
+        cursor.setBlockFormat(block_fmt)
+        self.setTextCursor(cursor)
+        self.formatChanged.emit()
+    
+    def align_center(self):
+        """Centra el párrafo actual."""
+        cursor = self.textCursor()
+        block_fmt = cursor.blockFormat()
+        block_fmt.setAlignment(Qt.AlignCenter)
+        cursor.setBlockFormat(block_fmt)
+        self.setTextCursor(cursor)
+        self.formatChanged.emit()
+    
+    def align_right(self):
+        """Alinea el párrafo actual a la derecha."""
+        cursor = self.textCursor()
+        block_fmt = cursor.blockFormat()
+        block_fmt.setAlignment(Qt.AlignRight)
+        cursor.setBlockFormat(block_fmt)
+        self.setTextCursor(cursor)
+        self.formatChanged.emit()
+    
+    def align_justify(self):
+        """Justifica el párrafo actual."""
+        cursor = self.textCursor()
+        block_fmt = cursor.blockFormat()
+        block_fmt.setAlignment(Qt.AlignJustify)
+        cursor.setBlockFormat(block_fmt)
+        self.setTextCursor(cursor)
+        self.formatChanged.emit()
+    
+    def get_current_alignment(self) -> Qt.AlignmentFlag:
+        """Retorna la alineación del párrafo actual."""
+        cursor = self.textCursor()
+        return cursor.blockFormat().alignment()
+    
+    # =========================================================================
+    # LISTAS
+    # =========================================================================
+    
+    def insert_bullet_list(self, bullet_char: str = "•"):
+        """
+        Inserta una viñeta al inicio del párrafo actual.
+        
+        Args:
+            bullet_char: Carácter de viñeta (•, ◦, ▪, ➤, etc.)
+        """
+        cursor = self.textCursor()
+        cursor.movePosition(QTextCursor.StartOfBlock)
+        cursor.insertText(f"{bullet_char} ")
+        self.setTextCursor(cursor)
+        self.formatChanged.emit()
+    
+    def insert_numbered_item(self, number: int):
+        """
+        Inserta un número al inicio del párrafo actual.
+        
+        Args:
+            number: Número del elemento de lista
+        """
+        cursor = self.textCursor()
+        cursor.movePosition(QTextCursor.StartOfBlock)
+        cursor.insertText(f"{number}. ")
+        self.setTextCursor(cursor)
+        self.formatChanged.emit()
+    
+    def toggle_bullet_list(self, bullet_char: str = "•"):
+        """
+        Alterna viñeta en el párrafo actual.
+        Si ya tiene viñeta, la quita. Si no, la añade.
+        """
+        cursor = self.textCursor()
+        cursor.movePosition(QTextCursor.StartOfBlock)
+        cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+        line_text = cursor.selectedText()
+        
+        # Verificar si ya tiene viñeta
+        bullet_chars = ["•", "◦", "▪", "➤", "★", "◆", "○", "●"]
+        has_bullet = False
+        for bc in bullet_chars:
+            if line_text.startswith(f"{bc} "):
+                has_bullet = True
+                # Quitar viñeta
+                new_text = line_text[2:]  # Quitar "• "
+                cursor.insertText(new_text)
+                break
+        
+        if not has_bullet:
+            # Añadir viñeta
+            cursor.movePosition(QTextCursor.StartOfBlock)
+            cursor.insertText(f"{bullet_char} ")
+        
+        self.formatChanged.emit()
 
 
 class RichTextEditDialog(QDialog):
@@ -468,6 +622,47 @@ class RichTextEditDialog(QDialog):
         """)
         self.italic_btn.setToolTip("Cursiva (Ctrl+I)")
         toolbar_layout.addWidget(self.italic_btn)
+        
+        # Separador visual
+        separator1 = QLabel("|")
+        separator1.setStyleSheet("color: #555; margin: 0 8px;")
+        toolbar_layout.addWidget(separator1)
+        
+        # =========== BOTONES DE ALINEACIÓN ===========
+        # Botón Alinear Izquierda
+        self.align_left_btn = QPushButton("◀")
+        self.align_left_btn.setFixedSize(32, 32)
+        self.align_left_btn.setStyleSheet(format_btn_style)
+        self.align_left_btn.setToolTip("Alinear izquierda")
+        toolbar_layout.addWidget(self.align_left_btn)
+        
+        # Botón Centrar
+        self.align_center_btn = QPushButton("◠")
+        self.align_center_btn.setFixedSize(32, 32)
+        self.align_center_btn.setStyleSheet(format_btn_style)
+        self.align_center_btn.setToolTip("Centrar texto")
+        toolbar_layout.addWidget(self.align_center_btn)
+        
+        # Botón Alinear Derecha
+        self.align_right_btn = QPushButton("▶")
+        self.align_right_btn.setFixedSize(32, 32)
+        self.align_right_btn.setStyleSheet(format_btn_style)
+        self.align_right_btn.setToolTip("Alinear derecha")
+        toolbar_layout.addWidget(self.align_right_btn)
+        
+        # Separador visual
+        separator2 = QLabel("|")
+        separator2.setStyleSheet("color: #555; margin: 0 8px;")
+        toolbar_layout.addWidget(separator2)
+        
+        # =========== BOTÓN DE LISTA ===========
+        self.bullet_btn = QPushButton("•")
+        self.bullet_btn.setFixedSize(32, 32)
+        self.bullet_btn.setStyleSheet(format_btn_style + """
+            QPushButton { font-size: 18px; }
+        """)
+        self.bullet_btn.setToolTip("Añadir/quitar viñeta")
+        toolbar_layout.addWidget(self.bullet_btn)
         
         # Separador visual
         separator = QLabel("|")
@@ -730,6 +925,14 @@ class RichTextEditDialog(QDialog):
         self.bold_btn.clicked.connect(self.on_bold_clicked)
         self.italic_btn.clicked.connect(self.on_italic_clicked)
         
+        # Alineación
+        self.align_left_btn.clicked.connect(self.on_align_left)
+        self.align_center_btn.clicked.connect(self.on_align_center)
+        self.align_right_btn.clicked.connect(self.on_align_right)
+        
+        # Lista
+        self.bullet_btn.clicked.connect(self.on_bullet_clicked)
+        
         self.rich_editor.textChanged.connect(self.on_text_changed)
         self.rich_editor.formatChanged.connect(self.update_toolbar_state)
         
@@ -757,6 +960,26 @@ class RichTextEditDialog(QDialog):
     def on_italic_clicked(self):
         """Aplica cursiva a la selección."""
         self.rich_editor.toggle_italic()
+        self.update_preview()
+    
+    def on_align_left(self):
+        """Alinea texto a la izquierda."""
+        self.rich_editor.align_left()
+        self.update_preview()
+    
+    def on_align_center(self):
+        """Centra el texto."""
+        self.rich_editor.align_center()
+        self.update_preview()
+    
+    def on_align_right(self):
+        """Alinea texto a la derecha."""
+        self.rich_editor.align_right()
+        self.update_preview()
+    
+    def on_bullet_clicked(self):
+        """Añade o quita viñeta del párrafo actual."""
+        self.rich_editor.toggle_bullet_list()
         self.update_preview()
     
     def _insert_symbol(self, symbol: str):
@@ -832,19 +1055,33 @@ class RichTextEditDialog(QDialog):
             self.adjust_frame.show()
     
     def apply_truncate(self):
-        """Recorta el texto."""
-        text = self.rich_editor.toPlainText()
+        """
+        Recorta el texto PRESERVANDO estilos.
+        
+        Usa el método truncate_to_length de TextBlock para mantener
+        los estilos de cada run mientras trunca el texto.
+        """
+        # Obtener el TextBlock actual con todos sus estilos
+        current_block = self.rich_editor.get_text_block()
+        text = current_block.get_full_text()
+        
         font = QFont(self._base_font_name, int(self._base_font_size))
         metrics = QFontMetrics(font)
         
-        while text and metrics.horizontalAdvance(text) > self.max_width:
-            text = text[:-1]
+        # Calcular cuántos caracteres caben
+        max_chars = len(text)
+        while max_chars > 0 and metrics.horizontalAdvance(text[:max_chars] + "...") > self.max_width:
+            max_chars -= 1
         
-        if text:
-            text = text.rstrip() + "..."
+        if max_chars <= 0:
+            max_chars = 1  # Al menos 1 carácter + ellipsis
         
-        # Recrear con texto truncado (pierde estilos internos)
-        self.rich_editor.setPlainText(text)
+        # Truncar preservando estilos
+        truncated_block = current_block.truncate_to_length(max_chars, "...")
+        truncated_block.max_width = self.max_width
+        
+        # Recargar en el editor (preserva estilos)
+        self.rich_editor.load_text_block(truncated_block)
         self.validate_text()
     
     def apply_spacing(self):

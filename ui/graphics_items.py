@@ -305,6 +305,12 @@ class EditableTextItem(QGraphicsRectItem):
     - El área de selección (rect) se adapta AUTOMÁTICAMENTE al contenido del texto
     - Los módulos de texto NUNCA se mezclan entre sí, cada uno tiene un ID único
     
+    CRÍTICO - CAJA = TEXTO:
+    - La caja SIEMPRE tiene el tamaño exacto del texto que contiene
+    - Si el texto crece, la caja crece automáticamente
+    - Si el texto se reduce, la caja se reduce automáticamente
+    - Esto evita el desbordamiento visual
+    
     Para PDFs de imagen: el texto se muestra visualmente como capa superpuesta
     y solo se escribe al PDF cuando se "confirma" (al guardar o deseleccionar).
     """
@@ -316,6 +322,7 @@ class EditableTextItem(QGraphicsRectItem):
                  color: tuple = (0, 0, 0), page_num: int = 0, 
                  font_name: str = "helv", is_bold: bool = False, 
                  zoom_level: float = 1.0, line_spacing: float = 0.0, parent=None):
+        # Inicializar con rect temporal - se ajustará al contenido después
         super().__init__(rect, parent)
         
         # ID único del módulo - NUNCA se mezcla con otros módulos
@@ -354,6 +361,11 @@ class EditableTextItem(QGraphicsRectItem):
         self.setFlag(QGraphicsRectItem.ItemIsSelectable, True)
         self.setFlag(QGraphicsRectItem.ItemIsMovable, True)
         self.setFlag(QGraphicsRectItem.ItemSendsGeometryChanges, True)
+        
+        # CRÍTICO: Ajustar la caja al tamaño real del texto
+        # La caja SIEMPRE debe tener el tamaño del contenido
+        if self._text:
+            self.adjust_rect_to_content()
     
     @property
     def text(self):
