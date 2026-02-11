@@ -2347,6 +2347,10 @@ class PDFPageView(QGraphicsView):
             text_item.pending_write = True
             text_item.needs_erase = False  # Ya lo borramos
             
+            # NOTA: NO ajustamos el rect aquí - preservamos el rect del PDF
+            # para que el texto visual no cambie. El rect solo se ajusta
+            # cuando el usuario edita el contenido.
+            
             # CRÍTICO: Limpiar internal_pdf_rect para evitar borrados futuros incorrectos
             # El texto original YA fue borrado, no necesitamos este rect más
             text_item.internal_pdf_rect = None
@@ -3319,15 +3323,22 @@ class PDFPageView(QGraphicsView):
         current_pos_x = current_pos.x()
         current_pos_y = current_pos.y()
         
+        # CRÍTICO: Guardar el rect ORIGINAL antes de cualquier cambio
+        # Este rect tiene el tamaño correcto para el PDF original
+        original_rect = text_item.rect()
+        
         # Determinar si es overlay ANTES de cualquier cambio
         is_overlay_now = getattr(text_item, 'is_overlay', False)
         
-        # CRÍTICO: Llamar a adjust_rect_to_content PRIMERO para calcular el tamaño correcto
-        # Este método ya maneja tabulaciones, múltiples líneas y text_runs
-        # Usamos force=True porque es una EDICIÓN real, no un movimiento
-        text_item.adjust_rect_to_content(force=True)
+        # CRÍTICO: Ajustar el rect cuando el CONTENIDO o TAMAÑO cambia
+        # - Si el texto cambió: el rect debe adaptarse al nuevo contenido
+        # - Si el tamaño cambió: el rect debe recalcularse con el nuevo tamaño
+        # Solo si NO hay cambios preservamos el rect original
+        if text_changed or size_changed:
+            # Recalcular rect para que el selector se adapte al texto
+            text_item.adjust_rect_to_content(force=True)
         
-        # Obtener el rect ajustado al contenido
+        # Obtener el rect (original o ajustado)
         adjusted_rect = text_item.rect()
         
         # Establecer la posición correcta (mantener posición original)
@@ -3376,12 +3387,13 @@ class PDFPageView(QGraphicsView):
         # CRÍTICO: Limpiar internal_pdf_rect después de borrar para evitar borrados futuros
         text_item.internal_pdf_rect = None
         
-        # CRÍTICO: Llamar a adjust_rect_to_content para que la caja se adapte al nuevo tamaño
-        # Usamos force=True porque es una EDICIÓN real, no un movimiento
-        text_item.adjust_rect_to_content(force=True)
+        # CRÍTICO: Ajustar rect si el contenido o tamaño cambió
+        # Esto asegura que el selector siempre se adapte al texto
+        if text_changed or size_changed:
+            text_item.adjust_rect_to_content(force=True)
         
-        # IMPORTANTE: Actualizar pdf_rect DESPUÉS de adjust_rect_to_content
-        # para que refleje el tamaño real del texto ajustado
+        # IMPORTANTE: Actualizar pdf_rect DESPUÉS de cualquier ajuste
+        # para que refleje el tamaño actual del texto
         adjusted_rect = text_item.rect()
         adjusted_scene_rect = QRectF(
             text_item.pos().x(),
@@ -3436,6 +3448,12 @@ class PDFPageView(QGraphicsView):
         is_overlay_now = getattr(text_item, 'is_overlay', False)
         needs_erase = getattr(text_item, 'needs_erase', False)
         
+        # CRÍTICO: Guardar el rect ORIGINAL antes de cualquier cambio
+        # Este rect tiene el tamaño correcto para el PDF original
+        original_rect = text_item.rect()
+        original_font_size = text_item.font_size
+        original_text = text_item.text
+        
         # CRÍTICO: Actualizar los runs PRIMERO, luego el texto
         # Así cuando adjust_rect_to_content() se llame, usará los runs correctos
         text_item.text_runs = runs_data
@@ -3446,14 +3464,19 @@ class PDFPageView(QGraphicsView):
         base_font_size = runs_data[0].get('font_size', 12) if runs_data else 12
         has_any_bold = any(r.get('is_bold', False) for r in runs_data)
         
+        # Verificar si el tamaño o texto cambió
+        size_changed = abs(base_font_size - original_font_size) > 0.5
+        text_changed = new_text != original_text
+        
         # CRÍTICO: Actualizar propiedades de fuente
         text_item.font_size = base_font_size
         text_item.is_bold = has_any_bold
         
-        # CRÍTICO: Ajustar rect al tamaño exacto del texto AHORA
-        # Con los runs correctos ya establecidos
-        # Usamos force=True porque es una EDICIÓN real, no un movimiento
-        text_item.adjust_rect_to_content(force=True)
+        # CRÍTICO: Ajustar el rect cuando el CONTENIDO o TAMAÑO cambia
+        # - Si el texto cambió: el rect debe adaptarse al nuevo contenido
+        # - Si el tamaño cambió: el rect debe recalcularse con el nuevo tamaño
+        if text_changed or size_changed:
+            text_item.adjust_rect_to_content(force=True)
         
         # Establecer la posición correcta (mantener posición original)
         text_item.setPos(current_pos_x, current_pos_y)
@@ -3481,8 +3504,11 @@ class PDFPageView(QGraphicsView):
         # CRÍTICO: Limpiar internal_pdf_rect después de borrar para evitar borrados futuros
         text_item.internal_pdf_rect = None
         
-        # IMPORTANTE: Actualizar pdf_rect DESPUÉS de ajustar el rect visual
-        # para que refleje el tamaño real del texto ajustado
+        # Ajustar rect si el contenido o tamaño cambió (antes de actualizar pdf_rect)
+        if text_changed or size_changed:
+            text_item.adjust_rect_to_content(force=True)
+        
+        # IMPORTANTE: Actualizar pdf_rect con el tamaño actual
         adjusted_rect = text_item.rect()
         adjusted_scene_rect = QRectF(
             text_item.pos().x(),

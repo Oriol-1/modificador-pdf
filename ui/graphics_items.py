@@ -799,10 +799,10 @@ class EditableTextItem(QGraphicsRectItem):
                 self._paint_uniform(painter, rect)
     
     def _paint_uniform(self, painter, rect):
-        """Dibuja el texto con estilo uniforme, escalado para caber en el rect.
+        """Dibuja el texto con estilo uniforme.
         
-        CRÍTICO: Escala el texto para que quepa exactamente en el rect del PDF.
-        Esto evita que el texto se salga de la caja de selección.
+        CRÍTICO: Escala el texto para que quepa en el rect.
+        El rect define el tamaño visual del texto.
         """
         from PyQt5.QtGui import QFontMetrics
         
@@ -830,14 +830,10 @@ class EditableTextItem(QGraphicsRectItem):
         
         text_height = metrics.height() * len(lines)
         
-        # Calcular factor de escala para que el texto quepa en el rect
-        # Usar el mínimo entre escala horizontal y vertical para mantener proporciones
+        # SIEMPRE escalar el texto para que quepa en el rect
+        # El rect define el tamaño visual del texto
         scale_x = rect.width() / max(max_line_width, 1) if max_line_width > 0 else 1.0
-        scale_y = rect.height() / max(text_height, 1) if text_height > 0 else 1.0
-        
-        # Usar escala horizontal para mantener el ancho del texto
-        # (el rect del PDF define el ancho correcto)
-        scale_factor = min(scale_x, 1.2)  # No escalar más de 120%
+        scale_factor = min(scale_x, 1.5)  # No escalar más de 150%
         scale_factor = max(scale_factor, 0.5)  # No escalar menos de 50%
         
         # Aplicar transformación
@@ -865,7 +861,11 @@ class EditableTextItem(QGraphicsRectItem):
         painter.restore()
     
     def _paint_with_runs(self, painter, rect, text_runs):
-        """Dibuja el texto usando runs con estilos individuales, escalado al rect."""
+        """Dibuja el texto usando runs con estilos individuales.
+        
+        CRÍTICO: Escala el texto para que quepa en el rect.
+        El rect define el tamaño visual del texto.
+        """
         from PyQt5.QtGui import QFontMetrics
         
         TAB_SIZE = 4
@@ -926,9 +926,10 @@ class EditableTextItem(QGraphicsRectItem):
         max_line_width = max(max_line_width, current_x)
         text_height = line_height * num_lines
         
-        # Calcular factor de escala
+        # SIEMPRE escalar el texto para que quepa en el rect
+        # El rect define el tamaño visual del texto
         scale_x = rect.width() / max(max_line_width, 1) if max_line_width > 0 else 1.0
-        scale_factor = min(scale_x, 1.2)  # No escalar más de 120%
+        scale_factor = min(scale_x, 1.5)  # No escalar más de 150%
         scale_factor = max(scale_factor, 0.5)  # No escalar menos de 50%
         
         # Aplicar transformación
