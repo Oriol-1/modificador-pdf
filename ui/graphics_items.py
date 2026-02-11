@@ -251,7 +251,7 @@ class TextEditDialog(QDialog):
         size_label = QLabel("Tamaño:")
         self.size_spin = QSpinBox()
         self.size_spin.setRange(1, 144)  # Rango ampliado: 1pt a 144pt
-        self.size_spin.setValue(int(font_size))
+        self.size_spin.setValue(round(font_size))
         self.size_spin.setSuffix(" pt")
         size_layout.addWidget(size_label)
         size_layout.addWidget(self.size_spin)
@@ -602,7 +602,8 @@ class EditableTextItem(QGraphicsRectItem):
         
         # Crear fuente para calcular métricas - usar fuente real del PDF
         font_family = self._map_pdf_font_to_system(self.font_name)
-        font = QFont(font_family, int(scaled_font_size))
+        font = QFont(font_family)
+        font.setPointSizeF(scaled_font_size)
         if self.is_bold:
             font.setBold(True)
         metrics = QFontMetrics(font)
@@ -654,7 +655,8 @@ class EditableTextItem(QGraphicsRectItem):
         # Obtener fuente base para line_height - usar fuente real del PDF
         scaled_base_size = self.font_size * self.zoom_level
         base_font_family = self._map_pdf_font_to_system(self.font_name)
-        base_font = QFont(base_font_family, int(scaled_base_size))
+        base_font = QFont(base_font_family)
+        base_font.setPointSizeF(scaled_base_size)
         base_metrics = QFontMetrics(base_font)
         
         # Usar interlineado del PDF si está disponible
@@ -695,7 +697,8 @@ class EditableTextItem(QGraphicsRectItem):
             
             run_font_name = run.get('font_name', self.font_name)
             font_family = self._map_pdf_font_to_system(run_font_name)
-            font = QFont(font_family, int(scaled_font_size))
+            font = QFont(font_family)
+            font.setPointSizeF(scaled_font_size)
             if is_bold:
                 font.setBold(True)
             if is_italic:
@@ -813,7 +816,8 @@ class EditableTextItem(QGraphicsRectItem):
         scaled_font_size = self.font_size * self.zoom_level
         # Usar la fuente real del PDF, mapeada a una fuente del sistema
         font_family = self._map_pdf_font_to_system(self.font_name)
-        font = QFont(font_family, int(scaled_font_size))
+        font = QFont(font_family)
+        font.setPointSizeF(scaled_font_size)
         if self.is_bold:
             font.setBold(True)
         
@@ -873,7 +877,8 @@ class EditableTextItem(QGraphicsRectItem):
         # Aplicar zoom al tamaño de fuente base
         scaled_base_size = self.font_size * self.zoom_level
         base_font_family = self._map_pdf_font_to_system(self.font_name)
-        base_font = QFont(base_font_family, int(scaled_base_size))
+        base_font = QFont(base_font_family)
+        base_font.setPointSizeF(scaled_base_size)
         base_metrics = QFontMetrics(base_font)
         
         # Usar interlineado del PDF si está disponible
@@ -908,7 +913,8 @@ class EditableTextItem(QGraphicsRectItem):
             scaled_font_size = run_font_size * self.zoom_level
             run_font_name = run.get('font_name', self.font_name)
             font_family = self._map_pdf_font_to_system(run_font_name)
-            font = QFont(font_family, int(scaled_font_size))
+            font = QFont(font_family)
+            font.setPointSizeF(scaled_font_size)
             if run.get('is_bold', False):
                 font.setBold(True)
             metrics = QFontMetrics(font)
@@ -962,7 +968,8 @@ class EditableTextItem(QGraphicsRectItem):
             run_font_name = run.get('font_name', self.font_name)
             
             font_family = self._map_pdf_font_to_system(run_font_name)
-            font = QFont(font_family, int(scaled_font_size))
+            font = QFont(font_family)
+            font.setPointSizeF(scaled_font_size)
             if is_bold:
                 font.setBold(True)
             if is_italic:

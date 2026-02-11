@@ -2135,7 +2135,11 @@ class PDFPageView(QGraphicsView):
         - El rect de cada módulo se ajusta automáticamente a su contenido
         - Los módulos NUNCA se mezclan entre sí
         - Si el texto crece fuera del área inicial, sigue perteneciendo al mismo módulo
+        
+        ANTI-DUPLICACIÓN: Usa búsqueda con tolerancia para encontrar items incluso
+        cuando el rect ha cambiado ligeramente después de editar.
         """
+        # Primera pasada: búsqueda exacta con contains
         for text_item in self.editable_text_items:
             # Ignorar textos vacíos
             if not text_item.text or not text_item.text.strip():
@@ -2146,6 +2150,22 @@ class PDFPageView(QGraphicsView):
             scene_rect = text_item.sceneBoundingRect()
             if scene_rect.contains(scene_pos):
                 return text_item
+        
+        # Segunda pasada: búsqueda con tolerancia expandida (para overlays que cambiaron de tamaño)
+        tolerance = 10  # pixels de tolerancia
+        for text_item in self.editable_text_items:
+            if not text_item.text or not text_item.text.strip():
+                continue
+            
+            # Solo aplicar tolerancia a overlays (textos ya editados)
+            if not getattr(text_item, 'is_overlay', False):
+                continue
+            
+            scene_rect = text_item.sceneBoundingRect()
+            expanded_rect = scene_rect.adjusted(-tolerance, -tolerance, tolerance, tolerance)
+            if expanded_rect.contains(scene_pos):
+                return text_item
+        
         return None
     
     def _find_pdf_text_at_position(self, scene_pos: QPointF):
@@ -2172,6 +2192,9 @@ class PDFPageView(QGraphicsView):
         
         SIMPLIFICADO: Solo captura el span exacto que el usuario clicó.
         NO expande a spans adyacentes para evitar conflictos con tabulaciones.
+        
+        ANTI-DUPLICACIÓN: Verifica si ya existe un overlay en la misma posición
+        antes de crear uno nuevo.
         """
         if not block:
             return None
@@ -2179,6 +2202,23 @@ class PDFPageView(QGraphicsView):
         # No convertir textos vacíos
         if not block.text or not block.text.strip():
             return None
+        
+        # ANTI-DUPLICACIÓN: Verificar si ya existe un overlay que intersecta con este block
+        # Esto previene duplicados cuando el usuario re-clica en un área donde ya hay un overlay
+        block_view_rect = self.pdf_to_view_rect(block.rect)
+        for existing_item in self.editable_text_items:
+            if getattr(existing_item, 'is_overlay', False):
+                existing_scene_rect = existing_item.sceneBoundingRect()
+                # Verificar si los rects se intersectan significativamente
+                if existing_scene_rect.intersects(block_view_rect):
+                    # Calcular área de intersección
+                    intersection = existing_scene_rect.intersected(block_view_rect)
+                    intersection_area = intersection.width() * intersection.height()
+                    block_area = block_view_rect.width() * block_view_rect.height()
+                    # Si más del 50% del bloque está cubierto por el overlay existente
+                    if block_area > 0 and intersection_area / block_area > 0.5:
+                        print(f"ANTI-DUPLICACIÓN: Ya existe overlay en esta posición, retornando existente")
+                        return existing_item
         
         # Obtener el rectángulo inicial del bloque clicado
         initial_rect = block.rect
@@ -3040,6 +3080,9 @@ class PDFPageView(QGraphicsView):
                 if result:
                     new_text, runs_data, metadata = result
                     
+                    # CRÍTICO: Obtener si el texto REALMENTE cambió (comparación del editor)
+                    text_actually_changed = metadata.get('text_actually_changed', True)
+                    
                     # Si el usuario aplicó múltiples estilos, guardar como runs
                     if metadata.get('has_mixed_styles', False) and len(runs_data) > 1:
                         # Guardar los runs para aplicarlos al PDF
@@ -3048,7 +3091,8 @@ class PDFPageView(QGraphicsView):
                         # Estilo uniforme - usar método simple
                         new_is_bold = runs_data[0].get('is_bold', False) if runs_data else current_is_bold
                         new_font_size = runs_data[0].get('font_size', current_font_size) if runs_data else current_font_size
-                        self._apply_text_edit(text_item, new_text, new_font_size, new_is_bold)
+                        self._apply_text_edit(text_item, new_text, new_font_size, new_is_bold,
+                                             text_actually_changed=text_actually_changed)
                 return
                 
             except Exception as e:
@@ -3183,12 +3227,18 @@ class PDFPageView(QGraphicsView):
         new_font_size: float, 
         new_is_bold: bool,
         was_truncated: bool = False,
-        warnings: list = None
+        warnings: list = None,
+        text_actually_changed: bool = None
     ):
         """Aplica los cambios de edición al texto.
         
         Extraído de _edit_text_content para poder ser usado tanto
         por el diálogo básico como por el mejorado.
+        
+        Args:
+            text_actually_changed: Si True/False, usa este valor en vez de comparar
+                textos directamente. Esto evita falsos positivos por diferencias
+                de codificación (\\u2029 vs \\n, etc.)
         """
         # Si el texto está vacío, ELIMINAR el texto del PDF y el item
         if not new_text:
@@ -3198,13 +3248,20 @@ class PDFPageView(QGraphicsView):
         
         current_is_bold = getattr(text_item, 'is_bold', False)
         
+        # CRÍTICO: Usar text_actually_changed del editor si está disponible
+        # Esto compara el texto del editor consigo mismo (antes vs después de editar)
+        # evitando falsos positivos por diferencias de codificación PDF vs Qt
+        if text_actually_changed is not None:
+            text_changed = text_actually_changed
+        else:
+            text_changed = new_text != text_item.text
+        
         # Verificar si hay cambios (tolerancia de 0.5 para tamaño de fuente)
-        text_changed = new_text != text_item.text
         size_changed = abs(new_font_size - text_item.font_size) > 0.5
         bold_changed = new_is_bold != current_is_bold
         
-        print(f"  text_changed = {text_changed}")
-        print(f"  size_changed = {size_changed}")
+        print(f"  text_changed = {text_changed} (text_actually_changed={text_actually_changed})")
+        print(f"  size_changed = {size_changed} (new={new_font_size}, current={text_item.font_size})")
         print(f"  bold_changed = {bold_changed}")
         
         if not (text_changed or size_changed or bold_changed):
@@ -3254,10 +3311,10 @@ class PDFPageView(QGraphicsView):
             text_item.line_spacing = original_line_spacing
             text_runs = [new_run]  # Actualizar variable local
             print(f"    Nuevo run creado: font={original_font_name}, size={new_font_size}, bold={new_is_bold}")
+            # SOLO actualizar _text cuando el usuario REALMENTE cambió el texto
+            text_item._text = new_text
         
         # Actualizar propiedades del item
-        # NOTA: El setter de text llama a adjust_rect_to_content() automáticamente
-        text_item._text = new_text  # Establecer directamente sin disparar el setter aún
         text_item.font_size = new_font_size
         text_item.is_bold = new_is_bold
         
@@ -3330,13 +3387,7 @@ class PDFPageView(QGraphicsView):
         # Determinar si es overlay ANTES de cualquier cambio
         is_overlay_now = getattr(text_item, 'is_overlay', False)
         
-        # CRÍTICO: Ajustar el rect cuando el CONTENIDO o TAMAÑO cambia
-        # - Si el texto cambió: el rect debe adaptarse al nuevo contenido
-        # - Si el tamaño cambió: el rect debe recalcularse con el nuevo tamaño
-        # Solo si NO hay cambios preservamos el rect original
-        if text_changed or size_changed:
-            # Recalcular rect para que el selector se adapte al texto
-            text_item.adjust_rect_to_content(force=True)
+        # NOTA: Ya NO ajustamos rect aquí - se hace UNA sola vez después de las operaciones de overlay
         
         # Obtener el rect (original o ajustado)
         adjusted_rect = text_item.rect()
@@ -3387,21 +3438,23 @@ class PDFPageView(QGraphicsView):
         # CRÍTICO: Limpiar internal_pdf_rect después de borrar para evitar borrados futuros
         text_item.internal_pdf_rect = None
         
-        # CRÍTICO: Ajustar rect si el contenido o tamaño cambió
-        # Esto asegura que el selector siempre se adapte al texto
+        # CRÍTICO: Solo ajustar rect si el contenido o tamaño REALMENTE cambió
+        # Esto evita que el rect se recalcule con métricas Qt (diferentes a PDF)
+        # cuando el usuario solo abrió y cerró el editor sin cambiar nada
         if text_changed or size_changed:
             text_item.adjust_rect_to_content(force=True)
         
-        # IMPORTANTE: Actualizar pdf_rect DESPUÉS de cualquier ajuste
-        # para que refleje el tamaño actual del texto
-        adjusted_rect = text_item.rect()
-        adjusted_scene_rect = QRectF(
-            text_item.pos().x(),
-            text_item.pos().y(),
-            adjusted_rect.width(),
-            adjusted_rect.height()
-        )
-        text_item.pdf_rect = self.view_to_pdf_rect(adjusted_scene_rect)
+        # IMPORTANTE: Solo actualizar pdf_rect si el rect cambió
+        # Preservar el pdf_rect original evita degradación progresiva del tamaño visual
+        if text_changed or size_changed:
+            adjusted_rect = text_item.rect()
+            adjusted_scene_rect = QRectF(
+                text_item.pos().x(),
+                text_item.pos().y(),
+                adjusted_rect.width(),
+                adjusted_rect.height()
+            )
+            text_item.pdf_rect = self.view_to_pdf_rect(adjusted_scene_rect)
         
         # Actualizar los datos guardados
         self._update_text_data(text_item)

@@ -14,11 +14,27 @@ from PyQt5.QtWidgets import (
     QPushButton, QToolBar, QAction, QFontComboBox, QSpinBox,
     QColorDialog, QFrame, QSplitter, QWidget, QToolButton, QMenu
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QEvent
 from PyQt5.QtGui import (
     QFont, QColor, QTextCharFormat, QTextCursor, QTextBlockFormat,
     QTextListFormat, QTextDocument, QFontMetrics, QBrush, QKeySequence
 )
+
+
+class NoScrollSpinBox(QSpinBox):
+    """QSpinBox que ignora eventos de rueda del ratón para evitar
+    cambios accidentales de tamaño de fuente al hacer scroll.
+    Solo responde a la rueda si tiene foco explícito (clic directo)."""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFocusPolicy(Qt.StrongFocus)
+    
+    def wheelEvent(self, event):
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
 
 from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass, field
@@ -46,10 +62,16 @@ class TextRunInfo:
     line_y: float = 0.0
     
     def __post_init__(self):
-        # Sincronizar aliases
-        if self.font_family and not self.font_name:
+        # Sincronizar aliases - font_family y font_name deben ser coherentes
+        # Si se pasó font_family explícitamente y font_name es el default, actualizar font_name
+        if self.font_family and self.font_name == "Helvetica" and self.font_family != "Helvetica":
             self.font_name = self.font_family
         elif self.font_name and not self.font_family:
+            self.font_family = self.font_name
+        elif self.font_family and not self.font_name:
+            self.font_name = self.font_family
+        # Asegurar sincronización bidireccional
+        if not self.font_family:
             self.font_family = self.font_name
         
         if self.bold and not self.is_bold:
@@ -199,7 +221,8 @@ class WordLikeToolBar(QToolBar):
         self.addWidget(self.font_combo)
         
         # Tamaño de fuente - permitir desde 1pt para máxima flexibilidad
-        self.size_spin = QSpinBox()
+        # Usar NoScrollSpinBox para evitar cambios accidentales con la rueda del ratón
+        self.size_spin = NoScrollSpinBox()
         self.size_spin.setRange(1, 144)  # Rango ampliado: 1pt a 144pt
         self.size_spin.setValue(12)
         self.size_spin.setMaximumWidth(60)
@@ -528,8 +551,14 @@ class WordLikeToolBar(QToolBar):
         self.alignmentChanged.emit(alignment)
     
     def update_format_state(self, fmt: QTextCharFormat, block_fmt: QTextBlockFormat):
-        """Actualiza el estado de los botones según el formato actual."""
-        # Bloquear señales temporalmente
+        """Actualiza el estado de los botones según el formato actual.
+        
+        CRÍTICO: Usa fmt.fontPointSize() como fuente PRIMARIA del tamaño,
+        NO fmt.font().pointSizeF(). Esto es porque QTextCharFormat.font()
+        reconstruye un QFont y puede perder precisión en el tamaño.
+        fmt.fontPointSize() accede directamente al valor almacenado.
+        """
+        # Bloquear señales temporalmente para evitar cascada
         self.bold_action.blockSignals(True)
         self.italic_action.blockSignals(True)
         self.underline_action.blockSignals(True)
@@ -544,8 +573,23 @@ class WordLikeToolBar(QToolBar):
         
         if font.family():
             self.font_combo.setCurrentFont(font)
-        if font.pointSize() > 0:
-            self.size_spin.setValue(font.pointSize())
+        
+        # CRÍTICO: Obtener tamaño de forma robusta
+        # Prioridad 0: UserProperty+1 - valor almacenado manualmente, NUNCA se pierde
+        # Prioridad 1: fmt.fontPointSize() - valor directo almacenado en el formato
+        # Prioridad 2: font.pointSizeF() - reconstruido (puede perder precisión)
+        # Prioridad 3: font.pointSize() - versión int como último recurso
+        stored_size = fmt.property(QTextCharFormat.UserProperty + 1)
+        if stored_size is not None and isinstance(stored_size, (int, float)) and float(stored_size) > 0:
+            point_size = float(stored_size)
+        else:
+            point_size = fmt.fontPointSize()
+        if point_size <= 0:
+            point_size = font.pointSizeF()
+        if point_size <= 0:
+            point_size = float(font.pointSize())
+        if point_size > 0:
+            self.size_spin.setValue(round(point_size))
         
         # Alineación
         alignment = block_fmt.alignment()
@@ -588,8 +632,10 @@ class RichDocumentEditor(QTextEdit):
             }
         """)
         
-        # Configurar documento
-        self.document().setDefaultFont(QFont(self._base_font_family, self._base_font_size))
+        # Configurar documento con fuente por defecto
+        default_font = QFont(self._base_font_family)
+        default_font.setPointSizeF(self._base_font_size)
+        self.document().setDefaultFont(default_font)
         
         # Conectar señales
         self.cursorPositionChanged.connect(self._on_cursor_changed)
@@ -598,48 +644,78 @@ class RichDocumentEditor(QTextEdit):
     def set_base_format(self, font_family: str, font_size: float):
         """Establece el formato base del documento."""
         self._base_font_family = font_family
-        self._base_font_size = int(font_size)
-        self.document().setDefaultFont(QFont(font_family, int(font_size)))
+        self._base_font_size = font_size  # Preservar valor float original
+        default_font = QFont(font_family)
+        default_font.setPointSizeF(font_size)  # Usar setPointSizeF para preservar decimales
+        self.document().setDefaultFont(default_font)
     
     def load_document_structure(self, structure: DocumentStructure):
-        """Carga una estructura de documento preservando formato, tabulaciones y saltos de línea."""
+        """Carga una estructura de documento preservando formato, tabulaciones y saltos de línea.
+        
+        CRÍTICO: Guarda el nombre original de fuente del PDF como propiedad
+        personalizada del QTextCharFormat, porque QFont.family() puede devolver
+        un nombre diferente si la fuente PDF no está instalada en el sistema.
+        """
         self._original_structure = structure
+        # Guardar mapeo de fuentes originales para preservar al extraer
+        self._original_font_names = {}  # posición -> font_name original
         self.clear()
         
         cursor = self.textCursor()
+        char_pos = 0
         
         for i, run in enumerate(structure.runs):
             # Verificar si necesita salto de línea antes del texto
             needs_newline = getattr(run, 'needs_newline', False)
             if needs_newline and i > 0:
                 cursor.insertText('\n')
+                char_pos += 1
             
             # Aplicar indentación si es inicio de línea
             is_line_start = getattr(run, 'is_line_start', False)
             indent = getattr(run, 'indent', 0)
             if is_line_start and indent > 0:
-                # Convertir indentación en pixeles a tabulaciones/espacios
-                # Aproximadamente 1 tab = 40 pixels
                 num_tabs = int(indent / 40)
                 if num_tabs > 0:
-                    cursor.insertText('\t' * num_tabs)
+                    indent_text = '\t' * num_tabs
+                    cursor.insertText(indent_text)
+                    char_pos += len(indent_text)
                 else:
-                    # Para indentaciones menores, usar espacios
-                    num_spaces = int(indent / 6)  # aprox 6px por espacio
+                    num_spaces = int(indent / 6)
                     if num_spaces > 0:
-                        cursor.insertText(' ' * num_spaces)
+                        indent_text = ' ' * num_spaces
+                        cursor.insertText(indent_text)
+                        char_pos += len(indent_text)
             
             # Crear formato para este run
             fmt = QTextCharFormat()
-            font = QFont(run.font_name or run.font_family, int(run.font_size))
+            # Guardar nombre original de fuente PDF como propiedad del formato
+            original_font_name = run.font_name or run.font_family
+            fmt.setProperty(QTextCharFormat.UserProperty, original_font_name)
+
+            font = QFont(original_font_name)
+            font.setPointSizeF(run.font_size)
             font.setBold(run.is_bold or run.bold)
             font.setItalic(run.is_italic or run.italic)
             font.setUnderline(run.underline)
             fmt.setFont(font)
+            # CRÍTICO: Establecer tamaño TAMBIÉN directamente en el formato
+            # porque setFont() en algunas versiones de Qt puede truncar pointSizeF
+            # al convertirlo internamente a pointSize (int).
+            # setFontPointSize garantiza que el valor float se almacena correctamente.
+            fmt.setFontPointSize(run.font_size)
+            # CRÍTICO: Almacenar tamaño como UserProperty+1 como respaldo absoluto
+            # Esto es independiente del sistema de fuentes de Qt y nunca se pierde
+            fmt.setProperty(QTextCharFormat.UserProperty + 1, float(run.font_size))
             fmt.setForeground(QBrush(QColor(run.color)))
+            
+            # Guardar mapeo de font_name original para este rango
+            for j in range(len(run.text)):
+                self._original_font_names[char_pos + j] = original_font_name
             
             # Insertar texto con formato
             cursor.insertText(run.text, fmt)
+            char_pos += len(run.text)
         
         self.setTextCursor(cursor)
         self.moveCursor(QTextCursor.Start)
@@ -657,16 +733,28 @@ class RichDocumentEditor(QTextEdit):
         
         # Crear formato
         fmt = QTextCharFormat()
-        font = QFont(font_family, int(font_size))
+        font = QFont(font_family)
+        font.setPointSizeF(font_size)  # Preservar decimales
         font.setBold(is_bold)
         fmt.setFont(font)
+        # CRÍTICO: Establecer tamaño directamente en el formato para garantizar persistencia
+        fmt.setFontPointSize(font_size)
+        # CRÍTICO: Almacenar tamaño como UserProperty+1 como respaldo absoluto
+        fmt.setProperty(QTextCharFormat.UserProperty + 1, float(font_size))
+        # Guardar nombre original como UserProperty
+        fmt.setProperty(QTextCharFormat.UserProperty, font_family)
         
         cursor = self.textCursor()
         cursor.insertText(text, fmt)
         self.moveCursor(QTextCursor.Start)
     
     def get_document_structure(self) -> DocumentStructure:
-        """Extrae la estructura del documento con todos los runs, preservando saltos de línea."""
+        """Extrae la estructura del documento con todos los runs, preservando saltos de línea.
+        
+        CRÍTICO: Usa la propiedad personalizada UserProperty para recuperar
+        el nombre ORIGINAL de la fuente PDF, en vez del nombre que Qt devuelve
+        con font.family() (que puede ser un fallback si la fuente no existe).
+        """
         structure = DocumentStructure(
             base_font=self._base_font_family,
             base_size=self._base_font_size
@@ -679,6 +767,13 @@ class RichDocumentEditor(QTextEdit):
         current_run: Optional[TextRunInfo] = None
         is_line_start = True
         line_count = 0
+        char_position = 0  # Rastrear posición para mapeo de fuentes
+        
+        # Debug: Log primera extracción para diagnóstico
+        _debug_logged = False
+        
+        # Obtener mapeo de fuentes originales si existe
+        original_font_names = getattr(self, '_original_font_names', {})
         
         while not cursor.atEnd():
             cursor.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
@@ -698,18 +793,61 @@ class RichDocumentEditor(QTextEdit):
                 
                 is_line_start = True
                 line_count += 1
+                char_position += 1
                 cursor.clearSelection()
                 continue
             
+            # CRÍTICO: Recuperar nombre ORIGINAL de fuente PDF
+            # Prioridad 1: Propiedad personalizada del QTextCharFormat
+            original_font = fmt.property(QTextCharFormat.UserProperty)
+            if original_font and isinstance(original_font, str) and original_font.strip():
+                font_name_to_use = original_font
+            # Prioridad 2: Mapeo guardado por posición
+            elif char_position in original_font_names:
+                font_name_to_use = original_font_names[char_position]
+            # Prioridad 3: Usar font.family() del QFont (posiblemente fallback)
+            else:
+                font_name_to_use = font.family() or self._base_font_family
+            
+            # CRÍTICO: Obtener tamaño de fuente de forma robusta
+            # Prioridad 0: UserProperty+1 - valor almacenado manualmente, NUNCA se pierde
+            # Prioridad 1: fmt.fontPointSize() - acceso directo al valor almacenado
+            # Prioridad 2: font.pointSizeF() - reconstruido desde QFont
+            # Prioridad 3: font.pointSize() - versión int
+            # Prioridad 4: _base_font_size como fallback
+            stored_size = fmt.property(QTextCharFormat.UserProperty + 1)
+            if stored_size is not None and isinstance(stored_size, (int, float)) and float(stored_size) > 0:
+                char_font_size = float(stored_size)
+            else:
+                char_font_size = fmt.fontPointSize()
+            if char_font_size <= 0:
+                char_font_size = font.pointSizeF()
+            if char_font_size <= 0:
+                char_font_size = float(font.pointSize())
+            if char_font_size <= 0:
+                char_font_size = self._base_font_size
+            
             # Información del run actual
             run_info = {
-                'font_family': font.family() or self._base_font_family,
-                'font_size': font.pointSizeF() if font.pointSizeF() > 0 else self._base_font_size,
+                'font_family': font_name_to_use,
+                'font_name': font_name_to_use,
+                'font_size': char_font_size,
                 'bold': font.bold(),
                 'italic': font.italic(),
                 'underline': font.underline(),
                 'color': fmt.foreground().color().name() if fmt.foreground().style() != Qt.NoBrush else "#000000"
             }
+            
+            # Debug: Log del primer carácter para diagnóstico de tamaño
+            if not _debug_logged:
+                print(f"  [get_document_structure] Primer char: '{char}' "
+                      f"font_name={font_name_to_use}, "
+                      f"fontPointSize={fmt.fontPointSize()}, "
+                      f"pointSizeF={font.pointSizeF()}, "
+                      f"pointSize={font.pointSize()}, "
+                      f"USED={char_font_size}, "
+                      f"base={self._base_font_size}")
+                _debug_logged = True
             
             # ¿Mismo estilo que el run actual?
             if current_run and self._same_format(current_run, run_info) and not is_line_start:
@@ -727,6 +865,7 @@ class RichDocumentEditor(QTextEdit):
                 )
                 is_line_start = False
             
+            char_position += 1
             cursor.clearSelection()
         
         # Añadir último run
@@ -773,10 +912,12 @@ class RichDocumentEditor(QTextEdit):
         fmt.setFontFamily(family)
         self._merge_format(fmt)
     
-    def set_font_size(self, size: int):
-        """Cambia el tamaño de la selección."""
+    def set_font_size(self, size: float):
+        """Cambia el tamaño de la selección. Acepta float para preservar precisión."""
         fmt = QTextCharFormat()
-        fmt.setFontPointSize(size)
+        fmt.setFontPointSize(float(size))
+        # CRÍTICO: También almacenar como UserProperty+1 para que nunca se pierda
+        fmt.setProperty(QTextCharFormat.UserProperty + 1, float(size))
         self._merge_format(fmt)
     
     def set_text_color(self, color: QColor):
@@ -833,12 +974,17 @@ class RichDocumentEditor(QTextEdit):
         self.formatChanged.emit()
     
     def _merge_format(self, fmt: QTextCharFormat):
-        """Aplica formato a la selección o al cursor."""
+        """Aplica formato a la selección o al cursor.
+        
+        CRÍTICO: Usa mergeCurrentCharFormat en vez de setCurrentCharFormat
+        para preservar las propiedades personalizadas (UserProperty) como 
+        el nombre original de fuente del PDF.
+        """
         cursor = self.textCursor()
         if cursor.hasSelection():
             cursor.mergeCharFormat(fmt)
         else:
-            self.setCurrentCharFormat(fmt)
+            self.mergeCurrentCharFormat(fmt)
         self.formatChanged.emit()
     
     def _on_cursor_changed(self):
@@ -927,11 +1073,23 @@ class WordLikeEditorDialog(QDialog):
         self._html_content = html_content
         
         self.setup_ui()
-        self.connect_signals()
-        self.load_content()
         
-        # Actualizar estado inicial
-        QTimer.singleShot(100, self._update_toolbar_state)
+        # CRÍTICO: Inicializar toolbar con los valores base CORRECTOS
+        # antes de cargar contenido, para que nunca muestre 12pt por defecto
+        self.toolbar.size_spin.blockSignals(True)
+        self.toolbar.size_spin.setValue(round(self._base_size))
+        self.toolbar.size_spin.blockSignals(False)
+        self.toolbar.font_combo.blockSignals(True)
+        self.toolbar.font_combo.setCurrentFont(QFont(self._base_font))
+        self.toolbar.font_combo.blockSignals(False)
+        
+        # CRÍTICO: Cargar contenido ANTES de conectar señales
+        # para evitar que las inserciones de texto disparen cambios de formato
+        self.load_content()
+        self.connect_signals()
+        
+        # Actualizar estado inicial de la toolbar con formato real del cursor
+        QTimer.singleShot(50, self._update_toolbar_state)
     
     def setup_ui(self):
         """Configura la interfaz."""
@@ -1078,10 +1236,14 @@ class WordLikeEditorDialog(QDialog):
     
     def load_content(self):
         """Carga el contenido inicial."""
+        print(f"  [load_content] base_font={self._base_font}, base_size={self._base_size}")
         self.editor.set_base_format(self._base_font, self._base_size)
         
         if self._document_structure and self._document_structure.runs:
             # Cargar estructura de documento
+            print(f"  [load_content] Cargando {len(self._document_structure.runs)} runs")
+            for i, run in enumerate(self._document_structure.runs[:3]):
+                print(f"    run[{i}]: font={run.font_name}, size={run.font_size}, bold={run.is_bold}")
             self.editor.load_document_structure(self._document_structure)
         elif self._html_content:
             # Cargar HTML
@@ -1098,6 +1260,12 @@ class WordLikeEditorDialog(QDialog):
                 self._base_size,
                 self._is_bold
             )
+        
+        # CRÍTICO: Capturar el texto plano INICIAL del editor justo después de cargar
+        # Esto se usará para comparar con el texto final y detectar si el usuario
+        # REALMENTE cambió algo (vs diferencias de codificación \u2029 vs \n etc.)
+        self._initial_plain_text = self.editor.toPlainText()
+        print(f"  [load_content] initial_plain_text len={len(self._initial_plain_text)}")
         
         # Actualizar preview inicial
         self._update_preview()
@@ -1168,6 +1336,19 @@ class WordLikeEditorDialog(QDialog):
         plain_text = self.editor.toPlainText()
         structure = self.editor.get_document_structure()
         html = self.editor.toHtml()
+        
+        # CRÍTICO: Determinar si el usuario REALMENTE cambió el texto
+        # Comparamos con el texto inicial capturado justo después de cargar
+        # Esto evita falsos positivos por diferencias de codificación (\u2029 vs \n)
+        initial = getattr(self, '_initial_plain_text', None)
+        self._text_actually_changed = (plain_text != initial) if initial is not None else True
+        print(f"  [get_result] text_actually_changed={self._text_actually_changed}")
+        
+        # Debug: verificar los tamaños extraídos
+        if structure.runs:
+            print(f"  [get_result] {len(structure.runs)} runs extraídos:")
+            for i, run in enumerate(structure.runs[:3]):
+                print(f"    run[{i}]: font={run.font_name}, size={run.font_size}, bold={run.is_bold}")
         
         return plain_text, structure, html
     
@@ -1264,7 +1445,8 @@ def show_word_like_editor(
             'has_mixed_styles': has_mixed_styles,
             'html': html,
             'font_family': font_family,
-            'font_size': font_size
+            'font_size': font_size,
+            'text_actually_changed': getattr(dialog, '_text_actually_changed', True)
         }
         
         return plain_text, runs_data, metadata
