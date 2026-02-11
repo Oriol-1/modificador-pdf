@@ -489,6 +489,16 @@ class EditableTextItem(QGraphicsRectItem):
             'trebuchet': 'Trebuchet MS',
             'trebuchetms': 'Trebuchet MS',
             
+            # Frutiger (sans-serif similar a Arial/Trebuchet)
+            'frutiger': 'Arial',
+            'frutigerlight': 'Arial',
+            'frutigerbold': 'Arial',
+            'frutigeritalic': 'Arial',
+            'frutiger45light': 'Arial',
+            'frutiger55roman': 'Arial',
+            'frutiger65bold': 'Arial',
+            'frutiger75black': 'Arial',
+            
             # Segoe UI
             'segoeui': 'Segoe UI',
             'segoeuibold': 'Segoe UI',
@@ -534,6 +544,8 @@ class EditableTextItem(QGraphicsRectItem):
             return 'Tahoma'
         if 'segoe' in name_lower:
             return 'Segoe UI'
+        if 'frutiger' in name_lower:
+            return 'Arial'
         
         # Por defecto usar Arial (equivalente a Helvetica en Windows)
         return 'Arial'
@@ -787,9 +799,10 @@ class EditableTextItem(QGraphicsRectItem):
                 self._paint_uniform(painter, rect)
     
     def _paint_uniform(self, painter, rect):
-        """Dibuja el texto con estilo uniforme.
+        """Dibuja el texto con estilo uniforme, escalado para caber en el rect.
         
-        CRÍTICO: Expande tabulaciones a espacios para dibujar correctamente.
+        CRÍTICO: Escala el texto para que quepa exactamente en el rect del PDF.
+        Esto evita que el texto se salga de la caja de selección.
         """
         from PyQt5.QtGui import QFontMetrics
         
@@ -803,39 +816,59 @@ class EditableTextItem(QGraphicsRectItem):
         font = QFont(font_family, int(scaled_font_size))
         if self.is_bold:
             font.setBold(True)
-        painter.setFont(font)
         
         metrics = QFontMetrics(font)
         
-        # Configurar color
+        # Calcular el tamaño del texto con métricas Qt
+        lines = self._text.split('\n')
+        max_line_width = 0
+        for line in lines:
+            display_line = line.replace('\t', ' ' * TAB_SIZE) if '\t' in line else line
+            line_width = metrics.horizontalAdvance(display_line)
+            if line_width > max_line_width:
+                max_line_width = line_width
+        
+        text_height = metrics.height() * len(lines)
+        
+        # Calcular factor de escala para que el texto quepa en el rect
+        # Usar el mínimo entre escala horizontal y vertical para mantener proporciones
+        scale_x = rect.width() / max(max_line_width, 1) if max_line_width > 0 else 1.0
+        scale_y = rect.height() / max(text_height, 1) if text_height > 0 else 1.0
+        
+        # Usar escala horizontal para mantener el ancho del texto
+        # (el rect del PDF define el ancho correcto)
+        scale_factor = min(scale_x, 1.2)  # No escalar más de 120%
+        scale_factor = max(scale_factor, 0.5)  # No escalar menos de 50%
+        
+        # Aplicar transformación
+        painter.save()
+        painter.translate(rect.x(), rect.y())
+        painter.scale(scale_factor, scale_factor)
+        
+        # Configurar fuente y color
+        painter.setFont(font)
+        
         r, g, b = self.text_color
-        # Convertir de 0-1 a 0-255 si es necesario
         if max(r, g, b) <= 1:
             r, g, b = int(r * 255), int(g * 255), int(b * 255)
         painter.setPen(QColor(r, g, b))
         
-        # Dibujar texto multilínea línea por línea
-        lines = self._text.split('\n')
+        # Dibujar texto multilínea
         line_height = metrics.height()
-        y_offset = metrics.ascent()  # Empezar desde el baseline de la primera línea
+        y_offset = metrics.ascent()
         
         for i, line in enumerate(lines):
-            if line:  # Solo dibujar si la línea tiene contenido
-                # CRÍTICO: Expandir tabulaciones a espacios para dibujar
+            if line:
                 display_line = line.replace('\t', ' ' * TAB_SIZE) if '\t' in line else line
-                painter.drawText(
-                    int(rect.x()), 
-                    int(rect.y() + y_offset + i * line_height), 
-                    display_line
-                )
+                painter.drawText(0, int(y_offset + i * line_height), display_line)
+        
+        painter.restore()
     
     def _paint_with_runs(self, painter, rect, text_runs):
-        """Dibuja el texto usando runs con estilos individuales."""
+        """Dibuja el texto usando runs con estilos individuales, escalado al rect."""
         from PyQt5.QtGui import QFontMetrics
         
-        x_offset = int(rect.x())
-        current_line_y = 0
-        last_line_y = None
+        TAB_SIZE = 4
         
         # Aplicar zoom al tamaño de fuente base
         scaled_base_size = self.font_size * self.zoom_level
@@ -850,30 +883,83 @@ class EditableTextItem(QGraphicsRectItem):
             line_height = base_metrics.height()
         y_offset = base_metrics.ascent()
         
+        # Primera pasada: calcular dimensiones del texto
+        max_line_width = 0
+        current_x = 0
+        current_line_y = 0
+        last_line_y = None
+        num_lines = 1
+        
         for run in text_runs:
             run_text = run.get('text', '')
             if not run_text:
                 continue
             
-            # Detectar cambio de línea usando needs_newline o line_y
             needs_newline = run.get('needs_newline', False)
             line_y = run.get('line_y', 0)
             
-            # Nueva línea si: needs_newline=True O cambio en line_y
             if needs_newline or (last_line_y is not None and line_y != last_line_y):
-                # Nueva línea - reiniciar x y avanzar y
-                x_offset = int(rect.x())
+                max_line_width = max(max_line_width, current_x)
+                current_x = 0
+                num_lines += 1
+            last_line_y = line_y
+            
+            run_font_size = run.get('font_size', self.font_size)
+            scaled_font_size = run_font_size * self.zoom_level
+            run_font_name = run.get('font_name', self.font_name)
+            font_family = self._map_pdf_font_to_system(run_font_name)
+            font = QFont(font_family, int(scaled_font_size))
+            if run.get('is_bold', False):
+                font.setBold(True)
+            metrics = QFontMetrics(font)
+            
+            run_lines = run_text.split('\n')
+            for i, line in enumerate(run_lines):
+                if i > 0:
+                    max_line_width = max(max_line_width, current_x)
+                    current_x = 0
+                    num_lines += 1
+                if line:
+                    display_line = line.replace('\t', ' ' * TAB_SIZE) if '\t' in line else line
+                    current_x += metrics.horizontalAdvance(display_line)
+        
+        max_line_width = max(max_line_width, current_x)
+        text_height = line_height * num_lines
+        
+        # Calcular factor de escala
+        scale_x = rect.width() / max(max_line_width, 1) if max_line_width > 0 else 1.0
+        scale_factor = min(scale_x, 1.2)  # No escalar más de 120%
+        scale_factor = max(scale_factor, 0.5)  # No escalar menos de 50%
+        
+        # Aplicar transformación
+        painter.save()
+        painter.translate(rect.x(), rect.y())
+        painter.scale(scale_factor, scale_factor)
+        
+        # Segunda pasada: dibujar
+        x_offset = 0
+        current_line_y = 0
+        last_line_y = None
+        
+        for run in text_runs:
+            run_text = run.get('text', '')
+            if not run_text:
+                continue
+            
+            needs_newline = run.get('needs_newline', False)
+            line_y = run.get('line_y', 0)
+            
+            if needs_newline or (last_line_y is not None and line_y != last_line_y):
+                x_offset = 0
                 current_line_y += line_height
             last_line_y = line_y
             
-            # Configurar fuente del run - aplicar zoom
             run_font_size = run.get('font_size', self.font_size)
             scaled_font_size = run_font_size * self.zoom_level
             is_bold = run.get('is_bold', False)
             is_italic = run.get('is_italic', False)
             run_font_name = run.get('font_name', self.font_name)
             
-            # Usar la fuente real del PDF, mapeada a una fuente del sistema
             font_family = self._map_pdf_font_to_system(run_font_name)
             font = QFont(font_family, int(scaled_font_size))
             if is_bold:
@@ -884,7 +970,6 @@ class EditableTextItem(QGraphicsRectItem):
             
             metrics = QFontMetrics(font)
             
-            # Configurar color del run
             color_str = run.get('color', '#000000')
             try:
                 if isinstance(color_str, str):
@@ -898,23 +983,16 @@ class EditableTextItem(QGraphicsRectItem):
                 color = QColor(0, 0, 0)
             painter.setPen(color)
             
-            # Dibujar el texto del run (manejar saltos de línea internos)
-            # CRÍTICO: Expandir tabulaciones a espacios
-            TAB_SIZE = 4
             run_lines = run_text.split('\n')
             for i, line in enumerate(run_lines):
                 if i > 0:
-                    # Salto de línea interno - nueva línea
-                    x_offset = int(rect.x())
+                    x_offset = 0
                     current_line_y += line_height
                 
                 if line:
-                    # Expandir tabulaciones para dibujar correctamente
                     display_line = line.replace('\t', ' ' * TAB_SIZE) if '\t' in line else line
-                    painter.drawText(
-                        x_offset, 
-                        int(rect.y() + y_offset + current_line_y), 
-                        display_line
-                    )
+                    painter.drawText(int(x_offset), int(y_offset + current_line_y), display_line)
                     x_offset += metrics.horizontalAdvance(display_line)
+        
+        painter.restore()
 

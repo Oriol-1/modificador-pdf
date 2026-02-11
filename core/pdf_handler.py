@@ -1657,7 +1657,7 @@ class PDFDocument:
         # Detectar familia de fuentes
         is_times = any(x in font_lower for x in ['times', 'tiro', 'serif', 'roman', 'georgia', 'palatino', 'garamond'])
         is_courier = any(x in font_lower for x in ['courier', 'cour', 'mono', 'consolas', 'monaco', 'menlo', 'source code'])
-        is_arial = any(x in font_lower for x in ['arial', 'helv', 'helvetica', 'sans', 'verdana', 'tahoma', 'calibri'])
+        is_arial = any(x in font_lower for x in ['arial', 'helv', 'helvetica', 'sans', 'verdana', 'tahoma', 'calibri', 'frutiger', 'trebuchet', 'segoe'])
         
         # Si no se detecta familia, usar Helvetica como default
         if not is_times and not is_courier:
@@ -1712,7 +1712,7 @@ class PDFDocument:
             return "Times New Roman"
         elif any(x in font_lower for x in ['courier', 'cour', 'mono', 'consolas']):
             return "Courier New"
-        elif any(x in font_lower for x in ['arial']):
+        elif any(x in font_lower for x in ['arial', 'frutiger', 'trebuchet', 'segoe']):
             return "Arial"
         else:
             return "Helvetica"

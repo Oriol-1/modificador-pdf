@@ -1965,8 +1965,15 @@ class PDFPageView(QGraphicsView):
                     
                     # Crear text_runs para preservar estilos y saltos de línea
                     text_runs = None
+                    line_spacing = None
                     if spans and len(spans) >= 1:
                         text_runs = []
+                        # Calcular interlineado desde spans
+                        line_y_values = sorted(set(s.get('line_y', 0) for s in spans))
+                        if len(line_y_values) >= 2:
+                            diffs = [line_y_values[i+1] - line_y_values[i] for i in range(len(line_y_values)-1)]
+                            line_spacing = sum(diffs) / len(diffs) if diffs else None
+                        
                         for span in spans:
                             text_runs.append({
                                 'text': span.get('text', ''),
@@ -1990,7 +1997,8 @@ class PDFPageView(QGraphicsView):
                             color=color,
                             pdf_rect=pdf_rect,
                             is_from_pdf=True,
-                            text_runs=text_runs
+                            text_runs=text_runs,
+                            line_spacing=line_spacing or 0.0
                         )
                         if text_item:
                             text_item.is_overlay = True
@@ -2001,14 +2009,36 @@ class PDFPageView(QGraphicsView):
                         # PDF normal: editar directamente
                         self.pdf_doc._save_snapshot()
                         self.pdf_doc.erase_text_transparent(self.current_page, pdf_rect, save_snapshot=False)
-                        if self.pdf_doc.add_text_to_page(
-                            self.current_page,
-                            pdf_rect,
-                            new_text,
-                            font_size=font_size,
-                            color=color,
-                            save_snapshot=False
-                        ):
+                        
+                        # SIEMPRE usar text_runs si disponibles para preservar estilos
+                        write_success = False
+                        if text_runs and len(text_runs) > 0:
+                            try:
+                                write_success = self.pdf_doc.add_text_runs_to_page(
+                                    self.current_page,
+                                    pdf_rect,
+                                    text_runs,
+                                    line_spacing=line_spacing,
+                                    save_snapshot=False
+                                )
+                            except TypeError:
+                                write_success = self.pdf_doc.add_text_runs_to_page(
+                                    self.current_page,
+                                    pdf_rect,
+                                    text_runs,
+                                    save_snapshot=False
+                                )
+                        else:
+                            write_success = self.pdf_doc.add_text_to_page(
+                                self.current_page,
+                                pdf_rect,
+                                new_text,
+                                font_size=font_size,
+                                color=color,
+                                save_snapshot=False
+                            )
+                        
+                        if write_success:
                             # Registrar el texto como editable para poder moverlo
                             view_rect = self.pdf_to_view_rect(pdf_rect)
                             self._add_editable_text(
@@ -2199,14 +2229,11 @@ class PDFPageView(QGraphicsView):
                     pdf_rect = combined_rect
                     combined_text = ''.join(all_text_parts)
         
-        # Expandir ligeramente el rect para asegurar que capture todo el texto
-        expanded_pdf_rect = fitz.Rect(
-            pdf_rect.x0 - 2,
-            pdf_rect.y0 - 1,
-            pdf_rect.x1 + 5,
-            pdf_rect.y1 + 2
-        )
-        view_rect = self.pdf_to_view_rect(expanded_pdf_rect)
+        # CRÍTICO: Usar el pdf_rect SIN expansión para el view_rect del item
+        # La expansión era para buscar spans cercanos, pero el rect del item
+        # debe coincidir EXACTAMENTE con el área del texto para que al clicar
+        # el área de selección corresponda con el texto visible
+        view_rect = self.pdf_to_view_rect(pdf_rect)
         
         # El rect interno para borrado es el rect combinado
         internal_rect = pdf_rect
@@ -2488,7 +2515,8 @@ class PDFPageView(QGraphicsView):
             'pending_write': False,
             'text_runs': text_runs,  # Runs con estilos individuales
             'has_mixed_styles': text_runs is not None and len(text_runs) > 1,
-            'line_spacing': line_spacing  # Interlineado del texto original
+            'line_spacing': line_spacing,  # Interlineado del texto original
+            'is_from_pdf': is_from_pdf  # CRÍTICO: Marcar si viene del PDF para preservar rect
         }
         
         if self.current_page not in self.editable_texts_data:
@@ -2544,8 +2572,15 @@ class PDFPageView(QGraphicsView):
         if text_data.get('is_overlay', False):
             text_item._bounds_finalized = True
             text_item.lock_bounds()
+        elif text_data.get('is_from_pdf', False) or text_data.get('text_runs'):
+            # CRÍTICO: Para textos que vienen del PDF, NO recalcular el rect
+            # El rect del PDF tiene el tamaño exacto del texto original
+            # Recalcular con métricas de Qt cambiaría el área de selección
+            # El área de selección debe coincidir con el texto original del PDF
+            text_item._bounds_finalized = True
+            text_item.lock_bounds()
         else:
-            # Ajustar caja al tamaño del contenido
+            # Ajustar caja al tamaño del contenido solo para textos nuevos
             text_item.adjust_rect_to_content()
         
         return text_item
@@ -3176,15 +3211,45 @@ class PDFPageView(QGraphicsView):
         current_font_size_before = text_item.font_size
         original_font_size = getattr(text_item, '_original_font_size', current_font_size_before)
         
-        # CRÍTICO: Si el TEXTO cambió, los text_runs ya no son válidos porque contienen
-        # el texto viejo. Limpiarlos PRIMERO, ANTES de cambiar el texto.
-        # De lo contrario, el setter de text llama a adjust_rect_to_content() con los runs viejos.
+        # Obtener color original (del item o blanco por defecto)
+        original_color = getattr(text_item, 'text_color', (0, 0, 0))
+        if isinstance(original_color, tuple) and len(original_color) == 3:
+            # Convertir RGB tuple a hex string
+            color_hex = '#{:02x}{:02x}{:02x}'.format(
+                int(original_color[0] * 255) if original_color[0] <= 1 else int(original_color[0]),
+                int(original_color[1] * 255) if original_color[1] <= 1 else int(original_color[1]),
+                int(original_color[2] * 255) if original_color[2] <= 1 else int(original_color[2])
+            )
+        else:
+            color_hex = '#000000'
+        
+        # Obtener nombre de fuente original
+        original_font_name = getattr(text_item, 'font_name', 'helv')
+        if original_font_name in ('helv', 'hebo'):
+            original_font_name = 'Helvetica'
+        
+        # Obtener line_spacing original
+        original_line_spacing = getattr(text_item, 'line_spacing', 0.0)
+        
+        # CRÍTICO: Si el TEXTO cambió, crear un NUEVO text_run con el nuevo texto
+        # pero PRESERVANDO los estilos originales (tipografía, tamaño, color, etc.)
         text_runs = getattr(text_item, 'text_runs', None)
-        if text_runs and text_changed:
-            print(f"  TEXTO CAMBIÓ - limpiando text_runs ANTES de actualizar texto")
-            text_item.text_runs = None
+        if text_changed:
+            print(f"  TEXTO CAMBIÓ - creando nuevo text_run con estilos originales")
+            # Crear nuevo run con los estilos originales (o los nuevos si se cambiaron)
+            new_run = {
+                'text': new_text,
+                'font_name': original_font_name,
+                'font_size': new_font_size,
+                'is_bold': new_is_bold,
+                'is_italic': False,
+                'color': color_hex
+            }
+            text_item.text_runs = [new_run]
             text_item.has_mixed_styles = False
-            text_runs = None  # Para que no entre en los bloques siguientes
+            text_item.line_spacing = original_line_spacing
+            text_runs = [new_run]  # Actualizar variable local
+            print(f"    Nuevo run creado: font={original_font_name}, size={new_font_size}, bold={new_is_bold}")
         
         # Actualizar propiedades del item
         # NOTA: El setter de text llama a adjust_rect_to_content() automáticamente
@@ -3218,6 +3283,20 @@ class PDFPageView(QGraphicsView):
             # Solo cambió bold, actualizar todos los runs
             for run in text_runs:
                 run['is_bold'] = new_is_bold
+        elif not text_runs and (size_changed or bold_changed) and not text_changed:
+            # No había runs previos pero hubo cambios de estilo - crear uno nuevo
+            print(f"  SIN RUNS previos - creando nuevo text_run con estilos actualizados")
+            new_run = {
+                'text': new_text,
+                'font_name': original_font_name,
+                'font_size': new_font_size,
+                'is_bold': new_is_bold,
+                'is_italic': False,
+                'color': color_hex
+            }
+            text_item.text_runs = [new_run]
+            text_item.line_spacing = original_line_spacing
+            print(f"    Nuevo run creado: font={original_font_name}, size={new_font_size}, bold={new_is_bold}")
         
         # Preservar nombre de fuente original si es posible
         # Solo usar helv/hebo como fallback si no hay fuente original
@@ -3779,6 +3858,8 @@ class PDFPageView(QGraphicsView):
             # CRÍTICO: Preservar text_runs y has_mixed_styles para mantener estilos al mover
             data['text_runs'] = getattr(text_item, 'text_runs', None)
             data['has_mixed_styles'] = getattr(text_item, 'has_mixed_styles', False)
+            # CRÍTICO: Preservar line_spacing para mantener interlineado
+            data['line_spacing'] = getattr(text_item, 'line_spacing', 0.0)
             return
         
         # Fallback: buscar por posición PDF si no hay índice válido
@@ -3805,6 +3886,8 @@ class PDFPageView(QGraphicsView):
                 # CRÍTICO: Preservar text_runs y has_mixed_styles para mantener estilos al mover
                 data['text_runs'] = getattr(text_item, 'text_runs', None)
                 data['has_mixed_styles'] = getattr(text_item, 'has_mixed_styles', False)
+                # CRÍTICO: Preservar line_spacing para mantener interlineado
+                data['line_spacing'] = getattr(text_item, 'line_spacing', 0.0)
                 text_item.data_index = i  # Actualizar el índice para futuras operaciones
                 return
     
@@ -4003,21 +4086,32 @@ class PDFPageView(QGraphicsView):
                             print(f"    Advertencia: No se pudo cubrir posición original: {e}")
                         text_data['original_pdf_rect'] = None
                     
-                    # Verificar si tiene múltiples runs con estilos
+                    # Verificar si tiene runs con estilos (SIEMPRE usar si disponibles)
                     text_runs = text_data.get('text_runs', [])
-                    has_mixed_styles = text_data.get('has_mixed_styles', False)
+                    line_spacing = text_data.get('line_spacing', 0.0)
                     
-                    if has_mixed_styles and text_runs and len(text_runs) > 1:
-                        # Escribir cada run con su estilo individual
-                        result = self.pdf_doc.add_text_runs_to_page(
-                            page_num,
-                            pdf_rect,
-                            text_runs,
-                            save_snapshot=False
-                        )
-                        print(f"    Escribiendo {len(text_runs)} runs con estilos mixtos")
+                    # SIEMPRE usar text_runs si están disponibles para preservar estilos
+                    if text_runs and len(text_runs) > 0:
+                        # Escribir con runs para preservar tipografía, tamaño, estilos
+                        try:
+                            result = self.pdf_doc.add_text_runs_to_page(
+                                page_num,
+                                pdf_rect,
+                                text_runs,
+                                line_spacing=line_spacing,
+                                save_snapshot=False
+                            )
+                        except TypeError:
+                            # Fallback si no acepta line_spacing
+                            result = self.pdf_doc.add_text_runs_to_page(
+                                page_num,
+                                pdf_rect,
+                                text_runs,
+                                save_snapshot=False
+                            )
+                        print(f"    Escribiendo {len(text_runs)} runs preservando estilos")
                     else:
-                        # Escribir texto simple
+                        # Escribir texto simple (sin runs disponibles)
                         result = self.pdf_doc.add_text_to_page(
                             page_num,
                             pdf_rect,
