@@ -1511,6 +1511,7 @@ class PDFDocument:
         page_num: int, 
         base_rect: fitz.Rect, 
         runs: List[Dict[str, Any]],
+        line_spacing: float = None,
         save_snapshot: bool = True
     ) -> bool:
         """
@@ -1518,11 +1519,13 @@ class PDFDocument:
         
         Permite escribir texto con partes en diferentes formatos (ej: algunas palabras en negrita).
         Preserva saltos de línea, tabulaciones e indentaciones.
+        PRESERVA: tipografía, tamaño, interlineado y estilos originales.
         
         Args:
             page_num: Número de página
             base_rect: Área base donde colocar el texto
-            runs: Lista de dicts con: text, is_bold, is_italic, font_size, color, needs_newline, indent
+            runs: Lista de dicts con: text, is_bold, is_italic, font_size, color, needs_newline, indent, font_name
+            line_spacing: Interlineado original (si None, calcula automáticamente)
             save_snapshot: Si True, guarda snapshot para undo
             
         Returns:
@@ -1543,7 +1546,13 @@ class PDFDocument:
             
             # Calcular altura base para el baseline
             base_font_size = runs[0].get('font_size', 12)
-            line_height = base_font_size * 1.2  # Espaciado de línea estándar
+            
+            # Usar interlineado proporcionado o calcular uno basado en el tamaño de fuente
+            if line_spacing is not None and line_spacing > 0:
+                effective_line_height = line_spacing
+            else:
+                effective_line_height = base_font_size * 1.2  # Estándar si no hay info
+            
             current_y += base_font_size
             
             for run in runs:
@@ -1554,7 +1563,7 @@ class PDFDocument:
                 # Manejar salto de línea
                 needs_newline = run.get('needs_newline', False)
                 if needs_newline:
-                    current_y += line_height
+                    current_y += effective_line_height
                     current_x = start_x
                 
                 # Manejar indentación
@@ -1566,6 +1575,7 @@ class PDFDocument:
                 is_bold = run.get('is_bold', run.get('bold', False))
                 is_italic = run.get('is_italic', run.get('italic', False))
                 font_size = run.get('font_size', base_font_size)
+                original_font_name = run.get('font_name', '')
                 
                 # Convertir color
                 color = run.get('color', '#000000')
@@ -1579,19 +1589,14 @@ class PDFDocument:
                 else:
                     color_tuple = (0, 0, 0)
                 
-                # Seleccionar fuente según estilo
-                if is_bold and is_italic:
-                    font_name = "hebi"  # Helvetica-BoldOblique
-                elif is_bold:
-                    font_name = "hebo"  # Helvetica-Bold
-                elif is_italic:
-                    font_name = "heit"  # Helvetica-Oblique
-                else:
-                    font_name = "helv"  # Helvetica
+                # Mapear fuente original a fuente PDF disponible
+                font_name = self._map_font_to_pdf(original_font_name, is_bold, is_italic)
                 
                 # Calcular ancho del texto para posicionar el siguiente run
                 from PyQt5.QtGui import QFont, QFontMetrics
-                qfont = QFont("Helvetica", int(font_size))
+                # Usar el nombre de fuente original para métricas más precisas
+                qt_font_name = self._get_qt_font_name(original_font_name)
+                qfont = QFont(qt_font_name, int(font_size))
                 if is_bold:
                     qfont.setBold(True)
                 if is_italic:
@@ -1630,6 +1635,87 @@ class PDFDocument:
             import traceback
             traceback.print_exc()
             return False
+
+    def _map_font_to_pdf(self, original_font_name: str, is_bold: bool, is_italic: bool) -> str:
+        """
+        Mapea el nombre de fuente original a una fuente PDF base14 disponible.
+        Intenta preservar la familia de fuentes original lo mejor posible.
+        
+        Args:
+            original_font_name: Nombre de la fuente original del PDF
+            is_bold: Si el texto es negrita
+            is_italic: Si el texto es itálica
+            
+        Returns:
+            Nombre de fuente PDF base14 (helv, hebo, heit, hebi, tiro, tibo, tiit, tibi, cour, cobo, coit, cobi)
+        """
+        if not original_font_name:
+            original_font_name = ""
+        
+        font_lower = original_font_name.lower()
+        
+        # Detectar familia de fuentes
+        is_times = any(x in font_lower for x in ['times', 'tiro', 'serif', 'roman', 'georgia', 'palatino', 'garamond'])
+        is_courier = any(x in font_lower for x in ['courier', 'cour', 'mono', 'consolas', 'monaco', 'menlo', 'source code'])
+        is_arial = any(x in font_lower for x in ['arial', 'helv', 'helvetica', 'sans', 'verdana', 'tahoma', 'calibri'])
+        
+        # Si no se detecta familia, usar Helvetica como default
+        if not is_times and not is_courier:
+            is_arial = True
+        
+        # Mapear a fuente base14
+        if is_times:
+            if is_bold and is_italic:
+                return "tibi"  # Times-BoldItalic
+            elif is_bold:
+                return "tibo"  # Times-Bold
+            elif is_italic:
+                return "tiit"  # Times-Italic
+            else:
+                return "tiro"  # Times-Roman
+        elif is_courier:
+            if is_bold and is_italic:
+                return "cobi"  # Courier-BoldOblique
+            elif is_bold:
+                return "cobo"  # Courier-Bold
+            elif is_italic:
+                return "coit"  # Courier-Oblique
+            else:
+                return "cour"  # Courier
+        else:  # Helvetica/Arial family
+            if is_bold and is_italic:
+                return "hebi"  # Helvetica-BoldOblique
+            elif is_bold:
+                return "hebo"  # Helvetica-Bold
+            elif is_italic:
+                return "heit"  # Helvetica-Oblique
+            else:
+                return "helv"  # Helvetica
+
+    def _get_qt_font_name(self, original_font_name: str) -> str:
+        """
+        Obtiene un nombre de fuente Qt equivalente para métricas de texto.
+        
+        Args:
+            original_font_name: Nombre de la fuente original del PDF
+            
+        Returns:
+            Nombre de fuente para usar con QFont
+        """
+        if not original_font_name:
+            return "Helvetica"
+        
+        font_lower = original_font_name.lower()
+        
+        # Mapear familias comunes
+        if any(x in font_lower for x in ['times', 'tiro', 'roman', 'georgia', 'palatino']):
+            return "Times New Roman"
+        elif any(x in font_lower for x in ['courier', 'cour', 'mono', 'consolas']):
+            return "Courier New"
+        elif any(x in font_lower for x in ['arial']):
+            return "Arial"
+        else:
+            return "Helvetica"
 
     def get_text_spans_in_rect(self, page_num: int, rect: fitz.Rect) -> List[Dict[str, Any]]:
         """

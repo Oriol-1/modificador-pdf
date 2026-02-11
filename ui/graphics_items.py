@@ -343,6 +343,10 @@ class EditableTextItem(QGraphicsRectItem):
         self.is_overlay = False  # True = solo visual, no escrito al PDF aún
         self.pending_write = False  # True = necesita escribirse al PDF
         
+        # NUEVO: Control de bounding box para evitar recálculos durante movimiento
+        self._bounds_locked = False  # True = no recalcular tamaño al mover
+        self._bounds_finalized = False  # True = tamaño ya calculado correctamente
+        
         # Soporte para múltiples estilos (text_runs)
         self.text_runs = None  # Lista de runs con estilos individuales
         self.has_mixed_styles = False  # True si hay múltiples estilos
@@ -362,9 +366,10 @@ class EditableTextItem(QGraphicsRectItem):
         self.setFlag(QGraphicsRectItem.ItemIsMovable, True)
         self.setFlag(QGraphicsRectItem.ItemSendsGeometryChanges, True)
         
-        # CRÍTICO: Ajustar la caja al tamaño real del texto
-        # La caja SIEMPRE debe tener el tamaño del contenido
-        if self._text:
+        # CRÍTICO: Solo ajustar si el rect proporcionado es muy pequeño o vacío
+        # Si ya tiene un tamaño válido (ej: restaurado desde datos), no recalcular
+        # Esto evita el "salto" de tamaño al restaurar overlays
+        if self._text and rect.width() < 10 and rect.height() < 10:
             self.adjust_rect_to_content()
     
     @property
@@ -374,26 +379,40 @@ class EditableTextItem(QGraphicsRectItem):
     
     @text.setter
     def text(self, value):
-        """Establece el texto y ajusta automáticamente el rect al contenido.
+        """Establece el texto SIN ajustar automáticamente el rect.
         
-        CRÍTICO: Cuando el texto cambia, el rect del módulo se adapta automáticamente
-        para contener todo el texto. El texto SIEMPRE pertenece a este módulo.
+        IMPORTANTE: El ajuste de rect ahora se controla mediante _bounds_locked.
+        Si _bounds_locked=True, el tamaño no cambia (útil durante movimiento).
+        Si _bounds_locked=False, se llama adjust_rect_to_content para recalcular.
         Soporta tabulaciones que se expanden a espacios.
         """
         self._text = value
-        # CRÍTICO: Auto-ajustar el rect al nuevo contenido SIEMPRE
-        if value:
+        # Solo ajustar si los bounds NO están bloqueados
+        if value and not self._bounds_locked:
             self.adjust_rect_to_content()
     
     def set_text_and_adjust(self, value):
         """Establece el texto y FUERZA el ajuste del rect inmediatamente.
         
-        Usar este método cuando se necesita asegurar que el rect se actualice
-        inmediatamente después de cambiar el texto.
+        IMPORTANTE: Este método IGNORA _bounds_locked y siempre recalcula.
+        Usar cuando se necesita asegurar que el rect se actualice
+        inmediatamente después de cambiar el texto (ej: después de editar).
         """
         self._text = value
         if value:
-            self.adjust_rect_to_content()
+            self.adjust_rect_to_content(force=True)
+    
+    def lock_bounds(self):
+        """Bloquea el bounding box para evitar recálculos durante movimiento."""
+        self._bounds_locked = True
+    
+    def unlock_bounds(self):
+        """Desbloquea para permitir recálculo (ej: después de editar texto)."""
+        self._bounds_locked = False
+    
+    def finalize_bounds(self):
+        """Marca que el bounding box ya fue calculado correctamente."""
+        self._bounds_finalized = True
     
     def _map_pdf_font_to_system(self, pdf_font_name: str) -> str:
         """Mapea un nombre de fuente del PDF a una fuente del sistema.
@@ -519,14 +538,21 @@ class EditableTextItem(QGraphicsRectItem):
         # Por defecto usar Arial (equivalente a Helvetica en Windows)
         return 'Arial'
     
-    def adjust_rect_to_content(self):
+    def adjust_rect_to_content(self, force: bool = False):
         """Ajusta el rect del item para que se adapte al contenido del texto.
         
         Usa QFontMetrics con el zoom aplicado para calcular el tamaño correcto.
         CRÍTICO: Normaliza el rect a x=0, y=0 para que la posición esté en pos().
         Considera text_runs para calcular correctamente el tamaño con múltiples estilos.
+        
+        Args:
+            force: Si True, ignora _bounds_locked y recalcula siempre
         """
         from PyQt5.QtGui import QFontMetrics
+        
+        # CRÍTICO: No recalcular si los bounds están bloqueados (durante movimiento)
+        if self._bounds_locked and not force:
+            return
         
         if not self.text:
             return
@@ -544,6 +570,9 @@ class EditableTextItem(QGraphicsRectItem):
         # La posición real del item se controla con pos(), no con el rect
         # Esto evita el bug de posición duplicada cuando se llama setPos()
         self.setRect(QRectF(0, 0, new_width, new_height))
+        
+        # Marcar que los bounds ya fueron calculados
+        self._bounds_finalized = True
     
     def _calculate_size_uniform(self):
         """Calcula el tamaño para texto con estilo uniforme.
