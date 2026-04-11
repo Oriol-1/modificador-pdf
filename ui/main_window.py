@@ -808,7 +808,6 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self.toolbar.action_zoom_in)
         view_menu.addAction(self.toolbar.action_zoom_out)
         view_menu.addAction(self.toolbar.action_fit_width)
-        view_menu.addAction(self.toolbar.action_fit_page)
         
         # Menú Ayuda
         help_menu = menubar.addMenu("A&yuda")
@@ -872,7 +871,6 @@ class MainWindow(QMainWindow):
         self.toolbar.zoomOut.connect(self.pdf_viewer.zoom_out)
         self.toolbar.zoomChanged.connect(self.pdf_viewer.set_zoom)
         self.toolbar.fitWidth.connect(self.pdf_viewer.fit_width)
-        self.toolbar.fitPage.connect(self.pdf_viewer.fit_page)
         
         self.toolbar.toolSelected.connect(self.pdf_viewer.set_tool_mode)
         

@@ -145,6 +145,17 @@ from .text_hit_tester import (
     get_line_at_point,
 )
 
+from .page_document_model import (
+    EditableSpan,
+    LineModel,
+    Paragraph,
+    PageDocumentModel,
+)
+
+from .page_writer import (
+    PageWriter,
+)
+
 from .safe_text_rewriter import (
     OverlayStrategy,
     RewriteMode,
@@ -161,36 +172,7 @@ from .safe_text_rewriter import (
     get_recommended_strategy,
 )
 
-from .object_substitution import (
-    SubstitutionType,
-    SubstitutionStatus,
-    MatchStrategy,
-    TextLocation,
-    TextSubstitution,
-    SubstitutionResult,
-    SubstitutorConfig,
-    PDFTextEncoder,
-    ContentStreamModifier,
-    ObjectSubstitutor,
-    create_substitutor,
-    substitute_text_in_page,
-    get_recommended_substitution_type,
-)
 
-from .z_order_manager import (
-    LayerLevel,
-    CollisionType,
-    ReorderOperation,
-    LayerInfo,
-    CollisionInfo,
-    LayerGroup,
-    ReorderHistoryEntry,
-    ZOrderConfig,
-    AdvancedZOrderManager,
-    create_z_order_manager,
-    get_layer_level_for_type,
-    resolve_z_order_conflict,
-)
 
 from .glyph_width_preserver import (
     FitStrategy,
@@ -336,6 +318,12 @@ __all__ = [
     "hit_test_point",
     "get_span_at_point",
     "get_line_at_point",
+    # PageDocumentModel
+    "EditableSpan",
+    "LineModel",
+    "Paragraph",
+    "PageDocumentModel",
+    "PageWriter",
     # SafeTextRewriter
     "OverlayStrategy",
     "RewriteMode",
@@ -350,33 +338,7 @@ __all__ = [
     "create_safe_rewriter",
     "rewrite_text_safe",
     "get_recommended_strategy",
-    # ObjectSubstitution
-    "SubstitutionType",
-    "SubstitutionStatus",
-    "MatchStrategy",
-    "TextLocation",
-    "TextSubstitution",
-    "SubstitutionResult",
-    "SubstitutorConfig",
-    "PDFTextEncoder",
-    "ContentStreamModifier",
-    "ObjectSubstitutor",
-    "create_substitutor",
-    "substitute_text_in_page",
-    "get_recommended_substitution_type",
-    # ZOrderManager
-    "LayerLevel",
-    "CollisionType",
-    "ReorderOperation",
-    "LayerInfo",
-    "CollisionInfo",
-    "LayerGroup",
-    "ReorderHistoryEntry",
-    "ZOrderConfig",
-    "AdvancedZOrderManager",
-    "create_z_order_manager",
-    "get_layer_level_for_type",
-    "resolve_z_order_conflict",
+
     # GlyphWidthPreserver
     "FitStrategy",
     "FitResult",

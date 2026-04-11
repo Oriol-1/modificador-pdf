@@ -5,7 +5,7 @@ Incluye rectángulos de selección, items de texto editables y diálogos.
 
 from PyQt5.QtWidgets import (
     QGraphicsRectItem, QGraphicsTextItem, QGraphicsDropShadowEffect,
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QTextEdit,
     QSpinBox, QCheckBox, QDialogButtonBox, QGroupBox, QMenu, QToolButton
 )
 from PyQt5.QtCore import Qt, QRectF
@@ -83,13 +83,15 @@ class HighlightRect(QGraphicsRectItem):
 
 class TextEditDialog(QDialog):
     """
-    Diálogo personalizado para editar texto con opciones de formato.
+    Diálogo para editar texto con opciones de formato.
+    Usa QTextEdit para soportar textos grandes y multilínea.
     """
     def __init__(self, text: str = "", font_size: int = 12, is_bold: bool = False, 
                  title: str = "Editar texto", parent=None):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.setMinimumWidth(420)
+        self.setMinimumSize(500, 350)
+        self.resize(620, 420)
         
         # Estilo general del diálogo
         self.setStyleSheet("""
@@ -113,7 +115,7 @@ class TextEditDialog(QDialog):
             QLabel {
                 color: #ffffff;
             }
-            QLineEdit {
+            QTextEdit {
                 background: #1e1e1e;
                 border: 1px solid #555;
                 border-radius: 4px;
@@ -121,7 +123,7 @@ class TextEditDialog(QDialog):
                 color: white;
                 font-size: 14px;
             }
-            QLineEdit:focus {
+            QTextEdit:focus {
                 border: 2px solid #0078d4;
             }
             QSpinBox {
@@ -179,16 +181,12 @@ class TextEditDialog(QDialog):
         layout.setSpacing(12)
         layout.setContentsMargins(15, 15, 15, 15)
         
-        # Grupo de texto
+        # Grupo de texto con QTextEdit multilínea
         text_group = QGroupBox("Contenido")
-        text_layout = QHBoxLayout(text_group)
+        text_layout = QVBoxLayout(text_group)
         
-        self.text_edit = QLineEdit(text)
-        self.text_edit.setPlaceholderText("Escribe el texto aquí...")
-        self.text_edit.selectAll()
-        text_layout.addWidget(self.text_edit)
-        
-        # Botón de símbolos
+        # Toolbar de símbolos
+        symbols_layout = QHBoxLayout()
         self.symbol_btn = QToolButton()
         self.symbol_btn.setText("☐")
         self.symbol_btn.setToolTip("Insertar símbolo")
@@ -217,10 +215,9 @@ class TextEditDialog(QDialog):
             QMenu::item:selected { background: #0078d4; }
         """)
         
-        # Símbolos rápidos
         symbols = [
             ("☐", "Casilla vacía"), ("☑", "Casilla marcada"), ("☒", "Casilla X"),
-            None,  # Separador
+            None,
             ("•", "Viñeta"), ("◦", "Círculo"), ("➤", "Flecha"), ("★", "Estrella"),
             None,
             ("→", "Flecha der."), ("←", "Flecha izq."), ("↑", "Flecha arriba"), ("↓", "Flecha abajo"),
@@ -238,26 +235,33 @@ class TextEditDialog(QDialog):
                 action.triggered.connect(lambda checked, s=sym: self._insert_symbol(s))
         
         self.symbol_btn.setMenu(symbol_menu)
-        text_layout.addWidget(self.symbol_btn)
+        symbols_layout.addWidget(self.symbol_btn)
+        symbols_layout.addStretch()
+        text_layout.addLayout(symbols_layout)
         
-        layout.addWidget(text_group)
+        # QTextEdit multilínea
+        self.text_edit = QTextEdit()
+        self.text_edit.setPlainText(text)
+        self.text_edit.setPlaceholderText("Escribe el texto aquí...")
+        self.text_edit.setAcceptRichText(False)
+        text_layout.addWidget(self.text_edit, 1)
+        
+        layout.addWidget(text_group, 1)
         
         # Grupo de formato
         format_group = QGroupBox("Formato")
         format_layout = QHBoxLayout(format_group)
         
-        # Tamaño de fuente - permitir desde 1pt para máxima flexibilidad
         size_layout = QHBoxLayout()
         size_label = QLabel("Tamaño:")
         self.size_spin = QSpinBox()
-        self.size_spin.setRange(1, 144)  # Rango ampliado: 1pt a 144pt
+        self.size_spin.setRange(1, 144)
         self.size_spin.setValue(round(font_size))
         self.size_spin.setSuffix(" pt")
         size_layout.addWidget(size_label)
         size_layout.addWidget(self.size_spin)
         format_layout.addLayout(size_layout)
         
-        # Checkbox para negrita con mejor estilo visual
         self.bold_check = QCheckBox("Negrita")
         self.bold_check.setChecked(is_bold)
         format_layout.addWidget(self.bold_check)
@@ -273,22 +277,19 @@ class TextEditDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         
-        # Foco inicial en el texto
+        # Foco y seleccionar todo
         self.text_edit.setFocus()
+        self.text_edit.selectAll()
     
     def _insert_symbol(self, symbol: str):
         """Inserta un símbolo en la posición actual del cursor."""
-        cursor_pos = self.text_edit.cursorPosition()
-        current_text = self.text_edit.text()
-        new_text = current_text[:cursor_pos] + symbol + current_text[cursor_pos:]
-        self.text_edit.setText(new_text)
-        self.text_edit.setCursorPosition(cursor_pos + len(symbol))
+        self.text_edit.insertPlainText(symbol)
         self.text_edit.setFocus()
     
     def get_values(self):
         """Retorna los valores del diálogo."""
         return {
-            'text': self.text_edit.text(),
+            'text': self.text_edit.toPlainText(),
             'font_size': self.size_spin.value(),
             'is_bold': self.bold_check.isChecked()
         }
@@ -834,11 +835,11 @@ class EditableTextItem(QGraphicsRectItem):
         
         text_height = metrics.height() * len(lines)
         
-        # SIEMPRE escalar el texto para que quepa en el rect
-        # El rect define el tamaño visual del texto
+        # NUNCA estirar el texto más allá de su tamaño natural
+        # Solo comprimir si es necesario para que quepa en el rect
         scale_x = rect.width() / max(max_line_width, 1) if max_line_width > 0 else 1.0
-        scale_factor = min(scale_x, 1.5)  # No escalar más de 150%
-        scale_factor = max(scale_factor, 0.5)  # No escalar menos de 50%
+        scale_factor = min(scale_x, 1.0)  # NUNCA estirar más del 100%
+        scale_factor = max(scale_factor, 0.5)  # No comprimir menos del 50%
         
         # Aplicar transformación
         painter.save()
@@ -932,11 +933,11 @@ class EditableTextItem(QGraphicsRectItem):
         max_line_width = max(max_line_width, current_x)
         text_height = line_height * num_lines
         
-        # SIEMPRE escalar el texto para que quepa en el rect
-        # El rect define el tamaño visual del texto
+        # NUNCA estirar el texto más allá de su tamaño natural
+        # Solo comprimir si es necesario para que quepa en el rect
         scale_x = rect.width() / max(max_line_width, 1) if max_line_width > 0 else 1.0
-        scale_factor = min(scale_x, 1.5)  # No escalar más de 150%
-        scale_factor = max(scale_factor, 0.5)  # No escalar menos de 50%
+        scale_factor = min(scale_x, 1.0)  # NUNCA estirar más del 100%
+        scale_factor = max(scale_factor, 0.5)  # No comprimir menos del 50%
         
         # Aplicar transformación
         painter.save()

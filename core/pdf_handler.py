@@ -307,7 +307,7 @@ class PDFDocument:
         
         # Si no encontramos con contains, intentar con una búsqueda más tolerante
         # (útil para textos pequeños o bordes)
-        tolerance = 5
+        tolerance = 2  # Reducido de 5 para evitar capturar texto adyacente
         for i, block in enumerate(visual_blocks):
             expanded_rect = fitz.Rect(
                 block.rect.x0 - tolerance,
@@ -682,21 +682,22 @@ class PDFDocument:
                 print(f"erase_text_transparent - Rect visual: {rect}")
                 print(f"erase_text_transparent - Rect transformado: {transformed_rect}")
             
-            # NO expandir el rect para evitar borrar texto adyacente
-            # El rect debe ser preciso para borrar solo lo necesario
-            print(f"erase_text_transparent - Usando rect preciso: {transformed_rect}")
+            # Expandir ligeramente para compensar imprecisiones de coordenadas
+            # Esto evita que queden restos de texto al borde del rect
+            expanded_rect = transformed_rect + (-1, -0.5, 1, 0.5)
+            print(f"erase_text_transparent - Usando rect expandido: {expanded_rect}")
             
             # Verificar qué texto hay en esa área antes de borrar
-            text_in_area = page.get_text("text", clip=transformed_rect)
+            text_in_area = page.get_text("text", clip=expanded_rect)
             print(f"erase_text_transparent - Texto en área ANTES de borrar: '{text_in_area.strip()}'")
             
-            # Usar redacción SIN color de relleno (transparente)
-            # fill=False significa sin relleno
-            redact = page.add_redact_annot(transformed_rect, fill=False)
-            page.apply_redactions()
+            # Usar redacción CON relleno blanco para cubrir cualquier residuo
+            # fill=(1,1,1) pinta blanco sobre el área, asegurando limpieza total
+            redact = page.add_redact_annot(expanded_rect, fill=(1, 1, 1))
+            page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
             
             # Verificar qué texto hay después de borrar
-            text_after = page.get_text("text", clip=transformed_rect)
+            text_after = page.get_text("text", clip=expanded_rect)
             print(f"erase_text_transparent - Texto en área DESPUÉS de borrar: '{text_after.strip()}'")
             
             # Refrescar el documento para que los cambios sean visibles

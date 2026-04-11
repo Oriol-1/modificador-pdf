@@ -63,17 +63,6 @@ from core.text_engine.safe_text_rewriter import (
     get_recommended_strategy,
 )
 
-from core.text_engine.object_substitution import (
-    TextLocation,
-    create_substitutor,
-)
-
-from core.text_engine.z_order_manager import (
-    LayerLevel,
-    LayerInfo,
-    create_z_order_manager,
-)
-
 from core.text_engine.glyph_width_preserver import (
     FitStrategy,
     create_width_preserver,
@@ -377,59 +366,6 @@ class TestSafeRewriter:
         assert result is not None
         # TextOverlayInfo tiene new_text
         assert result.new_text == "Replaced"
-
-
-class TestObjectSubstitution:
-    """Tests de integración para ObjectSubstitutor."""
-    
-    def test_create_substitutor(self):
-        """Crear substitutor."""
-        page = create_mock_page()
-        substitutor = create_substitutor(page)
-        assert substitutor is not None
-    
-    def test_text_location_creation(self):
-        """Crear ubicación de texto para sustitución."""
-        span = create_test_span("Target", x=100.0, y=500.0)
-        
-        # TextLocation usa position_x, position_y, page_num, stream_start, stream_end
-        location = TextLocation(
-            page_num=span.page_num,
-            position_x=span.bbox[0],
-            position_y=span.bbox[1],
-            original_text=span.text,
-        )
-        
-        assert location.page_num == 0
-        assert location.position_x == 100.0
-
-
-class TestZOrderManager:
-    """Tests de integración para ZOrderManager."""
-    
-    def test_create_z_order_manager(self):
-        """Crear Z-order manager."""
-        page = create_mock_page()
-        manager = create_z_order_manager(page)
-        assert manager is not None
-    
-    def test_layer_info_creation(self):
-        """Crear información de capas."""
-        # LayerInfo usa z_order, level (no z_index, layer_level)
-        layer1 = LayerInfo(
-            layer_id="layer1",
-            z_order=1,
-            level=LayerLevel.TEXT,
-            bbox=(100, 500, 200, 520),
-        )
-        layer2 = LayerInfo(
-            layer_id="layer2",
-            z_order=2,
-            level=LayerLevel.OVERLAY,
-            bbox=(150, 500, 250, 520),
-        )
-        
-        assert layer1.z_order < layer2.z_order
 
 
 class TestGlyphWidthPreserver:

@@ -23,7 +23,6 @@ class EditorToolBar(QToolBar):
     zoomOut = pyqtSignal()
     zoomChanged = pyqtSignal(float)
     fitWidth = pyqtSignal()
-    fitPage = pyqtSignal()
     
     toolSelected = pyqtSignal(str)  # 'select', 'highlight', 'delete', 'edit'
     
@@ -175,11 +174,6 @@ class EditorToolBar(QToolBar):
         self.action_fit_width.triggered.connect(self.fitWidth.emit)
         self.addAction(self.action_fit_width)
         
-        self.action_fit_page = QAction("📄 Ajustar página", self)
-        self.action_fit_page.setToolTip("Ver página completa")
-        self.action_fit_page.triggered.connect(self.fitPage.emit)
-        self.addAction(self.action_fit_page)
-        
         self.addSeparator()
         
         # === Sección Navegación ===
@@ -277,7 +271,6 @@ class EditorToolBar(QToolBar):
         self.action_zoom_out.setEnabled(loaded)
         self.zoom_combo.setEnabled(loaded)
         self.action_fit_width.setEnabled(loaded)
-        self.action_fit_page.setEnabled(loaded)
         
         self.action_prev_page.setEnabled(loaded)
         self.action_next_page.setEnabled(loaded)

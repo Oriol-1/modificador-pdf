@@ -505,12 +505,12 @@ def create_span_from_pymupdf(
     if "+" in font_name_pdf:
         font_name = font_name_pdf.split("+", 1)[1]
     
-    # Color (PyMuPDF devuelve int en formato BGR)
+    # Color (PyMuPDF devuelve int en formato 0xRRGGBB)
     color_int = span_dict.get("color", 0)
     if isinstance(color_int, int):
-        r = (color_int) & 0xFF
+        r = (color_int >> 16) & 0xFF
         g = (color_int >> 8) & 0xFF
-        b = (color_int >> 16) & 0xFF
+        b = (color_int) & 0xFF
         fill_color = f"#{r:02x}{g:02x}{b:02x}"
     else:
         fill_color = "#000000"
