@@ -20,6 +20,7 @@ from typing import List, Tuple, Dict, Optional
 import fitz
 
 from .page_document_model import EditableSpan, Paragraph
+from .rich_text_writer import RichTextWriter
 
 
 class PageWriter:
@@ -135,7 +136,7 @@ class PageWriter:
             for span_idx, span in enumerate(line.spans):
                 original_width = span.bbox[2] - span.bbox[0]
                 
-                if span.dirty:
+                if span.is_dirty:
                     # Span editado: calcular delta de ancho
                     new_width = self._measure_text_width(span)
                     width_delta = new_width - original_width
@@ -175,12 +176,22 @@ class PageWriter:
     
     def _measure_text_width(self, span: EditableSpan) -> float:
         """Mide el ancho del texto actual del span usando la fuente correcta."""
-        font = self._resolve_font(span.font_name, span.font_name_pdf, span.is_bold)
+        is_bold = span.effective_is_bold
+        font_size = span.effective_font_size
+        font = self._resolve_font(span.font_name, span.font_name_pdf, is_bold)
         try:
-            return font.text_length(span.text, fontsize=span.font_size)
+            width = font.text_length(span.text, fontsize=font_size)
+            # Añadir efectos de char_spacing/word_spacing
+            char_sp = span.effective_char_spacing
+            if abs(char_sp) > 0.001 and len(span.text) > 1:
+                width += char_sp * (len(span.text) - 1)
+            word_sp = span.effective_word_spacing
+            if abs(word_sp) > 0.001:
+                width += word_sp * span.text.count(' ')
+            return width
         except Exception:
             # Fallback: estimación basada en caracteres
-            return len(span.text) * span.font_size * 0.6
+            return len(span.text) * font_size * 0.6
     
     def _get_line_spacing(self, paragraph: Paragraph) -> float:
         """Calcula el interlineado típico del párrafo."""
@@ -222,29 +233,48 @@ class PageWriter:
             color_groups[color].append(span)
         
         for color, group_spans in color_groups.items():
-            tw = fitz.TextWriter(self._page.rect)
+            # Separar spans con/sin cambios de formato
+            fmt_spans = [s for s in group_spans if s.dirty_format]
+            std_spans = [s for s in group_spans if not s.dirty_format]
             
-            for span in group_spans:
-                font = self._resolve_font(span.font_name, span.font_name_pdf, span.is_bold)
+            # Spans con formato → RichTextWriter
+            if fmt_spans:
+                rtw = RichTextWriter(self._page, self.doc)
+                for span in fmt_spans:
+                    if span.span_id in new_positions:
+                        # Crear rect desplazado
+                        px, py = new_positions[span.span_id]
+                        w = span.bbox[2] - span.bbox[0]
+                        h = span.bbox[3] - span.bbox[1]
+                        rect = fitz.Rect(px - 0.5, py - h, px + w + 0.5, py + 0.5)
+                    else:
+                        rect = None
+                    rtw.write_spans([span], rect=rect)
+            
+            # Spans sin formato → TextWriter estándar
+            if std_spans:
+                tw = fitz.TextWriter(self._page.rect)
                 
-                # Usar nueva posición si fue desplazado, sino la original
-                if span.span_id in new_positions:
-                    px, py = new_positions[span.span_id]
-                    point = fitz.Point(px, py)
-                else:
-                    point = fitz.Point(span.origin[0], span.origin[1])
-                
-                try:
-                    tw.append(point, span.text, font=font, fontsize=span.font_size)
-                except Exception as e:
-                    fallback_font = self._get_font('helv')
+                for span in std_spans:
+                    font = self._resolve_font(span.font_name, span.font_name_pdf, span.is_bold)
+                    
+                    if span.span_id in new_positions:
+                        px, py = new_positions[span.span_id]
+                        point = fitz.Point(px, py)
+                    else:
+                        point = fitz.Point(span.origin[0], span.origin[1])
+                    
                     try:
-                        tw.append(point, span.text, font=fallback_font, fontsize=span.font_size)
-                    except Exception:
-                        print(f"PageWriter: No se pudo escribir span '{span.text[:20]}': {e}")
-                        continue
-            
-            tw.write_text(self._page, color=color)
+                        tw.append(point, span.text, font=font, fontsize=span.font_size)
+                    except Exception as e:
+                        fallback_font = self._get_font('helv')
+                        try:
+                            tw.append(point, span.text, font=fallback_font, fontsize=span.font_size)
+                        except Exception:
+                            print(f"PageWriter: No se pudo escribir span '{span.text[:20]}': {e}")
+                            continue
+                
+                tw.write_text(self._page, color=color)
     
     def _redact_spans(self, spans: List[EditableSpan]):
         """Redacta (borra) las áreas de los spans originales."""
@@ -259,7 +289,30 @@ class PageWriter:
         self._page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
     
     def _write_spans(self, spans: List[EditableSpan]):
-        """Reescribe los spans editados usando TextWriter (sin reflow)."""
+        """Reescribe los spans editados.
+        
+        Si hay cambios de formato, usa RichTextWriter (insert_htmlbox).
+        Si no, usa TextWriter estándar.
+        """
+        # Separar spans con y sin cambios de formato
+        format_spans = [s for s in spans if s.dirty_format]
+        text_only_spans = [s for s in spans if not s.dirty_format]
+        
+        # Escribir spans con formato usando RichTextWriter
+        if format_spans:
+            rtw = RichTextWriter(self._page, self.doc)
+            for span in format_spans:
+                result = rtw.write_single_span(span)
+                if not result.success:
+                    # Fallback a TextWriter estándar
+                    self._write_spans_textwriter([span])
+        
+        # Escribir spans sin formato usando TextWriter estándar
+        if text_only_spans:
+            self._write_spans_textwriter(text_only_spans)
+    
+    def _write_spans_textwriter(self, spans: List[EditableSpan]):
+        """Reescribe spans usando TextWriter estándar (sin formato nuevo)."""
         color_groups: Dict[Tuple[float, float, float], List[EditableSpan]] = {}
         for span in spans:
             color = span.color_rgb
@@ -288,6 +341,12 @@ class PageWriter:
     
     def write_single_span(self, span: EditableSpan) -> bool:
         """Escribe un solo span al PDF (para uso incremental)."""
+        # Usar RichTextWriter si hay cambios de formato
+        if span.dirty_format:
+            rtw = RichTextWriter(self._page, self.doc)
+            result = rtw.write_single_span(span)
+            return result.success
+        
         font = self._resolve_font(span.font_name, span.font_name_pdf, span.is_bold)
         tw = fitz.TextWriter(self._page.rect)
         point = fitz.Point(span.origin[0], span.origin[1])

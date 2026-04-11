@@ -60,6 +60,15 @@ class EditableSpan:
     # Estado de edición  
     dirty: bool = False
     
+    # Cambios de formato (None = sin cambios respecto al original)
+    new_font_size: Optional[float] = None
+    new_is_bold: Optional[bool] = None
+    new_is_italic: Optional[bool] = None
+    new_color_rgb: Optional[str] = None  # color hex como "#RRGGBB"
+    new_char_spacing: Optional[float] = None
+    new_word_spacing: Optional[float] = None
+    dirty_format: bool = False
+    
     @property
     def text(self) -> str:
         """Retorna el texto actual (editado o original)."""
@@ -83,6 +92,41 @@ class EditableSpan:
             return tuple(int(h[i:i+2], 16) / 255.0 for i in (0, 2, 4))
         except (ValueError, IndexError):
             return (0.0, 0.0, 0.0)
+    
+    @property
+    def is_dirty(self) -> bool:
+        """True si hay cualquier cambio (texto o formato)."""
+        return self.dirty or self.dirty_format
+    
+    @property
+    def effective_font_size(self) -> float:
+        """Tamaño de fuente efectivo (nuevo o original)."""
+        return self.new_font_size if self.new_font_size is not None else self.font_size
+    
+    @property
+    def effective_is_bold(self) -> bool:
+        """Bold efectivo (nuevo o original)."""
+        return self.new_is_bold if self.new_is_bold is not None else self.is_bold
+    
+    @property
+    def effective_is_italic(self) -> bool:
+        """Italic efectivo (nuevo o original)."""
+        return self.new_is_italic if self.new_is_italic is not None else self.is_italic
+    
+    @property
+    def effective_color(self) -> str:
+        """Color efectivo (nuevo o original)."""
+        return self.new_color_rgb if self.new_color_rgb is not None else self.fill_color
+    
+    @property
+    def effective_char_spacing(self) -> float:
+        """Char spacing efectivo (nuevo o original)."""
+        return self.new_char_spacing if self.new_char_spacing is not None else self.char_spacing
+    
+    @property
+    def effective_word_spacing(self) -> float:
+        """Word spacing efectivo (nuevo o original)."""
+        return self.new_word_spacing if self.new_word_spacing is not None else self.word_spacing
     
     @classmethod
     def from_span_metrics(cls, sm: TextSpanMetrics) -> "EditableSpan":
@@ -133,7 +177,7 @@ class LineModel:
     @property
     def is_dirty(self) -> bool:
         """True si algún span fue modificado."""
-        return any(s.dirty for s in self.spans)
+        return any(s.is_dirty for s in self.spans)
     
     @property
     def dominant_font(self) -> str:

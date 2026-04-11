@@ -19,7 +19,8 @@ Uso desde pdf_viewer:
 
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QWidget, QScrollArea, QFrame, QSizePolicy
+    QPushButton, QWidget, QScrollArea, QFrame, QSizePolicy,
+    QDoubleSpinBox, QToolButton
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont, QColor, QPalette
@@ -74,6 +75,54 @@ class SpanEditWidget(QFrame):
         header.setStyleSheet("font-size: 10px; color: #888; padding: 0; margin: 0;")
         layout.addWidget(header)
         
+        # Mini controles de formato (tamaño + bold toggle)
+        fmt_row = QHBoxLayout()
+        fmt_row.setSpacing(4)
+        fmt_row.setContentsMargins(0, 0, 0, 0)
+        
+        self._size_spin = QDoubleSpinBox()
+        self._size_spin.setRange(1.0, 200.0)
+        self._size_spin.setSingleStep(0.5)
+        self._size_spin.setDecimals(1)
+        self._size_spin.setValue(self.span.font_size)
+        self._size_spin.setSuffix("pt")
+        self._size_spin.setFixedWidth(75)
+        self._size_spin.setStyleSheet(
+            "QDoubleSpinBox { background: #1e1e1e; color: #ccc; border: 1px solid #555; "
+            "border-radius: 3px; padding: 2px; font-size: 10px; }"
+        )
+        self._size_spin.valueChanged.connect(self._on_format_changed)
+        fmt_row.addWidget(self._size_spin)
+        
+        self._bold_btn = QToolButton()
+        self._bold_btn.setText("B")
+        self._bold_btn.setCheckable(True)
+        self._bold_btn.setChecked(self.span.is_bold)
+        self._bold_btn.setFixedSize(22, 22)
+        self._bold_btn.setStyleSheet(
+            "QToolButton { font-weight: bold; font-size: 11px; color: #ccc; "
+            "background: #1e1e1e; border: 1px solid #555; border-radius: 3px; }"
+            "QToolButton:checked { background: #0078d4; color: white; }"
+        )
+        self._bold_btn.toggled.connect(self._on_format_changed)
+        fmt_row.addWidget(self._bold_btn)
+        
+        self._italic_btn = QToolButton()
+        self._italic_btn.setText("I")
+        self._italic_btn.setCheckable(True)
+        self._italic_btn.setChecked(self.span.is_italic)
+        self._italic_btn.setFixedSize(22, 22)
+        self._italic_btn.setStyleSheet(
+            "QToolButton { font-style: italic; font-size: 11px; color: #ccc; "
+            "background: #1e1e1e; border: 1px solid #555; border-radius: 3px; }"
+            "QToolButton:checked { background: #0078d4; color: white; }"
+        )
+        self._italic_btn.toggled.connect(self._on_format_changed)
+        fmt_row.addWidget(self._italic_btn)
+        
+        fmt_row.addStretch()
+        layout.addLayout(fmt_row)
+        
         # Campo de edición del texto
         self.edit = QLineEdit(self.span.original_text)
         self.edit.setStyleSheet(f"""
@@ -123,6 +172,33 @@ class SpanEditWidget(QFrame):
             self._overflow_label.show()
         else:
             self._overflow_label.hide()
+        
+        self.spanModified.emit()
+    
+    def _on_format_changed(self):
+        """Llamado cuando cambia un control de formato."""
+        new_size = self._size_spin.value()
+        new_bold = self._bold_btn.isChecked()
+        new_italic = self._italic_btn.isChecked()
+        
+        # Marcar formato dirty en el span
+        format_changed = (
+            abs(new_size - self.span.font_size) > 0.01
+            or new_bold != self.span.is_bold
+            or new_italic != self.span.is_italic
+        )
+        self.span.dirty_format = format_changed
+        self.span.new_font_size = new_size if abs(new_size - self.span.font_size) > 0.01 else None
+        self.span.new_is_bold = new_bold if new_bold != self.span.is_bold else None
+        self.span.new_is_italic = new_italic if new_italic != self.span.is_italic else None
+        
+        # Actualizar preview de fuente en el campo de edición
+        font = QFont()
+        font.setFamily(self.span.font_name)
+        font.setPointSizeF(min(new_size, 14))
+        font.setBold(new_bold)
+        font.setItalic(new_italic)
+        self.edit.setFont(font)
         
         self.spanModified.emit()
     
@@ -327,7 +403,10 @@ class UnifiedTextEditorDialog(QDialog):
     
     def _on_any_span_modified(self):
         """Actualiza estado cuando cualquier span cambia."""
-        dirty_count = sum(1 for s in self.spans if s.dirty)
+        dirty_count = sum(
+            1 for s in self.spans
+            if s.dirty or getattr(s, 'dirty_format', False)
+        )
         total = len(self.spans)
         
         if dirty_count > 0:
@@ -389,12 +468,19 @@ def show_unified_editor(
     )
 
     if dialog.exec_() == QDialog.Accepted:
-        dirty = [s for s in spans if s.dirty]
+        dirty = [
+            s for s in spans
+            if s.dirty or getattr(s, 'dirty_format', False)
+        ]
         return dirty if dirty else None
 
     # Si se canceló, revertir los cambios
     for span in spans:
         span.new_text = None
         span.dirty = False
+        span.dirty_format = False
+        span.new_font_size = None
+        span.new_is_bold = None
+        span.new_is_italic = None
 
     return None

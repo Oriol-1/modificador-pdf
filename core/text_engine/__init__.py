@@ -156,6 +156,11 @@ from .page_writer import (
     PageWriter,
 )
 
+from .rich_text_writer import (
+    RichTextWriter,
+    WriteResult,
+)
+
 from .safe_text_rewriter import (
     OverlayStrategy,
     RewriteMode,

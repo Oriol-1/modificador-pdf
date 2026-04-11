@@ -29,7 +29,8 @@ from typing import TYPE_CHECKING, Optional, List, Dict, Any
 from PyQt5.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QLabel, QTextEdit, QPushButton, QFrame, QToolBar,
-    QAction, QGroupBox, QMessageBox, QToolButton, QMenu
+    QAction, QGroupBox, QMessageBox, QToolButton, QMenu,
+    QDoubleSpinBox, QCheckBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont, QColor, QFontMetrics
@@ -61,6 +62,13 @@ try:
     HAS_PROPERTY_INSPECTOR = True
 except ImportError:
     HAS_PROPERTY_INSPECTOR = False
+
+# ColorButton
+try:
+    from .font_dialog import ColorButton
+    HAS_COLOR_BUTTON = True
+except ImportError:
+    HAS_COLOR_BUTTON = False
 
 # TextSelectionOverlay
 try:
@@ -96,11 +104,28 @@ class EditedSpan:
     original_text: str
     modifications: Dict[str, Any] = field(default_factory=dict)
     fit_status: FitStatus = FitStatus.UNKNOWN
+    # Campos de formato (None = sin cambio respecto al original)
+    new_font_size: Optional[float] = None
+    new_is_bold: Optional[bool] = None
+    new_is_italic: Optional[bool] = None
+    new_color: Optional[str] = None
+    new_char_spacing: Optional[float] = None
+    new_word_spacing: Optional[float] = None
     
     @property
     def has_changes(self) -> bool:
         """True si hay cambios respecto al original."""
-        return self.new_text != self.original_text or bool(self.modifications)
+        return (self.new_text != self.original_text
+                or bool(self.modifications)
+                or self.has_format_changes)
+    
+    @property
+    def has_format_changes(self) -> bool:
+        """True si hay cambios de formato."""
+        return any(v is not None for v in (
+            self.new_font_size, self.new_is_bold, self.new_is_italic,
+            self.new_color, self.new_char_spacing, self.new_word_spacing
+        ))
 
 
 @dataclass
@@ -250,6 +275,197 @@ class SpanComparisonWidget(QFrame):
         """Establecer textos a comparar."""
         self._original_text.setText(original or "(vacío)")
         self._edited_text.setText(edited or "(vacío)")
+
+
+class FormatBar(QFrame):
+    """
+    Barra de controles de formato tipográfico para edición de spans.
+    
+    Controles: tamaño, bold, italic, color, char_spacing, word_spacing, auto-ajustar.
+    """
+    
+    formatChanged = pyqtSignal()  # Emitida cuando cambia cualquier control
+    
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
+        self.setMinimumHeight(40)
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(6)
+        
+        # --- Tamaño de fuente ---
+        layout.addWidget(QLabel("Tamaño:"))
+        self._size_spin = QDoubleSpinBox()
+        self._size_spin.setRange(1.0, 200.0)
+        self._size_spin.setSingleStep(0.5)
+        self._size_spin.setDecimals(1)
+        self._size_spin.setSuffix(" pt")
+        self._size_spin.setFixedWidth(90)
+        self._size_spin.valueChanged.connect(lambda: self.formatChanged.emit())
+        layout.addWidget(self._size_spin)
+        
+        # Separador
+        sep1 = QFrame()
+        sep1.setFrameStyle(QFrame.VLine | QFrame.Sunken)
+        layout.addWidget(sep1)
+        
+        # --- Bold toggle ---
+        self._bold_btn = QToolButton()
+        self._bold_btn.setText("B")
+        self._bold_btn.setCheckable(True)
+        self._bold_btn.setFixedSize(28, 28)
+        self._bold_btn.setStyleSheet(
+            "QToolButton { font-weight: bold; font-size: 14px; }"
+            "QToolButton:checked { background: #0078d4; color: white; border-radius: 4px; }"
+        )
+        self._bold_btn.toggled.connect(lambda: self.formatChanged.emit())
+        layout.addWidget(self._bold_btn)
+        
+        # --- Italic toggle ---
+        self._italic_btn = QToolButton()
+        self._italic_btn.setText("I")
+        self._italic_btn.setCheckable(True)
+        self._italic_btn.setFixedSize(28, 28)
+        self._italic_btn.setStyleSheet(
+            "QToolButton { font-style: italic; font-size: 14px; }"
+            "QToolButton:checked { background: #0078d4; color: white; border-radius: 4px; }"
+        )
+        self._italic_btn.toggled.connect(lambda: self.formatChanged.emit())
+        layout.addWidget(self._italic_btn)
+        
+        # --- Color ---
+        if HAS_COLOR_BUTTON:
+            self._color_btn = ColorButton("#000000")
+            self._color_btn.colorChanged.connect(lambda: self.formatChanged.emit())
+            layout.addWidget(self._color_btn)
+        else:
+            self._color_btn = None
+        
+        # Separador
+        sep2 = QFrame()
+        sep2.setFrameStyle(QFrame.VLine | QFrame.Sunken)
+        layout.addWidget(sep2)
+        
+        # --- Char spacing (Tc) ---
+        layout.addWidget(QLabel("Tc:"))
+        self._char_spacing_spin = QDoubleSpinBox()
+        self._char_spacing_spin.setRange(-5.0, 10.0)
+        self._char_spacing_spin.setSingleStep(0.1)
+        self._char_spacing_spin.setDecimals(2)
+        self._char_spacing_spin.setFixedWidth(75)
+        self._char_spacing_spin.valueChanged.connect(lambda: self.formatChanged.emit())
+        layout.addWidget(self._char_spacing_spin)
+        
+        # --- Word spacing (Tw) ---
+        layout.addWidget(QLabel("Tw:"))
+        self._word_spacing_spin = QDoubleSpinBox()
+        self._word_spacing_spin.setRange(-5.0, 20.0)
+        self._word_spacing_spin.setSingleStep(0.5)
+        self._word_spacing_spin.setDecimals(2)
+        self._word_spacing_spin.setFixedWidth(75)
+        self._word_spacing_spin.valueChanged.connect(lambda: self.formatChanged.emit())
+        layout.addWidget(self._word_spacing_spin)
+        
+        # Separador
+        sep3 = QFrame()
+        sep3.setFrameStyle(QFrame.VLine | QFrame.Sunken)
+        layout.addWidget(sep3)
+        
+        # --- Auto-ajustar ---
+        self._auto_adjust = QCheckBox("Auto-ajustar")
+        self._auto_adjust.setToolTip(
+            "Ajustar automáticamente espaciado si el texto desborda"
+        )
+        self._auto_adjust.toggled.connect(lambda: self.formatChanged.emit())
+        layout.addWidget(self._auto_adjust)
+        
+        layout.addStretch()
+    
+    def load_from_span(self, span_data: Dict[str, Any]) -> None:
+        """Cargar valores desde datos del span original."""
+        self._size_spin.blockSignals(True)
+        self._size_spin.setValue(span_data.get('font_size', 12.0))
+        self._size_spin.blockSignals(False)
+        
+        self._bold_btn.blockSignals(True)
+        self._bold_btn.setChecked(span_data.get('is_bold', False))
+        self._bold_btn.blockSignals(False)
+        
+        self._italic_btn.blockSignals(True)
+        self._italic_btn.setChecked(span_data.get('is_italic', False))
+        self._italic_btn.blockSignals(False)
+        
+        if self._color_btn:
+            self._color_btn.blockSignals(True)
+            self._color_btn.setColor(span_data.get('fill_color', '#000000'))
+            self._color_btn.blockSignals(False)
+        
+        self._char_spacing_spin.blockSignals(True)
+        self._char_spacing_spin.setValue(span_data.get('char_spacing', 0.0))
+        self._char_spacing_spin.blockSignals(False)
+        
+        self._word_spacing_spin.blockSignals(True)
+        self._word_spacing_spin.setValue(span_data.get('word_spacing', 0.0))
+        self._word_spacing_spin.blockSignals(False)
+    
+    # ---- Accessors: devuelven None si no hay cambio respecto al original ----
+    
+    def get_font_size(self, original: float) -> Optional[float]:
+        val = self._size_spin.value()
+        return val if abs(val - original) > 0.01 else None
+    
+    def get_is_bold(self, original: bool) -> Optional[bool]:
+        val = self._bold_btn.isChecked()
+        return val if val != original else None
+    
+    def get_is_italic(self, original: bool) -> Optional[bool]:
+        val = self._italic_btn.isChecked()
+        return val if val != original else None
+    
+    def get_color(self, original: str) -> Optional[str]:
+        if not self._color_btn:
+            return None
+        val = self._color_btn.color()
+        return val if val.lower() != original.lower() else None
+    
+    def get_char_spacing(self, original: float) -> Optional[float]:
+        val = self._char_spacing_spin.value()
+        return val if abs(val - original) > 0.001 else None
+    
+    def get_word_spacing(self, original: float) -> Optional[float]:
+        val = self._word_spacing_spin.value()
+        return val if abs(val - original) > 0.001 else None
+    
+    @property
+    def auto_adjust(self) -> bool:
+        return self._auto_adjust.isChecked()
+    
+    def has_format_changes(self, span_data: Dict[str, Any]) -> bool:
+        """True si algún control difiere del original."""
+        return any([
+            self.get_font_size(span_data.get('font_size', 12.0)) is not None,
+            self.get_is_bold(span_data.get('is_bold', False)) is not None,
+            self.get_is_italic(span_data.get('is_italic', False)) is not None,
+            self.get_color(span_data.get('fill_color', '#000000')) is not None,
+            self.get_char_spacing(span_data.get('char_spacing', 0.0)) is not None,
+            self.get_word_spacing(span_data.get('word_spacing', 0.0)) is not None,
+        ])
+    
+    # ---- Valores actuales (para validación) ----
+    
+    @property
+    def current_font_size(self) -> float:
+        return self._size_spin.value()
+    
+    @property
+    def current_is_bold(self) -> bool:
+        return self._bold_btn.isChecked()
+    
+    @property
+    def current_is_italic(self) -> bool:
+        return self._italic_btn.isChecked()
 
 
 class EditorToolBar(QToolBar):
@@ -482,6 +698,10 @@ class PDFTextEditorDialog(QDialog):
         )
         edit_layout.addWidget(self._info_label)
         
+        # Barra de formato
+        self._format_bar = FormatBar()
+        edit_layout.addWidget(self._format_bar)
+        
         # Área de edición
         self._edit_area = TextEditArea()
         edit_layout.addWidget(self._edit_area, 1)
@@ -561,6 +781,9 @@ class PDFTextEditorDialog(QDialog):
         # Botones
         self._apply_btn.clicked.connect(self._on_apply)
         self._cancel_btn.clicked.connect(self._on_cancel)
+        
+        # FormatBar
+        self._format_bar.formatChanged.connect(self._on_format_changed)
     
     def _load_span_data(self) -> None:
         """Cargar datos del span en el editor."""
@@ -575,6 +798,9 @@ class PDFTextEditorDialog(QDialog):
         
         # Cargar en editor
         self._edit_area.set_span_data(self._span_data)
+        
+        # Cargar formato en FormatBar
+        self._format_bar.load_from_span(self._span_data)
         
         # Actualizar comparación
         self._comparison.set_comparison(text, text)
@@ -607,16 +833,28 @@ class PDFTextEditorDialog(QDialog):
             self._validation_timer.start(self._config.validate_delay_ms)
         
         # Habilitar/deshabilitar botón aplicar
-        self._apply_btn.setEnabled(self._edit_area.has_changes())
+        has_changes = (self._edit_area.has_changes() or
+                       self._format_bar.has_format_changes(self._span_data))
+        self._apply_btn.setEnabled(has_changes)
     
     def _on_cursor_moved(self, position: int) -> None:
         """Manejar movimiento del cursor."""
-        # Futuro: actualizar métricas del carácter actual
         pass
+    
+    def _on_format_changed(self) -> None:
+        """Manejar cambio en los controles de formato."""
+        has_changes = (self._edit_area.has_changes() or
+                       self._format_bar.has_format_changes(self._span_data))
+        self._apply_btn.setEnabled(has_changes)
+        
+        # Programar validación
+        if self._validation_timer and self._config.auto_validate:
+            self._validation_timer.start(self._config.validate_delay_ms)
     
     def _validate_fit(self) -> None:
         """
         Validar si el texto editado cabe en el espacio original.
+        Usa los valores actuales de la FormatBar para formato.
         """
         current_text = self._edit_area.get_current_text()
         original_bbox = self._span_data.get('bbox')
@@ -629,21 +867,30 @@ class PDFTextEditorDialog(QDialog):
         # Calcular ancho original
         original_width = original_bbox[2] - original_bbox[0]
         
-        # Calcular ancho nuevo (aproximado con QFontMetrics)
+        # Usar valores actuales de la FormatBar
         font_name = self._span_data.get('font_name', 'Helvetica')
-        font_size = self._span_data.get('font_size', 12)
-        is_bold = self._span_data.get('is_bold', False)
+        font_size = self._format_bar.current_font_size
+        is_bold = self._format_bar.current_is_bold
+        is_italic = self._format_bar.current_is_italic
         
         font = QFont(font_name, int(font_size))
         font.setBold(is_bold)
+        font.setItalic(is_italic)
         metrics = QFontMetrics(font)
         new_width = metrics.horizontalAdvance(current_text)
         
-        # Convertir pixeles a puntos PDF (aproximado)
-        # PDF típicamente usa 72 puntos por pulgada
-        # QFontMetrics usa pixels del dispositivo
-        dpi = 96  # DPI típico de pantalla
+        # Convertir pixels a puntos PDF (72 DPI vs pantalla)
+        dpi = 96
         new_width_pt = new_width * 72 / dpi
+        
+        # Ajuste de espaciado Tc/Tw
+        char_spacing = self._format_bar._char_spacing_spin.value()
+        word_spacing = self._format_bar._word_spacing_spin.value()
+        if char_spacing != 0 and len(current_text) > 1:
+            new_width_pt += char_spacing * (len(current_text) - 1)
+        if word_spacing != 0:
+            space_count = current_text.count(' ')
+            new_width_pt += word_spacing * space_count
         
         # Determinar estado
         if new_width_pt <= original_width * 0.98:
@@ -664,8 +911,11 @@ class PDFTextEditorDialog(QDialog):
         font_info = None
         if self._span_data:
             font_name = self._span_data.get('font_name', 'Unknown')
-            font_size = self._span_data.get('font_size', 12)
-            font_info = f"{font_name} {font_size}pt"
+            # Mostrar tamaño actual (de FormatBar)
+            font_size = self._format_bar.current_font_size
+            bold_str = " B" if self._format_bar.current_is_bold else ""
+            italic_str = " I" if self._format_bar.current_is_italic else ""
+            font_info = f"{font_name} {font_size}pt{bold_str}{italic_str}"
         
         self._metrics_bar.update_metrics(
             original_width, new_width, self._fit_status, font_info
@@ -691,7 +941,10 @@ class PDFTextEditorDialog(QDialog):
     
     def _on_apply(self) -> None:
         """Aplicar los cambios."""
-        if not self._edit_area.has_changes():
+        has_text = self._edit_area.has_changes()
+        has_format = self._format_bar.has_format_changes(self._span_data)
+        
+        if not has_text and not has_format:
             self.accept()
             return
         
@@ -709,12 +962,19 @@ class PDFTextEditorDialog(QDialog):
             if reply != QMessageBox.Yes:
                 return
         
-        # Crear resultado
+        # Crear resultado con campos de formato
+        sd = self._span_data
         edited = EditedSpan(
-            original_span=self._span_data,
+            original_span=sd,
             new_text=self._edit_area.get_current_text(),
             original_text=self._edit_area.get_original_text(),
-            fit_status=self._fit_status
+            fit_status=self._fit_status,
+            new_font_size=self._format_bar.get_font_size(sd.get('font_size', 12.0)),
+            new_is_bold=self._format_bar.get_is_bold(sd.get('is_bold', False)),
+            new_is_italic=self._format_bar.get_is_italic(sd.get('is_italic', False)),
+            new_color=self._format_bar.get_color(sd.get('fill_color', '#000000')),
+            new_char_spacing=self._format_bar.get_char_spacing(sd.get('char_spacing', 0.0)),
+            new_word_spacing=self._format_bar.get_word_spacing(sd.get('word_spacing', 0.0)),
         )
         
         self.textEdited.emit(edited)
@@ -743,14 +1003,23 @@ class PDFTextEditorDialog(QDialog):
         Returns:
             EditedSpan si hay cambios, None si no
         """
-        if not self._edit_area.has_changes():
+        has_text = self._edit_area.has_changes()
+        has_format = self._format_bar.has_format_changes(self._span_data)
+        if not has_text and not has_format:
             return None
         
+        sd = self._span_data
         return EditedSpan(
-            original_span=self._span_data,
+            original_span=sd,
             new_text=self._edit_area.get_current_text(),
             original_text=self._edit_area.get_original_text(),
-            fit_status=self._fit_status
+            fit_status=self._fit_status,
+            new_font_size=self._format_bar.get_font_size(sd.get('font_size', 12.0)),
+            new_is_bold=self._format_bar.get_is_bold(sd.get('is_bold', False)),
+            new_is_italic=self._format_bar.get_is_italic(sd.get('is_italic', False)),
+            new_color=self._format_bar.get_color(sd.get('fill_color', '#000000')),
+            new_char_spacing=self._format_bar.get_char_spacing(sd.get('char_spacing', 0.0)),
+            new_word_spacing=self._format_bar.get_word_spacing(sd.get('word_spacing', 0.0)),
         )
 
 

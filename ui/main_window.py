@@ -1717,7 +1717,7 @@ class MainWindow(QMainWindow):
             self,
             "Acerca de PDF Editor Pro",
             "<h2>PDF Editor Pro</h2>"
-            "<p>Versión 1.0.0</p>"
+            "<p>Versión 1.6.0</p>"
             "<p>Editor de PDF con capacidades de:</p>"
             "<ul>"
             "<li>Selección de texto</li>"
