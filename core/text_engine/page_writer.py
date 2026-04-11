@@ -19,7 +19,7 @@ Uso:
 from typing import List, Tuple, Dict, Optional
 import fitz
 
-from .page_document_model import EditableSpan, Paragraph, LineModel
+from .page_document_model import EditableSpan, Paragraph
 
 
 class PageWriter:
