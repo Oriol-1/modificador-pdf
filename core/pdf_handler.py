@@ -12,6 +12,7 @@ import os
 # Importar modelos de datos
 from .models import TextBlock, EditOperation
 from .font_manager import FontManager, FontDescriptor, get_font_manager
+from .page_identity import PageIdentityMap
 
 # Intentar importar pikepdf para reparación de PDFs
 try:
@@ -29,7 +30,7 @@ class PDFDocument:
         self.file_path: Optional[str] = None
         self.modified: bool = False
         # Sistema de deshacer/rehacer basado en snapshots
-        # Cada snapshot es una tupla: (pdf_bytes, overlay_data)
+        # Cada snapshot es una tupla: (pdf_bytes, overlay_data, page_map_state)
         self._undo_snapshots: List[tuple] = []  # Lista de estados anteriores
         self._redo_snapshots: List[tuple] = []  # Lista de estados para rehacer
         self._original_doc_bytes: Optional[bytes] = None
@@ -38,6 +39,8 @@ class PDFDocument:
         # Callback para obtener/restaurar estado de overlays del viewer
         self._get_overlay_state_callback = None
         self._restore_overlay_state_callback = None
+        # Mapa de identidad de páginas (UUID ↔ índice)
+        self.page_map = PageIdentityMap()
         
     def open(self, file_path: str) -> bool:
         """Abre un documento PDF."""
@@ -74,6 +77,8 @@ class PDFDocument:
                     return False
             
             self.file_path = file_path
+            # Inicializar mapa de identidad de páginas
+            self.page_map.initialize(self.doc.page_count)
             # Guardar copia original para restauración (deshacer)
             try:
                 self._original_doc_bytes = self.doc.tobytes(garbage=0, deflate=True)
@@ -162,6 +167,7 @@ class PDFDocument:
         self._undo_snapshots.clear()
         self._redo_snapshots.clear()
         self._original_doc_bytes = None
+        self.page_map = PageIdentityMap()
     
     def is_open(self) -> bool:
         """Verifica si hay un documento abierto."""
@@ -950,21 +956,26 @@ class PDFDocument:
             return False
         
         try:
-            # Guardar estado actual para rehacer (PDF + overlays)
+            # Guardar estado actual para rehacer (PDF + overlays + page_map)
             current_bytes = self.doc.tobytes(garbage=0)
             current_overlay = None
             if self._get_overlay_state_callback:
                 current_overlay = self._get_overlay_state_callback()
-            self._redo_snapshots.append((current_bytes, current_overlay))
+            current_page_map = self.page_map.to_list()
+            self._redo_snapshots.append((current_bytes, current_overlay, current_page_map))
             
-            # Obtener estado anterior (tupla o bytes legacy)
+            # Obtener estado anterior (tupla de 3, tupla de 2, o bytes legacy)
             previous_state = self._undo_snapshots.pop()
-            if isinstance(previous_state, tuple):
+            if isinstance(previous_state, tuple) and len(previous_state) == 3:
+                previous_bytes, previous_overlay, previous_page_map = previous_state
+            elif isinstance(previous_state, tuple) and len(previous_state) == 2:
                 previous_bytes, previous_overlay = previous_state
+                previous_page_map = None
             else:
                 # Compatibilidad con snapshots antiguos (solo bytes)
                 previous_bytes = previous_state
                 previous_overlay = None
+                previous_page_map = None
             
             # Cerrar documento actual
             if self.doc:
@@ -976,6 +987,10 @@ class PDFDocument:
             # Restaurar estado de overlays (si hay callback y datos)
             if self._restore_overlay_state_callback and previous_overlay is not None:
                 self._restore_overlay_state_callback(previous_overlay)
+            
+            # Restaurar mapa de páginas
+            if previous_page_map is not None:
+                self.page_map.from_list(previous_page_map)
             
             self.modified = len(self._undo_snapshots) > 0
             return True
@@ -989,21 +1004,26 @@ class PDFDocument:
             return False
         
         try:
-            # Guardar estado actual para deshacer (PDF + overlays)
+            # Guardar estado actual para deshacer (PDF + overlays + page_map)
             current_bytes = self.doc.tobytes(garbage=0)
             current_overlay = None
             if self._get_overlay_state_callback:
                 current_overlay = self._get_overlay_state_callback()
-            self._undo_snapshots.append((current_bytes, current_overlay))
+            current_page_map = self.page_map.to_list()
+            self._undo_snapshots.append((current_bytes, current_overlay, current_page_map))
             
-            # Obtener estado siguiente (tupla o bytes legacy)
+            # Obtener estado siguiente (tupla de 3, tupla de 2, o bytes legacy)
             next_state = self._redo_snapshots.pop()
-            if isinstance(next_state, tuple):
+            if isinstance(next_state, tuple) and len(next_state) == 3:
+                next_bytes, next_overlay, next_page_map = next_state
+            elif isinstance(next_state, tuple) and len(next_state) == 2:
                 next_bytes, next_overlay = next_state
+                next_page_map = None
             else:
                 # Compatibilidad con snapshots antiguos (solo bytes)
                 next_bytes = next_state
                 next_overlay = None
+                next_page_map = None
             
             # Cerrar documento actual
             if self.doc:
@@ -1015,6 +1035,10 @@ class PDFDocument:
             # Restaurar estado de overlays (si hay callback y datos)
             if self._restore_overlay_state_callback and next_overlay is not None:
                 self._restore_overlay_state_callback(next_overlay)
+            
+            # Restaurar mapa de páginas
+            if next_page_map is not None:
+                self.page_map.from_list(next_page_map)
             
             self.modified = True
             return True
@@ -1041,8 +1065,11 @@ class PDFDocument:
             if self._get_overlay_state_callback:
                 overlay_state = self._get_overlay_state_callback()
             
-            # Guardar tupla (pdf_bytes, overlay_state)
-            self._undo_snapshots.append((current_bytes, overlay_state))
+            # Guardar estado del mapa de páginas
+            page_map_state = self.page_map.to_list()
+            
+            # Guardar tupla (pdf_bytes, overlay_state, page_map_state)
+            self._undo_snapshots.append((current_bytes, overlay_state, page_map_state))
             
             # Limitar el número de niveles de deshacer
             while len(self._undo_snapshots) > self._max_undo_levels:
@@ -2013,4 +2040,229 @@ class PDFDocument:
         
         except Exception as e:
             self._last_error = f"Error detecting bold: {str(e)}"
+            return None
+
+    # ================================================================
+    # OPERACIONES DE PÁGINA: Insertar, Mover, Reordenar, Eliminar
+    # ================================================================
+    
+    def insert_pdf(self, source_path: str, at_page: int = -1) -> Optional[int]:
+        """
+        Inserta todas las páginas de un PDF externo en la posición indicada.
+        
+        Args:
+            source_path: Ruta al PDF a insertar.
+            at_page: Índice donde insertar (0-based). 
+                     -1 = al final del documento.
+        
+        Returns:
+            Número de páginas insertadas, o None si falló.
+        """
+        if not self.doc:
+            self._last_error = "No hay documento abierto"
+            return None
+        
+        try:
+            # Abrir como bytes para evitar bloqueo de archivo
+            with open(source_path, 'rb') as f:
+                source_bytes = f.read()
+            source_doc = fitz.open(stream=source_bytes, filetype="pdf")
+            
+            if source_doc.page_count == 0:
+                source_doc.close()
+                self._last_error = "El PDF a insertar no tiene páginas"
+                return None
+            
+            insert_count = source_doc.page_count
+            
+            # Guardar snapshot antes de modificar
+            self._save_snapshot()
+            
+            # Posición de inserción
+            if at_page < 0 or at_page > self.doc.page_count:
+                effective_page = self.doc.page_count
+                start_at = -1  # al final
+            else:
+                effective_page = at_page
+                start_at = at_page  # PyMuPDF: inserta ANTES de esta página
+            
+            self.doc.insert_pdf(source_doc, start_at=start_at)
+            
+            source_doc.close()
+            
+            # Actualizar mapa de identidad
+            self.page_map.insert_pages(effective_page, insert_count)
+            
+            self.modified = True
+            return insert_count
+        except Exception as e:
+            self._last_error = str(e)
+            print(f"Error al insertar PDF: {e}")
+            return None
+    
+    def insert_pages_from_pdf(self, source_path: str,
+                               source_pages: List[int],
+                               at_page: int = -1) -> Optional[int]:
+        """
+        Inserta páginas específicas de un PDF externo.
+        
+        Args:
+            source_path: Ruta al PDF fuente.
+            source_pages: Lista de índices de páginas a insertar del fuente (0-based).
+            at_page: Posición de inserción en el documento actual (0-based). -1=final.
+        
+        Returns:
+            Número de páginas insertadas, o None si falló.
+        """
+        if not self.doc:
+            self._last_error = "No hay documento abierto"
+            return None
+        
+        try:
+            with open(source_path, 'rb') as f:
+                source_bytes = f.read()
+            source_doc = fitz.open(stream=source_bytes, filetype="pdf")
+            
+            # Validar páginas solicitadas
+            valid_pages = [p for p in source_pages if 0 <= p < source_doc.page_count]
+            if not valid_pages:
+                source_doc.close()
+                self._last_error = "Ninguna página válida para insertar"
+                return None
+            
+            # Guardar snapshot antes de modificar
+            self._save_snapshot()
+            
+            if at_page < 0 or at_page > self.doc.page_count:
+                at_page = self.doc.page_count
+            
+            # Insertar cada página individualmente en orden
+            start_at = at_page - 1 if at_page > 0 else -1
+            for i, src_page in enumerate(valid_pages):
+                self.doc.insert_pdf(source_doc, from_page=src_page, to_page=src_page,
+                                    start_at=start_at + i if start_at >= 0 else -1 + i)
+            
+            source_doc.close()
+            
+            insert_count = len(valid_pages)
+            self.page_map.insert_pages(at_page, insert_count)
+            
+            self.modified = True
+            return insert_count
+        except Exception as e:
+            self._last_error = str(e)
+            print(f"Error al insertar páginas: {e}")
+            return None
+    
+    def move_page(self, from_index: int, to_index: int) -> bool:
+        """
+        Mueve una página de una posición a otra.
+        
+        Args:
+            from_index: Posición actual de la página (0-based).
+            to_index: Nueva posición deseada (0-based).
+        
+        Returns:
+            True si se movió correctamente.
+        """
+        if not self.doc:
+            return False
+        
+        if from_index == to_index:
+            return True  # No hacer nada
+        
+        if not (0 <= from_index < self.doc.page_count):
+            self._last_error = f"Índice origen inválido: {from_index}"
+            return False
+        if not (0 <= to_index < self.doc.page_count):
+            self._last_error = f"Índice destino inválido: {to_index}"
+            return False
+        
+        try:
+            self._save_snapshot()
+            
+            # Construir nueva orden
+            order = list(range(self.doc.page_count))
+            page = order.pop(from_index)
+            order.insert(to_index, page)
+            
+            # Aplicar con select() de PyMuPDF
+            self.doc.select(order)
+            self.page_map.move_page(from_index, to_index)
+            
+            self.modified = True
+            return True
+        except Exception as e:
+            self._last_error = str(e)
+            print(f"Error al mover página: {e}")
+            return False
+    
+    def reorder_pages(self, new_order: List[int]) -> bool:
+        """
+        Reordena todas las páginas según la lista dada.
+        
+        Args:
+            new_order: Lista donde new_order[nueva_pos] = vieja_pos.
+                       Ejemplo: [2, 0, 1] → la pág 2 pasa a ser la 0.
+        
+        Returns:
+            True si se reordenó correctamente.
+        """
+        if not self.doc:
+            return False
+        
+        # Validar que es una permutación válida
+        if sorted(new_order) != list(range(self.doc.page_count)):
+            self._last_error = "La lista de reorden no es una permutación válida"
+            return False
+        
+        # Si el orden no cambia, no hacer nada
+        if new_order == list(range(self.doc.page_count)):
+            return True
+        
+        try:
+            self._save_snapshot()
+            
+            self.doc.select(new_order)
+            self.page_map.reorder(new_order)
+            
+            self.modified = True
+            return True
+        except Exception as e:
+            self._last_error = str(e)
+            print(f"Error al reordenar páginas: {e}")
+            return False
+    
+    def delete_page(self, page_index: int) -> Optional[str]:
+        """
+        Elimina una página del documento.
+        
+        Args:
+            page_index: Índice de la página a eliminar (0-based).
+        
+        Returns:
+            UUID de la página eliminada, o None si falló.
+        """
+        if not self.doc:
+            return None
+        
+        if self.doc.page_count <= 1:
+            self._last_error = "No se puede eliminar la única página del documento"
+            return None
+        
+        if not (0 <= page_index < self.doc.page_count):
+            self._last_error = f"Índice de página inválido: {page_index}"
+            return None
+        
+        try:
+            self._save_snapshot()
+            
+            deleted_uuid = self.page_map.remove_page(page_index)
+            self.doc.delete_page(page_index)
+            
+            self.modified = True
+            return deleted_uuid
+        except Exception as e:
+            self._last_error = str(e)
+            print(f"Error al eliminar página: {e}")
             return None

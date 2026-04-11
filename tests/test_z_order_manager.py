@@ -8,7 +8,7 @@ import pytest
 # unittest.mock available if needed
 import json
 
-from core.text_engine.z_order_manager import (
+from _deprecated.z_order_manager import (
     # Enums
     LayerLevel,
     CollisionType,

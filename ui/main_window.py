@@ -809,6 +809,13 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self.toolbar.action_zoom_out)
         view_menu.addAction(self.toolbar.action_fit_width)
         
+        # Menú Documento
+        doc_menu = menubar.addMenu("&Documento")
+        insert_pdf_action = QAction("📄 Insertar PDF...", self)
+        insert_pdf_action.setShortcut("Ctrl+Shift+I")
+        insert_pdf_action.triggered.connect(self._insert_pdf_dialog)
+        doc_menu.addAction(insert_pdf_action)
+        
         # Menú Ayuda
         help_menu = menubar.addMenu("A&yuda")
         
@@ -863,6 +870,7 @@ class MainWindow(QMainWindow):
         """Conecta todas las señales."""
         # Toolbar
         self.toolbar.openFile.connect(self.open_file)
+        self.toolbar.insertPdf.connect(self._insert_pdf_dialog)
         self.toolbar.saveFile.connect(self.save_file)
         self.toolbar.saveFileAs.connect(self.save_file_as)
         self.toolbar.closeFile.connect(self.close_file)
@@ -886,6 +894,8 @@ class MainWindow(QMainWindow):
         
         # Panel de miniaturas
         self.thumbnail_panel.pageSelected.connect(self.go_to_page)
+        self.thumbnail_panel.pagesReordered.connect(self._on_pages_reordered)
+        self.thumbnail_panel.pageDeleteRequested.connect(self._on_page_delete_requested)
         
         # Workspace
         self.workspace_status.openPending.connect(self.show_pending_pdfs)
@@ -1483,6 +1493,118 @@ class MainWindow(QMainWindow):
             self.toolbar.set_current_page(page_num)
             self.thumbnail_panel.select_page(page_num)
             self.update_status()
+    
+    def _on_pages_reordered(self, new_order: list):
+        """Maneja el reordenamiento de páginas desde el panel de miniaturas."""
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+        
+        # Sincronizar textos visuales antes de reordenar
+        self.pdf_viewer.sync_all_text_items_to_data()
+        
+        if self.pdf_doc.reorder_pages(new_order):
+            # Reordenar las claves UUID en editable_texts_data ya es correcto
+            # porque las claves son UUIDs (no cambian), pero necesitamos
+            # regenerar las miniaturas y re-renderizar
+            self.thumbnail_panel.generate_thumbnails()
+            current = self.pdf_viewer.current_page
+            if current >= self.pdf_doc.page_count():
+                current = self.pdf_doc.page_count() - 1
+            self.go_to_page(current)
+            self.update_undo_redo_state()
+            self.status_label.setText("Páginas reordenadas")
+    
+    def _on_page_delete_requested(self, page_num: int):
+        """Maneja la solicitud de eliminar una página."""
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+        
+        from PyQt5.QtWidgets import QMessageBox
+        reply = QMessageBox.question(
+            self, "Eliminar página",
+            f"¿Eliminar la página {page_num + 1}?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
+        
+        # Sincronizar textos antes de eliminar
+        self.pdf_viewer.sync_all_text_items_to_data()
+        
+        deleted_uuid = self.pdf_doc.delete_page(page_num)
+        if deleted_uuid:
+            # Eliminar datos de texto de la página borrada
+            if deleted_uuid in self.pdf_viewer.editable_texts_data:
+                del self.pdf_viewer.editable_texts_data[deleted_uuid]
+            
+            self.thumbnail_panel.generate_thumbnails()
+            new_page = min(page_num, self.pdf_doc.page_count() - 1)
+            self.go_to_page(new_page)
+            self.update_undo_redo_state()
+            self.status_label.setText(f"Página {page_num + 1} eliminada")
+    
+    def _insert_pdf_dialog(self):
+        """Abre un diálogo para insertar un PDF externo en el documento actual."""
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            self.status_label.setText("Primero abra un documento PDF")
+            return
+        
+        from PyQt5.QtWidgets import QFileDialog, QInputDialog, QMessageBox
+        
+        # Seleccionar archivo PDF
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Seleccionar PDF a insertar",
+            "", "Archivos PDF (*.pdf)"
+        )
+        if not file_path:
+            return
+        
+        # Commit overlays pendientes antes de insertar
+        if self.pdf_viewer.has_pending_overlays():
+            reply = QMessageBox.question(
+                self, "Textos pendientes",
+                "Hay textos overlay pendientes de escribir.\n"
+                "¿Desea confirmarlos antes de insertar el PDF?",
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+                QMessageBox.Yes
+            )
+            if reply == QMessageBox.Cancel:
+                return
+            if reply == QMessageBox.Yes:
+                self.pdf_viewer.sync_all_text_items_to_data()
+                self.pdf_viewer.commit_overlay_texts()
+        
+        # Elegir posición de inserción
+        page_count = self.pdf_doc.page_count()
+        positions = [f"Después de la página {i + 1}" for i in range(page_count)]
+        positions.insert(0, "Al inicio del documento")
+        positions.append("Al final del documento")
+        
+        position, ok = QInputDialog.getItem(
+            self, "Posición de inserción",
+            "¿Dónde insertar las páginas?",
+            positions, page_count,  # default: al final
+            False
+        )
+        if not ok:
+            return
+        
+        idx = positions.index(position)
+        if idx == 0:
+            at_page = 0
+        elif idx == len(positions) - 1:
+            at_page = -1  # al final
+        else:
+            at_page = idx  # después de página idx
+        
+        result = self.pdf_doc.insert_pdf(file_path, at_page=at_page)
+        if result is not None:
+            self.thumbnail_panel.generate_thumbnails()
+            self.go_to_page(result)
+            self.update_undo_redo_state()
+            self.status_label.setText(f"PDF insertado correctamente")
+        else:
+            QMessageBox.warning(self, "Error", "No se pudo insertar el PDF.")
     
     def undo(self):
         """Deshace la última acción."""

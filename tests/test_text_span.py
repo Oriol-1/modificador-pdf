@@ -538,13 +538,13 @@ class TestCreateSpanFromPyMuPDF:
     
     def test_color_conversion_rgb(self):
         """Convertir color int a hex correctamente."""
-        # Rojo: en formato BGR de PyMuPDF
+        # Rojo puro en formato RGB de PyMuPDF (0xRRGGBB)
         span_dict = {
             "text": "Red",
             "bbox": (0, 0, 0, 0),
             "font": "Arial",
             "size": 12,
-            "color": 0xFF,  # Rojo puro
+            "color": 0xFF0000,  # Rojo puro
         }
         
         span = create_span_from_pymupdf(span_dict, page_num=0)
@@ -558,7 +558,7 @@ class TestCreateSpanFromPyMuPDF:
             "bbox": (0, 0, 0, 0),
             "font": "Arial",
             "size": 12,
-            "color": 0xFF0000,  # Azul en BGR
+            "color": 0xFF,  # Azul en RGB (0x0000FF)
         }
         
         span = create_span_from_pymupdf(span_dict, page_num=0)

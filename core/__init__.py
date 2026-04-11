@@ -1,6 +1,7 @@
 """Módulo core del editor de PDF."""
 from .models import TextBlock, EditOperation
 from .pdf_handler import PDFDocument
+from .page_identity import PageIdentityMap
 from .logger import (
     DEBUG_NONE, DEBUG_RENDER, DEBUG_COORDS, DEBUG_EDIT, 
     DEBUG_UNDO, DEBUG_SELECTION, DEBUG_OVERLAY, DEBUG_ALL,

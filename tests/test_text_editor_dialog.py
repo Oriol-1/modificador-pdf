@@ -24,7 +24,7 @@ class TestTextEditResult:
     
     def test_create_result(self):
         """Test crear un TextEditResult básico."""
-        from ui.text_editor_dialog import TextEditResult
+        from _deprecated.text_editor_dialog import TextEditResult
         
         result = TextEditResult(
             text="Nuevo texto",
@@ -47,7 +47,7 @@ class TestTextEditResult:
     
     def test_result_with_truncation(self):
         """Test resultado con truncación."""
-        from ui.text_editor_dialog import TextEditResult
+        from _deprecated.text_editor_dialog import TextEditResult
         
         result = TextEditResult(
             text="Texto rec...",
@@ -66,7 +66,7 @@ class TestTextEditResult:
     
     def test_result_with_font_descriptor(self):
         """Test resultado con descriptor de fuente."""
-        from ui.text_editor_dialog import TextEditResult
+        from _deprecated.text_editor_dialog import TextEditResult
         
         # Mock font descriptor
         mock_font = MagicMock()
@@ -96,26 +96,26 @@ class TestTextPreviewWidget:
     @patch('PyQt5.QtWidgets.QLabel')
     def test_widget_creation(self, mock_label, mock_layout, mock_frame):
         """Test crear widget de preview."""
-        from ui.text_editor_dialog import TextPreviewWidget
+        from _deprecated.text_editor_dialog import TextPreviewWidget
         
         # No podemos instanciar sin Qt real, pero verificamos la clase existe
         assert TextPreviewWidget is not None
     
     def test_widget_has_set_font_method(self):
         """Test que TextPreviewWidget tiene método set_font."""
-        from ui.text_editor_dialog import TextPreviewWidget
+        from _deprecated.text_editor_dialog import TextPreviewWidget
         
         assert hasattr(TextPreviewWidget, 'set_font')
     
     def test_widget_has_set_text_method(self):
         """Test que TextPreviewWidget tiene método set_text."""
-        from ui.text_editor_dialog import TextPreviewWidget
+        from _deprecated.text_editor_dialog import TextPreviewWidget
         
         assert hasattr(TextPreviewWidget, 'set_text')
     
     def test_widget_has_get_text_width_method(self):
         """Test que TextPreviewWidget tiene método get_text_width."""
-        from ui.text_editor_dialog import TextPreviewWidget
+        from _deprecated.text_editor_dialog import TextPreviewWidget
         
         assert hasattr(TextPreviewWidget, 'get_text_width')
 
@@ -125,13 +125,13 @@ class TestFitStatusWidget:
     
     def test_class_exists(self):
         """Test que la clase FitStatusWidget existe."""
-        from ui.text_editor_dialog import FitStatusWidget
+        from _deprecated.text_editor_dialog import FitStatusWidget
         
         assert FitStatusWidget is not None
     
     def test_has_set_fits_method(self):
         """Test que tiene método set_fits."""
-        from ui.text_editor_dialog import FitStatusWidget
+        from _deprecated.text_editor_dialog import FitStatusWidget
         
         assert hasattr(FitStatusWidget, 'set_fits')
 
@@ -141,13 +141,13 @@ class TestAdjustmentOptionsWidget:
     
     def test_class_exists(self):
         """Test que la clase AdjustmentOptionsWidget existe."""
-        from ui.text_editor_dialog import AdjustmentOptionsWidget
+        from _deprecated.text_editor_dialog import AdjustmentOptionsWidget
         
         assert AdjustmentOptionsWidget is not None
     
     def test_has_option_selected_signal(self):
         """Test que tiene señal option_selected."""
-        from ui.text_editor_dialog import AdjustmentOptionsWidget
+        from _deprecated.text_editor_dialog import AdjustmentOptionsWidget
         
         # La señal se define como atributo de clase
         assert hasattr(AdjustmentOptionsWidget, 'option_selected')
@@ -158,37 +158,37 @@ class TestEnhancedTextEditDialog:
     
     def test_class_exists(self):
         """Test que la clase EnhancedTextEditDialog existe."""
-        from ui.text_editor_dialog import EnhancedTextEditDialog
+        from _deprecated.text_editor_dialog import EnhancedTextEditDialog
         
         assert EnhancedTextEditDialog is not None
     
     def test_has_get_result_method(self):
         """Test que tiene método get_result."""
-        from ui.text_editor_dialog import EnhancedTextEditDialog
+        from _deprecated.text_editor_dialog import EnhancedTextEditDialog
         
         assert hasattr(EnhancedTextEditDialog, 'get_result')
     
     def test_has_get_final_text_method(self):
         """Test que tiene método get_final_text."""
-        from ui.text_editor_dialog import EnhancedTextEditDialog
+        from _deprecated.text_editor_dialog import EnhancedTextEditDialog
         
         assert hasattr(EnhancedTextEditDialog, 'get_final_text')
     
     def test_has_get_styling_choices_method(self):
         """Test que tiene método get_styling_choices."""
-        from ui.text_editor_dialog import EnhancedTextEditDialog
+        from _deprecated.text_editor_dialog import EnhancedTextEditDialog
         
         assert hasattr(EnhancedTextEditDialog, 'get_styling_choices')
     
     def test_has_validate_text_method(self):
         """Test que tiene método validate_text."""
-        from ui.text_editor_dialog import EnhancedTextEditDialog
+        from _deprecated.text_editor_dialog import EnhancedTextEditDialog
         
         assert hasattr(EnhancedTextEditDialog, 'validate_text')
     
     def test_has_apply_adjustment_method(self):
         """Test que tiene método apply_adjustment."""
-        from ui.text_editor_dialog import EnhancedTextEditDialog
+        from _deprecated.text_editor_dialog import EnhancedTextEditDialog
         
         assert hasattr(EnhancedTextEditDialog, 'apply_adjustment')
 
@@ -198,14 +198,14 @@ class TestShowTextEditDialog:
     
     def test_function_exists(self):
         """Test que show_text_edit_dialog existe."""
-        from ui.text_editor_dialog import show_text_edit_dialog
+        from _deprecated.text_editor_dialog import show_text_edit_dialog
         
         assert show_text_edit_dialog is not None
         assert callable(show_text_edit_dialog)
     
     def test_function_signature(self):
         """Test que tiene los parámetros correctos."""
-        from ui.text_editor_dialog import show_text_edit_dialog
+        from _deprecated.text_editor_dialog import show_text_edit_dialog
         import inspect
         
         sig = inspect.signature(show_text_edit_dialog)
@@ -221,7 +221,7 @@ class TestModuleExports:
     
     def test_all_classes_exported(self):
         """Test que todas las clases están exportadas."""
-        from ui.text_editor_dialog import (
+        from _deprecated.text_editor_dialog import (
             EnhancedTextEditDialog,
             TextEditResult,
             TextPreviewWidget,
@@ -242,20 +242,20 @@ class TestUIInit:
     """Tests para verificar que ui/__init__.py exporta correctamente."""
     
     def test_enhanced_dialog_in_ui_init(self):
-        """Test que EnhancedTextEditDialog está en ui.__init__."""
-        from ui import EnhancedTextEditDialog
+        """Test que EnhancedTextEditDialog está en _deprecated."""
+        from _deprecated.text_editor_dialog import EnhancedTextEditDialog
         
         assert EnhancedTextEditDialog is not None
     
     def test_text_edit_result_in_ui_init(self):
-        """Test que TextEditResult está en ui.__init__."""
-        from ui import TextEditResult
+        """Test que TextEditResult está en _deprecated."""
+        from _deprecated.text_editor_dialog import TextEditResult
         
         assert TextEditResult is not None
     
     def test_show_function_in_ui_init(self):
-        """Test que show_text_edit_dialog está en ui.__init__."""
-        from ui import show_text_edit_dialog
+        """Test que show_text_edit_dialog está en _deprecated."""
+        from _deprecated.text_editor_dialog import show_text_edit_dialog
         
         assert show_text_edit_dialog is not None
 

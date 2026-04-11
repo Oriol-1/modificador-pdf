@@ -15,6 +15,7 @@ class EditorToolBar(QToolBar):
     
     # Señales
     openFile = pyqtSignal()
+    insertPdf = pyqtSignal()
     saveFile = pyqtSignal()
     saveFileAs = pyqtSignal()
     closeFile = pyqtSignal()  # Nueva señal para cerrar PDF
@@ -67,6 +68,13 @@ class EditorToolBar(QToolBar):
         self.action_open.setToolTip("Abrir archivo PDF (Ctrl+O)")
         self.action_open.triggered.connect(self.openFile.emit)
         self.addAction(self.action_open)
+        
+        self.action_insert_pdf = QAction("📄 Insertar PDF", self)
+        self.action_insert_pdf.setShortcut("Ctrl+Shift+I")
+        self.action_insert_pdf.setToolTip("Insertar otro PDF en el documento actual (Ctrl+Shift+I)")
+        self.action_insert_pdf.triggered.connect(self.insertPdf.emit)
+        self.action_insert_pdf.setEnabled(False)
+        self.addAction(self.action_insert_pdf)
         
         self.action_save = QAction("💾 Guardar", self)
         self.action_save.setShortcut(QKeySequence.Save)
@@ -263,6 +271,7 @@ class EditorToolBar(QToolBar):
         self.action_save.setEnabled(loaded)
         self.action_save_as.setEnabled(loaded)
         self.action_close.setEnabled(loaded)
+        self.action_insert_pdf.setEnabled(loaded)
         
         for action in self.tool_actions.values():
             action.setEnabled(loaded)

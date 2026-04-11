@@ -220,8 +220,8 @@ class PDFPageView(QGraphicsView):
         self.floating_label = None
         self.highlight_items = []
         
-        # Textos editables añadidos por el usuario (por página)
-        # Estructura: {page_num: [dict con datos del texto, ...]}
+        # Textos editables añadidos por el usuario (por página, clave = UUID de página)
+        # Estructura: {page_uuid: [dict con datos del texto, ...]}
         # Cada dict tiene: text, pdf_rect, font_size, color, view_rect
         self.editable_texts_data = {}
         self.editable_text_items = []  # Items gráficos actuales (se recrean al renderizar)
@@ -764,6 +764,25 @@ class PDFPageView(QGraphicsView):
         self.drag_start_pos = None
         self.drag_original_rect = None
         self.text_was_moved = False
+    
+    # --- Helpers de identidad de página (UUID) ---
+    
+    def _current_page_key(self) -> str:
+        """Obtiene la clave (UUID) de la página actual para editable_texts_data."""
+        if self.pdf_doc and hasattr(self.pdf_doc, 'page_map'):
+            uid = self.pdf_doc.page_map.uuid_for_index(self.current_page)
+            if uid:
+                return uid
+        # Fallback a índice numérico (compatibilidad)
+        return self.current_page
+    
+    def _page_key(self, page_index: int) -> str:
+        """Obtiene la clave (UUID) para un índice de página dado."""
+        if self.pdf_doc and hasattr(self.pdf_doc, 'page_map'):
+            uid = self.pdf_doc.page_map.uuid_for_index(page_index)
+            if uid:
+                return uid
+        return page_index
     
     def get_overlay_state(self) -> dict:
         """Obtiene una copia del estado actual de overlays para el sistema de undo."""
@@ -2347,7 +2366,7 @@ class PDFPageView(QGraphicsView):
         if text_item:
             text_item.internal_pdf_rect = internal_rect
             # También actualizar los datos guardados
-            page_data = self.editable_texts_data.get(self.current_page, [])
+            page_data = self.editable_texts_data.get(self._current_page_key(), [])
             if page_data:
                 page_data[-1]['internal_pdf_rect'] = internal_rect
             
@@ -2378,7 +2397,7 @@ class PDFPageView(QGraphicsView):
             text_item.internal_pdf_rect = None
             
             # CRÍTICO: Sincronizar los flags con los datos guardados
-            page_data = self.editable_texts_data.get(self.current_page, [])
+            page_data = self.editable_texts_data.get(self._current_page_key(), [])
             if page_data:
                 page_data[-1]['is_overlay'] = True
                 page_data[-1]['pending_write'] = True
@@ -2546,9 +2565,10 @@ class PDFPageView(QGraphicsView):
             'is_from_pdf': is_from_pdf  # CRÍTICO: Marcar si viene del PDF para preservar rect
         }
         
-        if self.current_page not in self.editable_texts_data:
-            self.editable_texts_data[self.current_page] = []
-        self.editable_texts_data[self.current_page].append(text_data)
+        page_key = self._current_page_key()
+        if page_key not in self.editable_texts_data:
+            self.editable_texts_data[page_key] = []
+        self.editable_texts_data[page_key].append(text_data)
         
         # Crear y añadir el item gráfico
         text_item = self._create_text_item_from_data(text_data)
@@ -2588,7 +2608,7 @@ class PDFPageView(QGraphicsView):
         text_item.needs_erase = text_data.get('needs_erase', False)
         text_item.is_overlay = text_data.get('is_overlay', False)
         text_item.pending_write = text_data.get('pending_write', False)
-        text_item.data_index = len(self.editable_texts_data.get(self.current_page, [])) - 1
+        text_item.data_index = len(self.editable_texts_data.get(self._current_page_key(), [])) - 1
         # CRÍTICO: Preservar text_runs y has_mixed_styles para estilos al mover
         text_item.text_runs = text_data.get('text_runs')
         text_item.has_mixed_styles = text_data.get('has_mixed_styles', False)
@@ -2782,8 +2802,9 @@ class PDFPageView(QGraphicsView):
     def _remove_text_data_for_item(self, text_item: EditableTextItem):
         """Elimina los datos guardados de un text_item del overlay system."""
         data_index = getattr(text_item, 'data_index', None)
-        if data_index is not None and self.current_page in self.editable_texts_data:
-            page_data = self.editable_texts_data[self.current_page]
+        page_key = self._current_page_key()
+        if data_index is not None and page_key in self.editable_texts_data:
+            page_data = self.editable_texts_data[page_key]
             if 0 <= data_index < len(page_data):
                 page_data.pop(data_index)
                 # Actualizar indices de los items restantes
@@ -3273,7 +3294,7 @@ class PDFPageView(QGraphicsView):
         
         # Eliminar de los datos guardados usando data_index
         data_index = getattr(text_item, 'data_index', None)
-        page_data = self.editable_texts_data.get(self.current_page, [])
+        page_data = self.editable_texts_data.get(self._current_page_key(), [])
         
         if data_index is not None and 0 <= data_index < len(page_data):
             del page_data[data_index]
@@ -3381,7 +3402,7 @@ class PDFPageView(QGraphicsView):
 
     def _update_text_data(self, text_item: EditableTextItem):
         """Actualiza los datos guardados del texto usando el índice directo."""
-        page_data = self.editable_texts_data.get(self.current_page, [])
+        page_data = self.editable_texts_data.get(self._current_page_key(), [])
         
         # Usar data_index si está disponible (método más confiable)
         data_index = getattr(text_item, 'data_index', None)
@@ -3476,22 +3497,30 @@ class PDFPageView(QGraphicsView):
         Elimina los registros de textos vacíos de editable_texts_data.
         
         Args:
-            page_num: Página específica a limpiar, o None para limpiar todas
+            page_num: Página específica a limpiar (índice int), o None para limpiar todas
         """
         if page_num is not None:
-            # Limpiar solo una página
-            if page_num in self.editable_texts_data:
-                original_count = len(self.editable_texts_data[page_num])
-                self.editable_texts_data[page_num] = [
-                    data for data in self.editable_texts_data[page_num]
+            # Limpiar solo una página – traducir índice a UUID key
+            page_key = self._page_key(page_num)
+            if page_key in self.editable_texts_data:
+                original_count = len(self.editable_texts_data[page_key])
+                self.editable_texts_data[page_key] = [
+                    data for data in self.editable_texts_data[page_key]
                     if data.get('text') and data.get('text').strip()
                 ]
-                removed = original_count - len(self.editable_texts_data[page_num])
+                removed = original_count - len(self.editable_texts_data[page_key])
                 # Textos vacíos eliminados silenciosamente
         else:
             # Limpiar todas las páginas
-            for pnum in list(self.editable_texts_data.keys()):
-                self._clean_empty_texts(pnum)
+            for pkey in list(self.editable_texts_data.keys()):
+                # Las claves ya son UUIDs, pasar directamente
+                if pkey in self.editable_texts_data:
+                    original_count = len(self.editable_texts_data[pkey])
+                    self.editable_texts_data[pkey] = [
+                        data for data in self.editable_texts_data[pkey]
+                        if data.get('text') and data.get('text').strip()
+                    ]
+                    removed = original_count - len(self.editable_texts_data[pkey])
     
     def _restore_editable_texts_for_page(self):
         """Restaura los items editables para la página actual después de re-renderizar."""
@@ -3503,7 +3532,7 @@ class PDFPageView(QGraphicsView):
         self.selected_text_item = None
         
         # Recrear los items gráficos desde los datos guardados
-        page_data = self.editable_texts_data.get(self.current_page, [])
+        page_data = self.editable_texts_data.get(self._current_page_key(), [])
         
         for i, text_data in enumerate(page_data):
             # Doble verificación: ignorar textos vacíos
@@ -3606,12 +3635,21 @@ class PDFPageView(QGraphicsView):
         total_processed = 0
         
         # Recorrer todas las páginas con textos
-        for page_num, page_texts in self.editable_texts_data.items():
+        # Las claves ahora son UUIDs; traducir a índice para PyMuPDF
+        for page_key, page_texts in self.editable_texts_data.items():
+            # Traducir UUID/key a índice numérico para PyMuPDF
+            if hasattr(self, 'pdf_doc') and self.pdf_doc and hasattr(self.pdf_doc, 'page_map'):
+                page_idx = self.pdf_doc.page_map.index_for_uuid(page_key)
+                if page_idx is None:
+                    page_idx = page_key  # fallback
+            else:
+                page_idx = page_key  # fallback (int legacy)
+            
             for text_data in page_texts:
                 # Solo procesar textos overlay pendientes
                 if text_data.get('is_overlay') and text_data.get('pending_write'):
                     total_processed += 1
-                    print(f"\nProcesando overlay en página {page_num}: '{text_data.get('text', '')[:30]}'...")
+                    print(f"\nProcesando overlay en página {page_idx}: '{text_data.get('text', '')[:30]}'...")
                     
                     pdf_rect = text_data.get('pdf_rect')
                     if not pdf_rect:
@@ -3624,7 +3662,7 @@ class PDFPageView(QGraphicsView):
                     if original_rect:
                         try:
                             self.pdf_doc.erase_text_transparent(
-                                page_num,
+                                page_idx,
                                 original_rect,
                                 save_snapshot=False
                             )
@@ -3642,7 +3680,7 @@ class PDFPageView(QGraphicsView):
                         # Escribir con runs para preservar tipografía, tamaño, estilos
                         try:
                             result = self.pdf_doc.add_text_runs_to_page(
-                                page_num,
+                                page_idx,
                                 pdf_rect,
                                 text_runs,
                                 line_spacing=line_spacing,
@@ -3651,7 +3689,7 @@ class PDFPageView(QGraphicsView):
                         except TypeError:
                             # Fallback si no acepta line_spacing
                             result = self.pdf_doc.add_text_runs_to_page(
-                                page_num,
+                                page_idx,
                                 pdf_rect,
                                 text_runs,
                                 save_snapshot=False
@@ -3660,7 +3698,7 @@ class PDFPageView(QGraphicsView):
                     else:
                         # Escribir texto simple (sin runs disponibles)
                         result = self.pdf_doc.add_text_to_page(
-                            page_num,
+                            page_idx,
                             pdf_rect,
                             text_data['text'],
                             font_size=text_data.get('font_size', 12),
@@ -3690,7 +3728,7 @@ class PDFPageView(QGraphicsView):
         for item in self.scene.items():
             if isinstance(item, EditableTextItem):
                 data_index = getattr(item, 'data_index', None)
-                page_data = self.editable_texts_data.get(self.current_page, [])
+                page_data = self.editable_texts_data.get(self._current_page_key(), [])
                 if data_index is not None and 0 <= data_index < len(page_data):
                     data = page_data[data_index]
                     item.is_overlay = data.get('is_overlay', False)
