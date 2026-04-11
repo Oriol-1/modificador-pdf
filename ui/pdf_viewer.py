@@ -13,6 +13,38 @@ from PyQt5.QtGui import (
     QFont, QFontMetrics
 )
 import fitz
+from collections import Counter
+
+
+def _dominant_style(spans_or_runs):
+    """Calcula la fuente/tamaño/bold/color dominante ponderado por longitud de texto.
+    
+    Recibe una lista de dicts con keys: text, font_name, font_size, is_bold, color.
+    Retorna dict con las claves dominantes. Si la lista está vacía retorna defaults.
+    """
+    if not spans_or_runs:
+        return {'font_name': 'Helvetica', 'font_size': 12.0, 'is_bold': False, 'color': '#000000'}
+    
+    font_c = Counter()
+    size_c = Counter()
+    bold_c = Counter()
+    color_c = Counter()
+    
+    for s in spans_or_runs:
+        w = max(len((s.get('text', '') or '').strip()), 1)
+        sz = s.get('font_size', 12.0)
+        if sz and sz >= 1:  # Ignorar fuentes insignificantes
+            font_c[s.get('font_name', 'Helvetica')] += w
+            size_c[sz] += w
+            bold_c[s.get('is_bold', False)] += w
+            color_c[s.get('color', '#000000')] += w
+    
+    return {
+        'font_name': font_c.most_common(1)[0][0] if font_c else 'Helvetica',
+        'font_size': size_c.most_common(1)[0][0] if size_c else 12.0,
+        'is_bold': bold_c.most_common(1)[0][0] if bold_c else False,
+        'color': color_c.most_common(1)[0][0] if color_c else '#000000',
+    }
 
 # Importar elementos gráficos y utilidades desde módulos separados
 from .graphics_items import (
@@ -1297,13 +1329,13 @@ class PDFPageView(QGraphicsView):
                 original_text += '\n'
             original_text += span.get('text', '')
         
-        # Obtener estilos del primer span o usar defaults
+        # Obtener estilos DOMINANTES (moda ponderada) de todos los spans
         if intersecting_spans:
-            first_span = intersecting_spans[0]
-            base_font_size = first_span.get('font_size', 12)
-            base_is_bold = first_span.get('is_bold', False)
-            base_font_name = first_span.get('font_name', 'helv')
-            color_str = first_span.get('color', '#000000')
+            _dom = _dominant_style(intersecting_spans)
+            base_font_size = _dom['font_size']
+            base_is_bold = _dom['is_bold']
+            base_font_name = _dom['font_name']
+            color_str = _dom['color']
             try:
                 base_color = tuple(int(color_str.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
             except:
@@ -2307,11 +2339,11 @@ class PDFPageView(QGraphicsView):
                     text_runs = []
                     combined_text_from_runs = ''
                     
-                    # Extraer valores del primer span como referencia base
-                    first_span = spans[0]
-                    real_font_size = first_span.get('font_size', block.font_size or 12)
-                    real_font_name = first_span.get('font_name', font_name) or font_name
-                    real_is_bold = first_span.get('is_bold', is_bold)
+                    # Extraer valores DOMINANTES de todos los spans (moda ponderada)
+                    _dom = _dominant_style(spans)
+                    real_font_size = _dom['font_size']
+                    real_font_name = _dom['font_name'] or font_name
+                    real_is_bold = _dom['is_bold']
                     
                     # Calcular interlineado: diferencia entre line_y de spans consecutivos
                     line_y_values = []
@@ -2739,14 +2771,13 @@ class PDFPageView(QGraphicsView):
         # No importa si los estilos son "iguales", usar runs preserva mejor la estructura
         has_runs = len(runs_data) > 0
         
-        # Obtener el estilo principal (primer run o estilo uniforme)
+        # Obtener el estilo DOMINANTE de todos los runs (moda ponderada)
         if runs_data:
-            first_run = runs_data[0]
-            font_size = first_run.get('font_size', base_font_size)
-            is_bold = first_run.get('is_bold', False)
-            # Usar la fuente original del PDF si el run no especifica una diferente
-            font_name = first_run.get('font_name') or original_font_name or 'Helvetica'
-            color_str = first_run.get('color', '#000000')
+            _dom = _dominant_style(runs_data)
+            font_size = _dom['font_size'] or base_font_size
+            is_bold = _dom['is_bold']
+            font_name = _dom['font_name'] or original_font_name or 'Helvetica'
+            color_str = _dom['color']
             # Convertir color hex a tuple RGB
             try:
                 color = tuple(int(color_str.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
@@ -2875,12 +2906,12 @@ class PDFPageView(QGraphicsView):
         
         view_rect = self.pdf_to_view_rect(pdf_rect)
         
-        # Obtener estilo del primer run
+        # Obtener estilo DOMINANTE de todos los runs (moda ponderada)
         if runs_data:
-            first_run = runs_data[0]
-            font_size = first_run.get('font_size', 12.0)
-            is_bold = first_run.get('is_bold', False)
-            color_str = first_run.get('color', '#000000')
+            _dom = _dominant_style(runs_data)
+            font_size = _dom['font_size']
+            is_bold = _dom['is_bold']
+            color_str = _dom['color']
             try:
                 color = tuple(int(color_str.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
             except:
@@ -3033,13 +3064,23 @@ class PDFPageView(QGraphicsView):
         spans = self._get_text_spans_for_item(text_item)
         has_mixed_styles = len(spans) > 1
         
+        # CRÍTICO: Calcular fuente/tamaño dominante de los spans reales
+        # para que el editor use la fuente correcta como base (no 'Helvetica' genérico)
+        if spans:
+            _dom_spans = _dominant_style(spans)
+            dominant_font_name = _dom_spans['font_name'] or 'Helvetica'
+            dominant_font_size = _dom_spans['font_size'] or current_font_size
+        else:
+            dominant_font_name = current_font_name.replace('hebo', 'Helvetica').replace('helv', 'Helvetica')
+            dominant_font_size = current_font_size
+        
         # PRIORIDAD 0: Usar WordLikeEditorDialog - Editor completo tipo Word
         if HAS_WORD_LIKE_EDITOR:
             try:
                 # Crear DocumentStructure desde los spans del PDF
                 doc_structure = DocumentStructure(
-                    base_font_name=current_font_name.replace('hebo', 'Helvetica').replace('helv', 'Helvetica'),
-                    base_font_size=current_font_size,
+                    base_font_name=dominant_font_name,
+                    base_font_size=dominant_font_size,
                     max_width=max_width
                 )
                 
@@ -3063,8 +3104,8 @@ class PDFPageView(QGraphicsView):
                     # Si no hay spans, crear uno con el texto actual
                     doc_structure.runs.append(TextRunInfo(
                         text=current_text,
-                        font_name=current_font_name.replace('hebo', 'Helvetica').replace('helv', 'Helvetica'),
-                        font_size=current_font_size,
+                        font_name=dominant_font_name,
+                        font_size=dominant_font_size,
                         is_bold=current_is_bold,
                         is_italic=False,
                         color='#000000'
@@ -3083,14 +3124,21 @@ class PDFPageView(QGraphicsView):
                     # CRÍTICO: Obtener si el texto REALMENTE cambió (comparación del editor)
                     text_actually_changed = metadata.get('text_actually_changed', True)
                     
+                    # CRÍTICO: Si el texto NO cambió, NO hacer nada
+                    # Evita borrar/reescribir innecesariamente y corromper estilos
+                    if not text_actually_changed:
+                        print("  SIN CAMBIOS - no se aplica ninguna edición")
+                        return
+                    
                     # Si el usuario aplicó múltiples estilos, guardar como runs
                     if metadata.get('has_mixed_styles', False) and len(runs_data) > 1:
                         # Guardar los runs para aplicarlos al PDF
                         self._apply_rich_text_edit(text_item, new_text, runs_data, metadata)
                     else:
                         # Estilo uniforme - usar método simple
-                        new_is_bold = runs_data[0].get('is_bold', False) if runs_data else current_is_bold
-                        new_font_size = runs_data[0].get('font_size', current_font_size) if runs_data else current_font_size
+                        _dom = _dominant_style(runs_data) if runs_data else {}
+                        new_is_bold = _dom.get('is_bold', current_is_bold)
+                        new_font_size = _dom.get('font_size', current_font_size)
                         self._apply_text_edit(text_item, new_text, new_font_size, new_is_bold,
                                              text_actually_changed=text_actually_changed)
                 return
@@ -3121,8 +3169,8 @@ class PDFPageView(QGraphicsView):
                     parent=self,
                     text_block=text_block,
                     original_text=current_text,
-                    font_name=current_font_name.replace('hebo', 'Helvetica').replace('helv', 'Helvetica'),
-                    font_size=current_font_size,
+                    font_name=dominant_font_name,
+                    font_size=dominant_font_size,
                     is_bold=current_is_bold,
                     max_width=max_width
                 )
@@ -3130,14 +3178,19 @@ class PDFPageView(QGraphicsView):
                 if result:
                     new_text, runs_data, metadata = result
                     
+                    # CRÍTICO: Si el texto NO cambió, no aplicar nada
+                    if not metadata.get('text_actually_changed', True):
+                        return
+                    
                     # Si el usuario aplicó múltiples estilos, guardar como runs
                     if metadata.get('has_mixed_styles', False) and len(runs_data) > 1:
                         # Guardar los runs para aplicarlos al PDF
                         self._apply_rich_text_edit(text_item, new_text, runs_data, metadata)
                     else:
                         # Estilo uniforme - usar método simple
-                        new_is_bold = runs_data[0].get('is_bold', False) if runs_data else current_is_bold
-                        new_font_size = runs_data[0].get('font_size', current_font_size) if runs_data else current_font_size
+                        _dom = _dominant_style(runs_data) if runs_data else {}
+                        new_is_bold = _dom.get('is_bold', current_is_bold)
+                        new_font_size = _dom.get('font_size', current_font_size)
                         self._apply_text_edit(text_item, new_text, new_font_size, new_is_bold)
                 return
                 
@@ -3359,16 +3412,10 @@ class PDFPageView(QGraphicsView):
             text_item.line_spacing = original_line_spacing
             print(f"    Nuevo run creado: font={original_font_name}, size={new_font_size}, bold={new_is_bold}")
         
-        # Preservar nombre de fuente original si es posible
-        # Solo usar helv/hebo como fallback si no hay fuente original
-        current_font_name = getattr(text_item, 'font_name', None)
-        if current_font_name and current_font_name not in ('helv', 'hebo'):
-            # Preservar fuente original del PDF (ej: Arial, Times, etc.)
-            # La negrita se maneja por separado con is_bold
-            pass  # Mantener text_item.font_name
-        else:
-            # Fallback para fuentes estándar
-            text_item.font_name = "hebo" if new_is_bold else "helv"
+        # PRESERVAR nombre de fuente original SIEMPRE.
+        # La negrita se gestiona con is_bold, NO renombrando la fuente.
+        # El mapeo a base14 (helv/hebo) se hace solo al escribir al PDF
+        # en _map_font_to_pdf(). Aquí mantenemos el nombre original.
         
         # Detectar si es PDF de imagen
         is_image_pdf = self.pdf_doc.is_image_based_pdf() if self.pdf_doc else False
@@ -3513,8 +3560,9 @@ class PDFPageView(QGraphicsView):
         text_item.has_mixed_styles = True
         text_item._text = new_text  # Establecer directamente sin disparar el setter
         
-        # Obtener propiedades de estilo de los runs
-        base_font_size = runs_data[0].get('font_size', 12) if runs_data else 12
+        # Obtener propiedades de estilo DOMINANTE de los runs
+        _dom = _dominant_style(runs_data) if runs_data else {}
+        base_font_size = _dom.get('font_size', 12)
         has_any_bold = any(r.get('is_bold', False) for r in runs_data)
         
         # Verificar si el tamaño o texto cambió
