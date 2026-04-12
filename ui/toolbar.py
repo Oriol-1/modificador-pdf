@@ -37,6 +37,7 @@ class EditorToolBar(QToolBar):
     ocrRequested = pyqtSignal()
     compressRequested = pyqtSignal()
     pageManagerRequested = pyqtSignal()
+    signatureRequested = pyqtSignal()
     chatRequested = pyqtSignal()
     translateRequested = pyqtSignal()
     aiSettingsRequested = pyqtSignal()
@@ -213,6 +214,13 @@ class EditorToolBar(QToolBar):
         self.action_page_manager.setEnabled(False)
         self.addAction(self.action_page_manager)
         
+        # === Firma digital ===
+        self.action_signature = QAction("🔐 Firmar", self)
+        self.action_signature.setToolTip("Firmar digitalmente o verificar firmas")
+        self.action_signature.triggered.connect(self.signatureRequested.emit)
+        self.action_signature.setEnabled(False)
+        self.addAction(self.action_signature)
+        
         self.addSeparator()
         
         # === IA ===
@@ -371,6 +379,7 @@ class EditorToolBar(QToolBar):
         self.action_ocr.setEnabled(loaded)
         self.action_compress.setEnabled(loaded)
         self.action_page_manager.setEnabled(loaded)
+        self.action_signature.setEnabled(loaded)
         self.action_chat.setEnabled(loaded)
         self.action_translate.setEnabled(loaded)
         

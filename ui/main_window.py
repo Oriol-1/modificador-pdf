@@ -890,6 +890,7 @@ class MainWindow(QMainWindow):
         self.toolbar.ocrRequested.connect(self._on_ocr_requested)
         self.toolbar.compressRequested.connect(self._on_compress_requested)
         self.toolbar.pageManagerRequested.connect(self._on_page_manager_requested)
+        self.toolbar.signatureRequested.connect(self._on_signature_requested)
         self.toolbar.chatRequested.connect(self._on_chat_requested)
         self.toolbar.translateRequested.connect(self._on_translate_requested)
         self.toolbar.aiSettingsRequested.connect(self._on_ai_settings_requested)
@@ -1643,6 +1644,35 @@ class MainWindow(QMainWindow):
         """Maneja la finalización de una operación de páginas."""
         self.status_label.setText(
             f"Operación completada: {os.path.basename(output_path)}"
+        )
+
+    # ─── Firma digital ───
+
+    def _on_signature_requested(self):
+        """Abre el diálogo de firma digital."""
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+
+        file_path = self.pdf_doc.file_path
+        if not file_path or not os.path.isfile(file_path):
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("Firma digital")
+            msg.setText("Guarde el documento primero.")
+            msg.setStyleSheet(ThemeStyles.message_box())
+            msg.exec_()
+            return
+
+        from ui.signature_dialog import SignatureDialog
+        page_count = self.pdf_doc.page_count
+        dialog = SignatureDialog(file_path, page_count, parent=self)
+        dialog.signature_applied.connect(self._on_signature_applied)
+        dialog.exec_()
+
+    def _on_signature_applied(self, output_path: str):
+        """Maneja la aplicación de una firma digital."""
+        self.status_label.setText(
+            f"Firma aplicada: {os.path.basename(output_path)}"
         )
 
     def _on_compress_requested(self):
