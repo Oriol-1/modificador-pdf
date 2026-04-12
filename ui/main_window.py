@@ -888,6 +888,7 @@ class MainWindow(QMainWindow):
         self.toolbar.pageChanged.connect(self.go_to_page)
         self.toolbar.rotatePageRequested.connect(self._rotate_current_page)
         self.toolbar.ocrRequested.connect(self._on_ocr_requested)
+        self.toolbar.compressRequested.connect(self._on_compress_requested)
         
         # Visor
         self.pdf_viewer.zoomChanged.connect(self.on_zoom_changed)
@@ -1608,6 +1609,32 @@ class MainWindow(QMainWindow):
                 f"OCR completado: {result.total_words} palabras en "
                 f"{result.processed_pages} páginas"
             )
+    
+    # ─── Compresión ───
+    
+    def _on_compress_requested(self):
+        """Abre el diálogo de compresión del PDF actual."""
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+        
+        file_path = self.pdf_doc.file_path
+        if not file_path or not os.path.isfile(file_path):
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("Comprimir PDF")
+            msg.setText("Guarde el documento primero antes de comprimir.")
+            msg.setStyleSheet(ThemeStyles.message_box())
+            msg.exec_()
+            return
+        
+        from ui.compression_dialog import CompressionDialog
+        dialog = CompressionDialog(file_path=file_path, parent=self)
+        dialog.compression_completed.connect(self._on_compression_completed)
+        dialog.exec_()
+    
+    def _on_compression_completed(self, output_path: str):
+        """Maneja la finalización de la compresión."""
+        self.status_label.setText(f"PDF comprimido guardado: {os.path.basename(output_path)}")
     
     def _transform_page_overlays(self, page_num: int, angle: int, old_w: float, old_h: float):
         """Transforma las coordenadas de los overlays editables tras rotar la página."""

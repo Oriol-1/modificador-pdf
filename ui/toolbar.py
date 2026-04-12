@@ -35,6 +35,7 @@ class EditorToolBar(QToolBar):
     rotatePageRequested = pyqtSignal(int)  # Ángulo: 90, 180, 270
     
     ocrRequested = pyqtSignal()
+    compressRequested = pyqtSignal()
     
     pageChanged = pyqtSignal(int)
     
@@ -194,6 +195,13 @@ class EditorToolBar(QToolBar):
         self.action_ocr.setEnabled(False)
         self.addAction(self.action_ocr)
         
+        # === Comprimir ===
+        self.action_compress = QAction("🗜️ Comprimir", self)
+        self.action_compress.setToolTip("Comprimir PDF para reducir tamaño")
+        self.action_compress.triggered.connect(self.compressRequested.emit)
+        self.action_compress.setEnabled(False)
+        self.addAction(self.action_compress)
+        
         # Espaciador
         spacer2 = QWidget()
         spacer2.setFixedWidth(10)
@@ -330,6 +338,7 @@ class EditorToolBar(QToolBar):
         
         self.action_rotate.setEnabled(loaded)
         self.action_ocr.setEnabled(loaded)
+        self.action_compress.setEnabled(loaded)
         
         self.action_prev_page.setEnabled(loaded)
         self.action_next_page.setEnabled(loaded)
