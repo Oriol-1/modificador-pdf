@@ -810,6 +810,29 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self.toolbar.action_highlight)
         edit_menu.addSeparator()
         
+        # Anotaciones
+        annot_menu = edit_menu.addMenu("📝 Anotaciones")
+        
+        self.action_underline = QAction("__  Subrayar selección", self)
+        self.action_underline.triggered.connect(self._add_underline_annot)
+        annot_menu.addAction(self.action_underline)
+        
+        self.action_strikeout = QAction("—  Tachar selección", self)
+        self.action_strikeout.triggered.connect(self._add_strikeout_annot)
+        annot_menu.addAction(self.action_strikeout)
+        
+        annot_menu.addSeparator()
+        
+        self.action_sticky_note = QAction("📌 Nota adhesiva...", self)
+        self.action_sticky_note.triggered.connect(self._add_sticky_note)
+        annot_menu.addAction(self.action_sticky_note)
+        
+        self.action_freetext = QAction("💬 Texto libre...", self)
+        self.action_freetext.triggered.connect(self._add_freetext_annot)
+        annot_menu.addAction(self.action_freetext)
+        
+        edit_menu.addSeparator()
+        
         # Buscar y Reemplazar
         self.action_find = QAction("🔍 Buscar...", self)
         self.action_find.setShortcut("Ctrl+F")
@@ -2140,6 +2163,102 @@ class MainWindow(QMainWindow):
                 self, "Error",
                 f"No se pudo insertar la imagen:\n{self.pdf_doc._last_error}"
             )
+    
+    # --- Anotaciones ---
+    
+    def _get_current_selection_rect(self):
+        """Obtiene el rectángulo de selección actual en coordenadas PDF.
+        
+        Returns:
+            fitz.Rect o None si no hay selección.
+        """
+        import fitz
+        sr = self.pdf_viewer.selection_rect
+        if sr is None:
+            return None
+        scene_rect = sr.rect()
+        pdf_point_tl = self.pdf_viewer.view_to_pdf_point(scene_rect.topLeft())
+        pdf_point_br = self.pdf_viewer.view_to_pdf_point(scene_rect.bottomRight())
+        return fitz.Rect(pdf_point_tl.x(), pdf_point_tl.y(), pdf_point_br.x(), pdf_point_br.y())
+    
+    def _add_underline_annot(self):
+        """Añade subrayado a la selección actual."""
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+        rect = self._get_current_selection_rect()
+        if rect is None:
+            self.statusBar().showMessage("Selecciona texto primero", 3000)
+            return
+        success = self.pdf_doc.add_underline_annot(self.pdf_viewer.current_page, rect)
+        if success:
+            self.pdf_viewer.render_page()
+            self.statusBar().showMessage("Subrayado añadido", 3000)
+    
+    def _add_strikeout_annot(self):
+        """Añade tachado a la selección actual."""
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+        rect = self._get_current_selection_rect()
+        if rect is None:
+            self.statusBar().showMessage("Selecciona texto primero", 3000)
+            return
+        success = self.pdf_doc.add_strikeout_annot(self.pdf_viewer.current_page, rect)
+        if success:
+            self.pdf_viewer.render_page()
+            self.statusBar().showMessage("Tachado añadido", 3000)
+    
+    def _add_sticky_note(self):
+        """Añade una nota adhesiva en el centro de la página."""
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+        
+        from PyQt5.QtWidgets import QInputDialog
+        text, ok = QInputDialog.getMultiLineText(
+            self, "📌 Nota adhesiva", "Contenido de la nota:"
+        )
+        if not ok or not text.strip():
+            return
+        
+        # Posicionar en el centro visible
+        page = self.pdf_doc.get_page(self.pdf_viewer.current_page)
+        if not page:
+            return
+        center = page.rect.width / 2, page.rect.height / 2
+        
+        success = self.pdf_doc.add_text_annot(
+            self.pdf_viewer.current_page, center, text.strip()
+        )
+        if success:
+            self.pdf_viewer.render_page()
+            self.statusBar().showMessage("Nota adhesiva añadida", 3000)
+    
+    def _add_freetext_annot(self):
+        """Añade texto libre en la página."""
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+        
+        from PyQt5.QtWidgets import QInputDialog
+        text, ok = QInputDialog.getMultiLineText(
+            self, "💬 Texto libre", "Texto a insertar:"
+        )
+        if not ok or not text.strip():
+            return
+        
+        import fitz
+        page = self.pdf_doc.get_page(self.pdf_viewer.current_page)
+        if not page:
+            return
+        
+        # Colocar en zona central-superior
+        w = min(300, page.rect.width - 100)
+        rect = fitz.Rect(50, 50, 50 + w, 50 + 60)
+        
+        success = self.pdf_doc.add_freetext_annot(
+            self.pdf_viewer.current_page, rect, text.strip()
+        )
+        if success:
+            self.pdf_viewer.render_page()
+            self.statusBar().showMessage("Texto libre añadido", 3000)
     
     def show_about(self):
         """Muestra el diálogo Acerca de."""

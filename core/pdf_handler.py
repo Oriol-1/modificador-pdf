@@ -632,6 +632,183 @@ class PDFDocument:
         
         return False
 
+    def add_underline_annot(self, page_num: int, rect: fitz.Rect,
+                             color: Tuple[float, float, float] = (0, 0, 1)) -> bool:
+        """Añade anotación de subrayado en un área.
+        
+        Args:
+            page_num: Número de página (0-based).
+            rect: Rectángulo del texto a subrayar (coordenadas PDF).
+            color: Color RGB (0-1) del subrayado.
+            
+        Returns:
+            True si se creó correctamente.
+        """
+        page = self.get_page(page_num)
+        if not page:
+            return False
+        try:
+            self._save_snapshot()
+            annot = page.add_underline_annot(rect)
+            annot.set_colors(stroke=color)
+            annot.update()
+            self.modified = True
+            return True
+        except Exception as e:
+            print(f"Error añadiendo subrayado: {e}")
+            return False
+
+    def add_strikeout_annot(self, page_num: int, rect: fitz.Rect,
+                             color: Tuple[float, float, float] = (1, 0, 0)) -> bool:
+        """Añade anotación de tachado en un área.
+        
+        Args:
+            page_num: Número de página (0-based).
+            rect: Rectángulo del texto a tachar (coordenadas PDF).
+            color: Color RGB (0-1) del tachado.
+            
+        Returns:
+            True si se creó correctamente.
+        """
+        page = self.get_page(page_num)
+        if not page:
+            return False
+        try:
+            self._save_snapshot()
+            annot = page.add_strikeout_annot(rect)
+            annot.set_colors(stroke=color)
+            annot.update()
+            self.modified = True
+            return True
+        except Exception as e:
+            print(f"Error añadiendo tachado: {e}")
+            return False
+
+    def add_text_annot(self, page_num: int, point: Tuple[float, float],
+                       text: str, icon: str = "Note") -> bool:
+        """Añade una nota adhesiva (sticky note) en un punto.
+        
+        Args:
+            page_num: Número de página (0-based).
+            point: Posición (x, y) en coordenadas PDF.
+            text: Contenido de la nota.
+            icon: Icono de la nota (Note, Comment, Help, Insert, Key, Paragraph).
+            
+        Returns:
+            True si se creó correctamente.
+        """
+        page = self.get_page(page_num)
+        if not page:
+            return False
+        if not text:
+            return False
+        try:
+            self._save_snapshot()
+            annot = page.add_text_annot(fitz.Point(point[0], point[1]), text, icon=icon)
+            annot.update()
+            self.modified = True
+            return True
+        except Exception as e:
+            print(f"Error añadiendo nota: {e}")
+            return False
+
+    def add_freetext_annot(self, page_num: int, rect: fitz.Rect,
+                           text: str, font_size: float = 11,
+                           text_color: Tuple[float, float, float] = (0, 0, 0),
+                           fill_color: Tuple[float, float, float] = (1, 1, 0.8)) -> bool:
+        """Añade una anotación de texto libre en un rectángulo.
+        
+        Args:
+            page_num: Número de página (0-based).
+            rect: Rectángulo donde colocar el texto.
+            text: Contenido del texto.
+            font_size: Tamaño de fuente.
+            text_color: Color RGB del texto.
+            fill_color: Color RGB del fondo.
+            
+        Returns:
+            True si se creó correctamente.
+        """
+        page = self.get_page(page_num)
+        if not page:
+            return False
+        if not text:
+            return False
+        try:
+            self._save_snapshot()
+            annot = page.add_freetext_annot(
+                rect, text,
+                fontsize=font_size,
+                text_color=text_color,
+                fill_color=fill_color,
+            )
+            annot.update()
+            self.modified = True
+            return True
+        except Exception as e:
+            print(f"Error añadiendo texto libre: {e}")
+            return False
+
+    def get_annotations(self, page_num: int) -> List[dict]:
+        """Obtiene todas las anotaciones de una página.
+        
+        Args:
+            page_num: Número de página (0-based).
+            
+        Returns:
+            Lista de diccionarios con info de cada anotación.
+        """
+        page = self.get_page(page_num)
+        if not page:
+            return []
+        
+        result = []
+        annots = page.annots()
+        if annots:
+            for annot in annots:
+                result.append({
+                    'type': annot.type[0],
+                    'type_name': annot.type[1],
+                    'rect': annot.rect,
+                    'content': annot.info.get('content', ''),
+                    'colors': annot.colors,
+                })
+        return result
+
+    def delete_annotation_at_point(self, page_num: int,
+                                    point: Tuple[float, float],
+                                    tolerance: float = 5.0) -> bool:
+        """Elimina la anotación más cercana a un punto.
+        
+        Args:
+            page_num: Número de página (0-based).
+            point: Coordenadas (x, y) en espacio PDF.
+            tolerance: Margen de búsqueda en puntos.
+            
+        Returns:
+            True si se eliminó alguna anotación.
+        """
+        page = self.get_page(page_num)
+        if not page:
+            return False
+        
+        search_rect = fitz.Rect(
+            point[0] - tolerance, point[1] - tolerance,
+            point[0] + tolerance, point[1] + tolerance
+        )
+        
+        annots = page.annots()
+        if not annots:
+            return False
+        
+        for annot in annots:
+            if search_rect.intersects(annot.rect):
+                self._save_snapshot()
+                page.delete_annot(annot)
+                self.modified = True
+                return True
+        return False
+
     def delete_text(self, page_num: int, rect: fitz.Rect) -> bool:
         """
         Elimina texto de un área específica de forma permanente.
