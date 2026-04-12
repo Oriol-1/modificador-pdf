@@ -889,6 +889,9 @@ class MainWindow(QMainWindow):
         self.toolbar.rotatePageRequested.connect(self._rotate_current_page)
         self.toolbar.ocrRequested.connect(self._on_ocr_requested)
         self.toolbar.compressRequested.connect(self._on_compress_requested)
+        self.toolbar.chatRequested.connect(self._on_chat_requested)
+        self.toolbar.translateRequested.connect(self._on_translate_requested)
+        self.toolbar.aiSettingsRequested.connect(self._on_ai_settings_requested)
         
         # Visor
         self.pdf_viewer.zoomChanged.connect(self.on_zoom_changed)
@@ -1635,6 +1638,70 @@ class MainWindow(QMainWindow):
     def _on_compression_completed(self, output_path: str):
         """Maneja la finalización de la compresión."""
         self.status_label.setText(f"PDF comprimido guardado: {os.path.basename(output_path)}")
+
+    # ─── Chat IA ───
+
+    def _get_ai_config(self):
+        """Obtiene la configuración de IA actual."""
+        from core.ai.ai_config import AIConfig
+        config_path = os.path.join(
+            os.path.expanduser("~"), ".pdf_editor_pro", "ai_config.json"
+        )
+        return AIConfig.load(config_path), config_path
+
+    def _on_chat_requested(self):
+        """Abre/muestra el panel de chat con IA."""
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+
+        from ui.ai_chat_panel import AIChatPanel
+        from core.ai.ai_config import AIConfig
+        from core.ai.chat_engine import ChatEngine
+        from core.ai.document_indexer import create_document_index
+
+        config, _ = self._get_ai_config()
+
+        if not hasattr(self, '_chat_panel') or self._chat_panel is None:
+            self._chat_panel = AIChatPanel(self)
+            self._chat_panel.navigateToPage.connect(self.go_to_page)
+            self.addDockWidget(2, self._chat_panel)  # Qt.RightDockWidgetArea
+
+        engine = ChatEngine(config)
+        doc_index = create_document_index(
+            self.pdf_doc.doc,
+            file_path=self.pdf_doc.file_path or "",
+            chunk_size=config.chunk_size,
+            chunk_overlap=config.chunk_overlap,
+        )
+        engine.index_document(doc_index)
+        self._chat_panel.set_chat_engine(engine)
+        self._chat_panel.show()
+        self.status_label.setText("Chat IA activado")
+
+    def _on_translate_requested(self):
+        """Abre el diálogo de traducción."""
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+
+        from core.ai.document_indexer import extract_page_texts
+        from ui.translation_dialog import TranslationDialog
+
+        config, _ = self._get_ai_config()
+        page_texts = extract_page_texts(self.pdf_doc.doc)
+
+        dialog = TranslationDialog(page_texts, config, parent=self)
+        dialog.exec_()
+
+    def _on_ai_settings_requested(self):
+        """Abre el diálogo de configuración de IA."""
+        from ui.ai_settings_dialog import AISettingsDialog
+
+        config, config_path = self._get_ai_config()
+        dialog = AISettingsDialog(config, parent=self)
+        if dialog.exec_():
+            new_config = dialog.get_config()
+            new_config.save(config_path)
+            self.status_label.setText("Configuración de IA guardada")
     
     def _transform_page_overlays(self, page_num: int, angle: int, old_w: float, old_h: float):
         """Transforma las coordenadas de los overlays editables tras rotar la página."""

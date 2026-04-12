@@ -36,6 +36,9 @@ class EditorToolBar(QToolBar):
     
     ocrRequested = pyqtSignal()
     compressRequested = pyqtSignal()
+    chatRequested = pyqtSignal()
+    translateRequested = pyqtSignal()
+    aiSettingsRequested = pyqtSignal()
     
     pageChanged = pyqtSignal(int)
     
@@ -202,6 +205,26 @@ class EditorToolBar(QToolBar):
         self.action_compress.setEnabled(False)
         self.addAction(self.action_compress)
         
+        self.addSeparator()
+        
+        # === IA ===
+        self.action_chat = QAction("💬 Chat IA", self)
+        self.action_chat.setToolTip("Abrir chat con IA sobre el documento")
+        self.action_chat.triggered.connect(self.chatRequested.emit)
+        self.action_chat.setEnabled(False)
+        self.addAction(self.action_chat)
+        
+        self.action_translate = QAction("🌐 Traducir", self)
+        self.action_translate.setToolTip("Traducir documento con IA")
+        self.action_translate.triggered.connect(self.translateRequested.emit)
+        self.action_translate.setEnabled(False)
+        self.addAction(self.action_translate)
+        
+        self.action_ai_settings = QAction("⚙️ IA Ajustes", self)
+        self.action_ai_settings.setToolTip("Configurar proveedor de IA")
+        self.action_ai_settings.triggered.connect(self.aiSettingsRequested.emit)
+        self.addAction(self.action_ai_settings)
+        
         # Espaciador
         spacer2 = QWidget()
         spacer2.setFixedWidth(10)
@@ -339,6 +362,8 @@ class EditorToolBar(QToolBar):
         self.action_rotate.setEnabled(loaded)
         self.action_ocr.setEnabled(loaded)
         self.action_compress.setEnabled(loaded)
+        self.action_chat.setEnabled(loaded)
+        self.action_translate.setEnabled(loaded)
         
         self.action_prev_page.setEnabled(loaded)
         self.action_next_page.setEnabled(loaded)
