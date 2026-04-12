@@ -9,12 +9,12 @@ from pathlib import Path
 import sys
 
 # Agregar el directorio raíz al path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import fitz  # PyMuPDF
 
-# Directorio de fixtures
-FIXTURES_DIR = Path(__file__).parent / "fixtures" / "test_pdfs"
+# Directorio de fixtures (en tests/fixtures/test_pdfs/)
+FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "test_pdfs"
 
 
 class TestPDFFixturesExist:

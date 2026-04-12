@@ -114,3 +114,8 @@ Thumbs.db
 *.pdf
 workspace_config.json
 test_workspace/
+test_render*.png
+
+# Build outputs (PyInstaller)
+build/build_exe/
+build/ModificadorPDF/
