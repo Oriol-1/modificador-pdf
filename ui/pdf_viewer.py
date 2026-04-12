@@ -656,10 +656,14 @@ class PDFPageView(QGraphicsView):
             return
         
         # Solo hacer hit-testing si estamos sobre la página
-        if not self.page_item or not self.page_item.contains(scene_pos):
-            if self._hover_span is not None:
-                self._hover_span = None
-                self.spanHovered.emit(None)
+        try:
+            if not self.page_item or not self.page_item.contains(scene_pos):
+                if self._hover_span is not None:
+                    self._hover_span = None
+                    self.spanHovered.emit(None)
+                return
+        except RuntimeError:
+            # page_item fue eliminado durante re-render
             return
         
         result = self.hit_test_at_scene_pos(scene_pos)

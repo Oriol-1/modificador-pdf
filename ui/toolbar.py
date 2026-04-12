@@ -30,6 +30,8 @@ class EditorToolBar(QToolBar):
     undoAction = pyqtSignal()
     redoAction = pyqtSignal()
     
+    rotatePageRequested = pyqtSignal(int)  # Ángulo: 90, 180, 270
+    
     pageChanged = pyqtSignal(int)
     
     def __init__(self, parent=None):
@@ -124,21 +126,21 @@ class EditorToolBar(QToolBar):
         spacer1.setFixedWidth(10)
         self.addWidget(spacer1)
         
-        # BOTÓN DE ELIMINAR MÁS PROMINENTE (HERRAMIENTA PRINCIPAL)
-        self.action_delete = QAction("🗑️ ELIMINAR", self)
-        self.action_delete.setToolTip("Arrastra sobre el contenido para eliminarlo permanentemente")
-        self.action_delete.setCheckable(True)
-        self.action_delete.setChecked(True)  # Por defecto activo
-        self.action_delete.triggered.connect(lambda: self.set_tool('delete'))
-        self.addAction(self.action_delete)
-        self.tool_actions['delete'] = self.action_delete
-        
+        # BOTÓN DE EDITAR (HERRAMIENTA PRINCIPAL)
         self.action_edit = QAction("✏️ EDITAR", self)
         self.action_edit.setToolTip("Click para editar texto o añadir texto nuevo")
         self.action_edit.setCheckable(True)
+        self.action_edit.setChecked(True)  # Por defecto activo
         self.action_edit.triggered.connect(lambda: self.set_tool('edit'))
         self.addAction(self.action_edit)
         self.tool_actions['edit'] = self.action_edit
+        
+        self.action_delete = QAction("🗑️ ELIMINAR", self)
+        self.action_delete.setToolTip("Arrastra sobre el contenido para eliminarlo permanentemente")
+        self.action_delete.setCheckable(True)
+        self.action_delete.triggered.connect(lambda: self.set_tool('delete'))
+        self.addAction(self.action_delete)
+        self.tool_actions['delete'] = self.action_delete
         
         self.action_highlight = QAction("🖍️ Resaltar", self)
         self.action_highlight.setToolTip("Herramienta de resaltado")
@@ -146,6 +148,40 @@ class EditorToolBar(QToolBar):
         self.action_highlight.triggered.connect(lambda: self.set_tool('highlight'))
         self.addAction(self.action_highlight)
         self.tool_actions['highlight'] = self.action_highlight
+        
+        # Botón de rotar página (acción con submenú, no es tool checkable)
+        self.action_rotate = QAction("🔄 Rotar", self)
+        self.action_rotate.setToolTip("Rotar la página actual")
+        self.action_rotate.setEnabled(False)
+        rotate_menu = QMenu(self)
+        rotate_90_right = rotate_menu.addAction("↻ Rotar 90° derecha")
+        rotate_90_right.triggered.connect(lambda: self.rotatePageRequested.emit(90))
+        rotate_90_left = rotate_menu.addAction("↺ Rotar 90° izquierda")
+        rotate_90_left.triggered.connect(lambda: self.rotatePageRequested.emit(270))
+        rotate_180 = rotate_menu.addAction("🔃 Rotar 180°")
+        rotate_180.triggered.connect(lambda: self.rotatePageRequested.emit(180))
+        self.action_rotate.setMenu(rotate_menu)
+        # Usar QToolButton para que muestre el menú desplegable
+        rotate_button = QToolButton(self)
+        rotate_button.setDefaultAction(self.action_rotate)
+        rotate_button.setPopupMode(QToolButton.InstantPopup)
+        rotate_button.setStyleSheet("""
+            QToolButton {
+                background-color: transparent;
+                color: white;
+                border: none;
+                padding: 4px 8px;
+                font-size: 13px;
+            }
+            QToolButton:hover {
+                background-color: #3e3e42;
+            }
+            QToolButton::menu-indicator {
+                image: none;
+                width: 0px;
+            }
+        """)
+        self.addWidget(rotate_button)
         
         # Espaciador
         spacer2 = QWidget()
@@ -280,6 +316,8 @@ class EditorToolBar(QToolBar):
         self.action_zoom_out.setEnabled(loaded)
         self.zoom_combo.setEnabled(loaded)
         self.action_fit_width.setEnabled(loaded)
+        
+        self.action_rotate.setEnabled(loaded)
         
         self.action_prev_page.setEnabled(loaded)
         self.action_next_page.setEnabled(loaded)

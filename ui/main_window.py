@@ -886,6 +886,7 @@ class MainWindow(QMainWindow):
         self.toolbar.redoAction.connect(self.redo)
         
         self.toolbar.pageChanged.connect(self.go_to_page)
+        self.toolbar.rotatePageRequested.connect(self._rotate_current_page)
         
         # Visor
         self.pdf_viewer.zoomChanged.connect(self.on_zoom_changed)
@@ -896,6 +897,7 @@ class MainWindow(QMainWindow):
         self.thumbnail_panel.pageSelected.connect(self.go_to_page)
         self.thumbnail_panel.pagesReordered.connect(self._on_pages_reordered)
         self.thumbnail_panel.pageDeleteRequested.connect(self._on_page_delete_requested)
+        self.thumbnail_panel.pageRotateRequested.connect(self._rotate_page_from_thumbnail)
         
         # Workspace
         self.workspace_status.openPending.connect(self.show_pending_pdfs)
@@ -1035,9 +1037,9 @@ class MainWindow(QMainWindow):
             self.toolbar.set_page_count(self.pdf_doc.page_count())
             self.toolbar.set_current_page(0)
             
-            # Activar herramienta de borrado por defecto
-            self.toolbar.set_tool('delete')
-            self.pdf_viewer.set_tool_mode('delete')
+            # Activar herramienta de edición por defecto
+            self.toolbar.set_tool('edit')
+            self.pdf_viewer.set_tool_mode('edit')
             
             # Verificar si está en workspace
             if self.workspace_manager.is_file_in_origin(file_path):
@@ -1514,6 +1516,89 @@ class MainWindow(QMainWindow):
             self.update_undo_redo_state()
             self.status_label.setText("Páginas reordenadas")
     
+    def _rotate_current_page(self, angle: int):
+        """Rota la página actual del PDF."""
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+        
+        page_num = self.pdf_viewer.current_page
+        
+        # Sincronizar textos editables con datos antes de rotar
+        if hasattr(self.pdf_viewer, 'sync_all_text_items_to_data'):
+            self.pdf_viewer.sync_all_text_items_to_data()
+        
+        # Rotar página (internamente hace _save_snapshot antes)
+        result = self.pdf_doc.rotate_page(page_num, angle)
+        if result is None:
+            self.status_label.setText("Error al rotar página")
+            return
+        
+        old_width, old_height, new_rotation = result
+        
+        # Transformar coordenadas de overlays de la página rotada
+        self._transform_page_overlays(page_num, angle, old_width, old_height)
+        
+        # Re-renderizar (recalcula view_rect desde pdf_rect ya transformado)
+        self.pdf_viewer.render_page()
+        self.thumbnail_panel.refresh_thumbnail(page_num)
+        self.update_undo_redo_state()
+        self.status_label.setText(f"Página {page_num + 1} rotada {angle}°")
+    
+    def _rotate_page_from_thumbnail(self, page_num: int, angle: int):
+        """Rota una página desde el menú contextual de miniaturas."""
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+        self.go_to_page(page_num)
+        self._rotate_current_page(angle)
+    
+    def _transform_page_overlays(self, page_num: int, angle: int, old_w: float, old_h: float):
+        """Transforma las coordenadas de los overlays editables tras rotar la página."""
+        import fitz
+        
+        page_key = self.pdf_viewer._page_key(page_num)
+        page_texts = self.pdf_viewer.editable_texts_data.get(page_key, [])
+        
+        if not page_texts:
+            return
+        
+        for text_data in page_texts:
+            # Transformar los 3 campos de coordenadas
+            for rect_key in ('pdf_rect', 'internal_pdf_rect', 'original_pdf_rect'):
+                rect = text_data.get(rect_key)
+                if rect is None:
+                    continue
+                text_data[rect_key] = self._rotate_rect(rect, angle, old_w, old_h)
+    
+    @staticmethod
+    def _rotate_rect(rect, angle: int, old_w: float, old_h: float):
+        """Transforma un fitz.Rect al nuevo espacio visual tras rotación."""
+        import fitz
+        
+        x0, y0, x1, y1 = rect.x0, rect.y0, rect.x1, rect.y1
+        
+        if angle == 90:
+            # 90° CW: new visual = H×W
+            nx0 = old_h - y1
+            ny0 = x0
+            nx1 = old_h - y0
+            ny1 = x1
+        elif angle == 180:
+            # 180°: new visual = W×H
+            nx0 = old_w - x1
+            ny0 = old_h - y1
+            nx1 = old_w - x0
+            ny1 = old_h - y0
+        elif angle == 270:
+            # 270° CW: new visual = H×W
+            nx0 = y0
+            ny0 = old_w - x1
+            nx1 = y1
+            ny1 = old_w - x0
+        else:
+            return rect
+        
+        return fitz.Rect(min(nx0, nx1), min(ny0, ny1), max(nx0, nx1), max(ny0, ny1))
+    
     def _on_page_delete_requested(self, page_num: int):
         """Maneja la solicitud de eliminar una página."""
         if not self.pdf_doc or not self.pdf_doc.is_open():
@@ -1717,7 +1802,7 @@ class MainWindow(QMainWindow):
             self,
             "Acerca de PDF Editor Pro",
             "<h2>PDF Editor Pro</h2>"
-            "<p>Versión 1.6.0</p>"
+            "<p>Versión 1.7.0</p>"
             "<p>Editor de PDF con capacidades de:</p>"
             "<ul>"
             "<li>Selección de texto</li>"

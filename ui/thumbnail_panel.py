@@ -17,6 +17,7 @@ class ThumbnailPanel(QWidget):
     pageSelected = pyqtSignal(int)   # Señal cuando se selecciona una página
     pagesReordered = pyqtSignal(list)  # Señal con nuevo orden [int] tras drag & drop
     pageDeleteRequested = pyqtSignal(int)  # Solicitar eliminación de página
+    pageRotateRequested = pyqtSignal(int, int)  # Solicitar rotación (page_num, angle)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -194,6 +195,17 @@ class ThumbnailPanel(QWidget):
             delete_action.setEnabled(False)
         
         menu.addAction(delete_action)
+        
+        # Submenú de rotación
+        rotate_menu = QMenu("🔄 Rotar página", self)
+        rotate_90r = rotate_menu.addAction("↻ Rotar 90° derecha")
+        rotate_90r.triggered.connect(lambda: self.pageRotateRequested.emit(page_num, 90))
+        rotate_90l = rotate_menu.addAction("↺ Rotar 90° izquierda")
+        rotate_90l.triggered.connect(lambda: self.pageRotateRequested.emit(page_num, 270))
+        rotate_180 = rotate_menu.addAction("🔃 Rotar 180°")
+        rotate_180.triggered.connect(lambda: self.pageRotateRequested.emit(page_num, 180))
+        menu.addMenu(rotate_menu)
+        
         menu.exec_(self.list_widget.mapToGlobal(pos))
 
     def _restore_order(self):

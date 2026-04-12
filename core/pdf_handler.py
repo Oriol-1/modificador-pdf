@@ -2233,6 +2233,47 @@ class PDFDocument:
             print(f"Error al reordenar páginas: {e}")
             return False
     
+    def rotate_page(self, page_num: int, angle: int) -> Optional[tuple]:
+        """
+        Rota una página del documento.
+        
+        Args:
+            page_num: Índice de la página a rotar (0-based).
+            angle: Ángulo de rotación a añadir (90, 180, 270).
+        
+        Returns:
+            Tupla (old_width, old_height, new_rotation) o None si falló.
+        """
+        if not self.doc:
+            return None
+        
+        page = self.get_page(page_num)
+        if not page:
+            self._last_error = f"Página {page_num} no encontrada"
+            return None
+        
+        if angle not in (90, 180, 270):
+            self._last_error = f"Ángulo inválido: {angle}. Usar 90, 180 o 270."
+            return None
+        
+        try:
+            self._save_snapshot()
+            
+            # Guardar dimensiones visuales OLD antes de rotar
+            old_width = page.rect.width
+            old_height = page.rect.height
+            
+            # Aplicar rotación (solo modifica metadato /Rotate)
+            new_rotation = (page.rotation + angle) % 360
+            page.set_rotation(new_rotation)
+            
+            self.modified = True
+            return (old_width, old_height, new_rotation)
+        except Exception as e:
+            self._last_error = str(e)
+            print(f"Error al rotar página: {e}")
+            return None
+    
     def delete_page(self, page_index: int) -> Optional[str]:
         """
         Elimina una página del documento.
