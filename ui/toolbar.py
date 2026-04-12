@@ -34,6 +34,8 @@ class EditorToolBar(QToolBar):
     
     rotatePageRequested = pyqtSignal(int)  # Ángulo: 90, 180, 270
     
+    ocrRequested = pyqtSignal()
+    
     pageChanged = pyqtSignal(int)
     
     def __init__(self, parent=None):
@@ -185,6 +187,13 @@ class EditorToolBar(QToolBar):
         """)
         self.addWidget(rotate_button)
         
+        # === OCR ===
+        self.action_ocr = QAction("🔤 OCR", self)
+        self.action_ocr.setToolTip("Reconocimiento de texto en páginas escaneadas")
+        self.action_ocr.triggered.connect(self.ocrRequested.emit)
+        self.action_ocr.setEnabled(False)
+        self.addAction(self.action_ocr)
+        
         # Espaciador
         spacer2 = QWidget()
         spacer2.setFixedWidth(10)
@@ -320,6 +329,7 @@ class EditorToolBar(QToolBar):
         self.action_fit_width.setEnabled(loaded)
         
         self.action_rotate.setEnabled(loaded)
+        self.action_ocr.setEnabled(loaded)
         
         self.action_prev_page.setEnabled(loaded)
         self.action_next_page.setEnabled(loaded)

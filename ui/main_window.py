@@ -887,6 +887,7 @@ class MainWindow(QMainWindow):
         
         self.toolbar.pageChanged.connect(self.go_to_page)
         self.toolbar.rotatePageRequested.connect(self._rotate_current_page)
+        self.toolbar.ocrRequested.connect(self._on_ocr_requested)
         
         # Visor
         self.pdf_viewer.zoomChanged.connect(self.on_zoom_changed)
@@ -1558,6 +1559,55 @@ class MainWindow(QMainWindow):
             return
         self.go_to_page(page_num)
         self._rotate_current_page(angle)
+    
+    # ─── OCR ───
+    
+    def _on_ocr_requested(self):
+        """Abre el diálogo OCR si hay páginas escaneadas."""
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+        
+        try:
+            from core.ocr.pdf_ocr_layer import detect_scanned_pages
+            from ui.ocr_dialog import OCRDialog
+        except ImportError as e:
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("OCR no disponible")
+            msg.setText(f"No se pudo cargar el módulo OCR:\n{e}")
+            msg.setStyleSheet(ThemeStyles.message_box())
+            msg.exec_()
+            return
+        
+        doc = self.pdf_doc.doc
+        scanned = detect_scanned_pages(doc)
+        
+        if not scanned:
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Information)
+            msg.setWindowTitle("OCR")
+            msg.setText(
+                "No se detectaron páginas escaneadas en este documento.\n\n"
+                "El OCR solo es necesario para PDFs que contienen imágenes "
+                "sin texto seleccionable."
+            )
+            msg.setStyleSheet(ThemeStyles.message_box())
+            msg.exec_()
+            return
+        
+        dialog = OCRDialog(doc=doc, scanned_pages=scanned, parent=self)
+        dialog.ocr_completed.connect(self._on_ocr_completed)
+        dialog.exec_()
+    
+    def _on_ocr_completed(self, result):
+        """Maneja la finalización del OCR."""
+        if result and result.processed_pages > 0:
+            self.pdf_viewer.render_page()
+            self.on_document_modified()
+            self.status_label.setText(
+                f"OCR completado: {result.total_words} palabras en "
+                f"{result.processed_pages} páginas"
+            )
     
     def _transform_page_overlays(self, page_num: int, angle: int, old_w: float, old_h: float):
         """Transforma las coordenadas de los overlays editables tras rotar la página."""
