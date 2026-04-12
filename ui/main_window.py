@@ -22,6 +22,7 @@ from ui.workspace_manager import (
     WorkspaceVisualDialog, GroupVisualDialog
 )
 from ui.help_system import HelpDialog, show_help, open_online_manual
+from ui.search_replace_panel import SearchReplacePanel, SearchResult
 
 # Phase 2 imports
 try:
@@ -180,6 +181,11 @@ class MainWindow(QMainWindow):
         viewer_container = QWidget()
         viewer_layout = QVBoxLayout(viewer_container)
         viewer_layout.setContentsMargins(0, 0, 0, 0)
+        viewer_layout.setSpacing(0)
+        
+        # Panel de buscar/reemplazar (oculto por defecto)
+        self.search_panel = SearchReplacePanel()
+        viewer_layout.addWidget(self.search_panel)
         
         # Visor de PDF
         self.pdf_viewer = PDFPageView()
@@ -802,6 +808,18 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self.toolbar.action_delete)
         edit_menu.addAction(self.toolbar.action_edit)
         edit_menu.addAction(self.toolbar.action_highlight)
+        edit_menu.addSeparator()
+        
+        # Buscar y Reemplazar
+        self.action_find = QAction("🔍 Buscar...", self)
+        self.action_find.setShortcut("Ctrl+F")
+        self.action_find.triggered.connect(self._show_search)
+        edit_menu.addAction(self.action_find)
+        
+        self.action_replace = QAction("🔄 Buscar y Reemplazar...", self)
+        self.action_replace.setShortcut("Ctrl+H")
+        self.action_replace.triggered.connect(self._show_replace)
+        edit_menu.addAction(self.action_replace)
         
         # Menú Ver
         view_menu = menubar.addMenu("&Ver")
@@ -902,6 +920,14 @@ class MainWindow(QMainWindow):
         # Workspace
         self.workspace_status.openPending.connect(self.show_pending_pdfs)
         self.workspace_status.configureWorkspace.connect(self.show_workspace_setup)
+        
+        # Panel de buscar/reemplazar
+        self.search_panel.searchRequested.connect(self._on_search_requested)
+        self.search_panel.navigateToResult.connect(self._on_navigate_to_result)
+        self.search_panel.highlightsChanged.connect(self._on_search_highlights_changed)
+        self.search_panel.replaceRequested.connect(self._on_replace_requested)
+        self.search_panel.replaceAllRequested.connect(self._on_replace_all_requested)
+        self.search_panel.closed.connect(self._on_search_panel_closed)
     
     def open_file(self):
         """Abre un archivo PDF o múltiples para crear un grupo de trabajo."""
@@ -1795,6 +1821,169 @@ class MainWindow(QMainWindow):
                 self.pdf_doc.modified = False
         
         return True
+    
+    # --- Buscar / Reemplazar ---
+    
+    def _show_search(self):
+        """Muestra el panel de búsqueda (Ctrl+F)."""
+        self.search_panel.show_search()
+    
+    def _show_replace(self):
+        """Muestra el panel de búsqueda y reemplazo (Ctrl+H)."""
+        self.search_panel.show_replace()
+    
+    def _on_search_requested(self, text: str, case_sensitive: bool):
+        """Ejecuta búsqueda en el documento PDF.
+        
+        Args:
+            text: Texto a buscar.
+            case_sensitive: Si distingue mayúsculas/minúsculas.
+        """
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            self.search_panel.clear_results()
+            return
+        
+        import fitz
+        
+        # PyMuPDF search_for no tiene flag case-sensitive directamente,
+        # pero podemos filtrar resultados si es case-sensitive
+        raw_results = self.pdf_doc.search_text(text)
+        
+        if case_sensitive:
+            # Filtrar: verificar que el texto extraído coincida exactamente
+            filtered = []
+            for page_num, rect in raw_results:
+                page = self.pdf_doc.get_page(page_num)
+                if page:
+                    found_text = page.get_textbox(rect).strip()
+                    if text in found_text:
+                        filtered.append(SearchResult(page_num=page_num, rect=rect))
+            results = filtered
+        else:
+            results = [SearchResult(page_num=pn, rect=r) for pn, r in raw_results]
+        
+        self.search_panel.set_results(results)
+    
+    def _on_navigate_to_result(self, page_num: int, rect):
+        """Navega a una página y centra el resultado.
+        
+        Args:
+            page_num: Página destino (0-based).
+            rect: Rectángulo del resultado en coordenadas PDF.
+        """
+        if self.pdf_viewer.current_page != page_num:
+            self.go_to_page(page_num)
+        
+        # Centrar vista en el rectángulo
+        view_rect = self.pdf_viewer.pdf_to_view_rect(rect)
+        self.pdf_viewer.centerOn(view_rect.center())
+    
+    def _on_search_highlights_changed(self, results: list):
+        """Actualiza resaltados de búsqueda en el visor.
+        
+        Args:
+            results: Lista de SearchResult a resaltar.
+        """
+        from PyQt5.QtWidgets import QGraphicsRectItem
+        from PyQt5.QtGui import QColor, QBrush, QPen
+        from PyQt5.QtCore import Qt
+        
+        # Limpiar resaltados previos
+        if not hasattr(self, '_search_highlight_items'):
+            self._search_highlight_items = []
+        for item in self._search_highlight_items:
+            if item.scene():
+                item.scene().removeItem(item)
+        self._search_highlight_items.clear()
+        
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+        
+        current_page = self.pdf_viewer.current_page
+        current_idx = self.search_panel._current_index
+        
+        # Resaltar solo resultados de la página actual
+        for i, result in enumerate(results):
+            if result.page_num != current_page:
+                continue
+            
+            view_rect = self.pdf_viewer.pdf_to_view_rect(result.rect)
+            
+            item = QGraphicsRectItem(view_rect)
+            item.setZValue(60)
+            
+            if i == current_idx:
+                # Resultado activo: naranja brillante
+                item.setBrush(QBrush(QColor(255, 150, 0, 100)))
+                item.setPen(QPen(QColor(255, 150, 0, 200), 2))
+            else:
+                # Otros resultados: amarillo suave
+                item.setBrush(QBrush(QColor(255, 255, 0, 60)))
+                item.setPen(QPen(Qt.NoPen))
+            
+            self.pdf_viewer.scene.addItem(item)
+            self._search_highlight_items.append(item)
+    
+    def _on_replace_requested(self, old_text: str, new_text: str, page_num: int, rect):
+        """Reemplaza una coincidencia individual.
+        
+        Args:
+            old_text: Texto original.
+            new_text: Texto de reemplazo.
+            page_num: Página del resultado.
+            rect: Rectángulo del texto a reemplazar.
+        """
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+        
+        import fitz
+        
+        success = self.pdf_doc.edit_text(page_num, rect, new_text)
+        if success:
+            self.statusBar().showMessage(f"Reemplazado en página {page_num + 1}", 3000)
+            self.pdf_viewer.render_page()
+            # Re-buscar para actualizar resultados
+            self._on_search_requested(old_text, self.search_panel.case_sensitive)
+        else:
+            self.statusBar().showMessage("Error al reemplazar texto", 3000)
+    
+    def _on_replace_all_requested(self, old_text: str, new_text: str):
+        """Reemplaza todas las coincidencias.
+        
+        Args:
+            old_text: Texto original.
+            new_text: Texto de reemplazo.
+        """
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+        
+        results = self.search_panel._results
+        if not results:
+            return
+        
+        count = 0
+        # Reemplazar de atrás hacia adelante para no invalidar posiciones
+        for result in reversed(results):
+            success = self.pdf_doc.edit_text(result.page_num, result.rect, new_text)
+            if success:
+                count += 1
+        
+        if count > 0:
+            self.pdf_viewer.render_page()
+            self.search_panel.clear_results()
+            self.statusBar().showMessage(
+                f"Reemplazadas {count} de {len(results)} coincidencias", 5000
+            )
+        else:
+            self.statusBar().showMessage("No se pudo reemplazar ninguna coincidencia", 3000)
+    
+    def _on_search_panel_closed(self):
+        """Limpia resaltados al cerrar el panel de búsqueda."""
+        if hasattr(self, '_search_highlight_items'):
+            for item in self._search_highlight_items:
+                if item.scene():
+                    item.scene().removeItem(item)
+            self._search_highlight_items.clear()
     
     def show_about(self):
         """Muestra el diálogo Acerca de."""
