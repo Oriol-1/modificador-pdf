@@ -2100,6 +2100,48 @@ class PDFDocument:
             print(f"Error al insertar PDF: {e}")
             return None
     
+    def insert_image(self, page_num: int, rect: fitz.Rect, image_path: str,
+                     keep_proportion: bool = True, overlay: bool = True) -> bool:
+        """Inserta una imagen en una página del PDF.
+        
+        Args:
+            page_num: Número de página (0-based).
+            rect: Rectángulo donde colocar la imagen (coordenadas PDF).
+            image_path: Ruta al archivo de imagen (PNG, JPEG, BMP, etc.).
+            keep_proportion: Mantener proporción de la imagen.
+            overlay: True para colocar sobre el contenido existente.
+            
+        Returns:
+            True si la imagen se insertó correctamente.
+        """
+        if not self.doc:
+            self._last_error = "No hay documento abierto"
+            return False
+        
+        page = self.get_page(page_num)
+        if not page:
+            self._last_error = f"Página {page_num} no válida"
+            return False
+        
+        if not os.path.isfile(image_path):
+            self._last_error = f"Archivo de imagen no encontrado: {image_path}"
+            return False
+        
+        try:
+            self._save_snapshot()
+            page.insert_image(
+                rect,
+                filename=image_path,
+                keep_proportion=keep_proportion,
+                overlay=overlay,
+            )
+            self.modified = True
+            return True
+        except Exception as e:
+            self._last_error = str(e)
+            print(f"Error al insertar imagen: {e}")
+            return False
+    
     def insert_pages_from_pdf(self, source_path: str,
                                source_pages: List[int],
                                at_page: int = -1) -> Optional[int]:

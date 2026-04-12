@@ -834,6 +834,11 @@ class MainWindow(QMainWindow):
         insert_pdf_action.triggered.connect(self._insert_pdf_dialog)
         doc_menu.addAction(insert_pdf_action)
         
+        insert_image_action = QAction("🖼️ Insertar Imagen...", self)
+        insert_image_action.setShortcut("Ctrl+Shift+M")
+        insert_image_action.triggered.connect(self._insert_image_dialog)
+        doc_menu.addAction(insert_image_action)
+        
         # Menú Ayuda
         help_menu = menubar.addMenu("A&yuda")
         
@@ -1984,6 +1989,157 @@ class MainWindow(QMainWindow):
                 if item.scene():
                     item.scene().removeItem(item)
             self._search_highlight_items.clear()
+    
+    # --- Insertar Imagen ---
+    
+    def _insert_image_dialog(self):
+        """Diálogo para insertar una imagen en la página actual."""
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            QMessageBox.warning(self, "Sin documento", "Abre un PDF primero.")
+            return
+        
+        # Seleccionar archivo de imagen
+        image_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Seleccionar imagen",
+            "",
+            "Imágenes (*.png *.jpg *.jpeg *.bmp *.gif *.tiff *.svg);;Todos (*.*)"
+        )
+        if not image_path:
+            return
+        
+        # Obtener dimensiones de la página actual
+        page = self.pdf_doc.get_page(self.pdf_viewer.current_page)
+        if not page:
+            return
+        
+        page_rect = page.rect
+        
+        # Diálogo para configurar posición y tamaño
+        from PyQt5.QtWidgets import (
+            QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+            QSpinBox, QDoubleSpinBox, QGroupBox, QCheckBox, QPushButton
+        )
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("🖼️ Insertar Imagen")
+        dialog.setMinimumWidth(400)
+        dialog.setStyleSheet("""
+            QDialog { background-color: #1e1e1e; color: #ffffff; }
+            QGroupBox {
+                border: 1px solid #3e3e42; border-radius: 4px;
+                margin-top: 8px; padding-top: 12px;
+                color: #ffffff; font-weight: bold;
+            }
+            QLabel { color: #cccccc; }
+            QSpinBox, QDoubleSpinBox {
+                background: #2d2d30; color: #ffffff;
+                border: 1px solid #3e3e42; border-radius: 3px;
+                padding: 2px 6px;
+            }
+            QCheckBox { color: #cccccc; }
+            QPushButton {
+                background-color: #0078d4; color: #ffffff;
+                border: none; border-radius: 3px;
+                padding: 6px 16px; min-width: 80px;
+            }
+            QPushButton:hover { background-color: #1a8ad4; }
+        """)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Info archivo
+        file_label = QLabel(f"Archivo: {os.path.basename(image_path)}")
+        layout.addWidget(file_label)
+        
+        # Posición
+        pos_group = QGroupBox("Posición (puntos PDF)")
+        pos_layout = QHBoxLayout(pos_group)
+        
+        pos_layout.addWidget(QLabel("X:"))
+        spin_x = QDoubleSpinBox()
+        spin_x.setRange(0, page_rect.width)
+        spin_x.setValue(50)
+        spin_x.setSuffix(" pt")
+        pos_layout.addWidget(spin_x)
+        
+        pos_layout.addWidget(QLabel("Y:"))
+        spin_y = QDoubleSpinBox()
+        spin_y.setRange(0, page_rect.height)
+        spin_y.setValue(50)
+        spin_y.setSuffix(" pt")
+        pos_layout.addWidget(spin_y)
+        
+        layout.addWidget(pos_group)
+        
+        # Tamaño
+        size_group = QGroupBox("Tamaño")
+        size_layout = QHBoxLayout(size_group)
+        
+        size_layout.addWidget(QLabel("Ancho:"))
+        spin_w = QDoubleSpinBox()
+        spin_w.setRange(10, page_rect.width)
+        spin_w.setValue(min(200, page_rect.width - 100))
+        spin_w.setSuffix(" pt")
+        size_layout.addWidget(spin_w)
+        
+        size_layout.addWidget(QLabel("Alto:"))
+        spin_h = QDoubleSpinBox()
+        spin_h.setRange(10, page_rect.height)
+        spin_h.setValue(min(200, page_rect.height - 100))
+        spin_h.setSuffix(" pt")
+        size_layout.addWidget(spin_h)
+        
+        layout.addWidget(size_group)
+        
+        # Opciones
+        chk_proportion = QCheckBox("Mantener proporción")
+        chk_proportion.setChecked(True)
+        layout.addWidget(chk_proportion)
+        
+        chk_overlay = QCheckBox("Sobre el contenido existente")
+        chk_overlay.setChecked(True)
+        layout.addWidget(chk_overlay)
+        
+        # Botones
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        btn_cancel = QPushButton("Cancelar")
+        btn_cancel.clicked.connect(dialog.reject)
+        btn_layout.addWidget(btn_cancel)
+        btn_insert = QPushButton("Insertar")
+        btn_insert.clicked.connect(dialog.accept)
+        btn_layout.addWidget(btn_insert)
+        layout.addLayout(btn_layout)
+        
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        
+        import fitz
+        rect = fitz.Rect(
+            spin_x.value(), spin_y.value(),
+            spin_x.value() + spin_w.value(),
+            spin_y.value() + spin_h.value()
+        )
+        
+        success = self.pdf_doc.insert_image(
+            self.pdf_viewer.current_page,
+            rect,
+            image_path,
+            keep_proportion=chk_proportion.isChecked(),
+            overlay=chk_overlay.isChecked()
+        )
+        
+        if success:
+            self.pdf_viewer.render_page()
+            self.statusBar().showMessage(
+                f"Imagen insertada en página {self.pdf_viewer.current_page + 1}", 3000
+            )
+        else:
+            QMessageBox.warning(
+                self, "Error",
+                f"No se pudo insertar la imagen:\n{self.pdf_doc._last_error}"
+            )
     
     def show_about(self):
         """Muestra el diálogo Acerca de."""
