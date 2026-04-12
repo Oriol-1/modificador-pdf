@@ -16,6 +16,8 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import pyqtSignal, Qt, QRectF
 from PyQt5.QtGui import QColor, QKeySequence, QIcon
 
+from ui.theme_manager import ThemeColor
+
 logger = logging.getLogger(__name__)
 
 
@@ -180,56 +182,57 @@ class SearchReplacePanel(QWidget):
 
     def _apply_theme(self):
         """Aplica tema oscuro al panel."""
-        self.setStyleSheet("""
-            SearchReplacePanel {
-                background-color: #252526;
-                border-bottom: 1px solid #3e3e42;
-            }
-            QLineEdit {
-                background-color: #3c3c3c;
-                color: #ffffff;
-                border: 1px solid #3e3e42;
+        c = ThemeColor
+        self.setStyleSheet(f"""
+            SearchReplacePanel {{
+                background-color: {c.BG_TERTIARY};
+                border-bottom: 1px solid {c.BORDER};
+            }}
+            QLineEdit {{
+                background-color: {c.BG_INPUT};
+                color: {c.TEXT_PRIMARY};
+                border: 1px solid {c.BORDER};
                 border-radius: 3px;
                 padding: 2px 6px;
                 font-size: 12px;
-            }
-            QLineEdit:focus {
-                border-color: #0078d4;
-            }
-            QCheckBox {
-                color: #cccccc;
+            }}
+            QLineEdit:focus {{
+                border-color: {c.ACCENT};
+            }}
+            QCheckBox {{
+                color: {c.TEXT_SECONDARY};
                 font-size: 11px;
                 spacing: 2px;
-            }
-            QLabel {
-                color: #cccccc;
+            }}
+            QLabel {{
+                color: {c.TEXT_SECONDARY};
                 font-size: 11px;
-            }
-            QToolButton {
+            }}
+            QToolButton {{
                 background: transparent;
-                color: #cccccc;
+                color: {c.TEXT_SECONDARY};
                 border: none;
                 border-radius: 3px;
                 font-size: 12px;
-            }
-            QToolButton:hover {
-                background-color: #3e3e42;
-            }
-            QPushButton {
-                background-color: #0078d4;
-                color: #ffffff;
+            }}
+            QToolButton:hover {{
+                background-color: {c.BG_HOVER};
+            }}
+            QPushButton {{
+                background-color: {c.ACCENT};
+                color: {c.TEXT_PRIMARY};
                 border: none;
                 border-radius: 3px;
                 padding: 3px 8px;
                 font-size: 11px;
-            }
-            QPushButton:hover {
-                background-color: #1a8ad4;
-            }
-            QPushButton:disabled {
-                background-color: #3e3e42;
-                color: #666666;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {c.ACCENT_HOVER};
+            }}
+            QPushButton:disabled {{
+                background-color: {c.BG_HOVER};
+                color: {c.TEXT_DISABLED};
+            }}
         """)
 
     # --- Acciones públicas ---

@@ -23,6 +23,7 @@ from ui.workspace_manager import (
 )
 from ui.help_system import HelpDialog, show_help, open_online_manual
 from ui.search_replace_panel import SearchReplacePanel, SearchResult
+from ui.theme_manager import ThemeColor, ThemeStyles
 
 # Phase 2 imports
 try:
@@ -38,16 +39,16 @@ class DropZoneWidget(QFrame):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet("""
-            DropZoneWidget {
-                background-color: #2d2d30;
-                border: 3px dashed #555;
+        self.setStyleSheet(f"""
+            DropZoneWidget {{
+                background-color: {ThemeColor.BG_SECONDARY};
+                border: 3px dashed {ThemeColor.BORDER_LIGHT};
                 border-radius: 20px;
-            }
-            DropZoneWidget:hover {
-                border-color: #0078d4;
+            }}
+            DropZoneWidget:hover {{
+                border-color: {ThemeColor.ACCENT};
                 background-color: #333;
-            }
+            }}
         """)
         
         layout = QVBoxLayout(self)
@@ -61,13 +62,13 @@ class DropZoneWidget(QFrame):
         
         # Texto principal
         text_label = QLabel("Arrastra un PDF aquí")
-        text_label.setStyleSheet("font-size: 24px; color: #ccc; font-weight: bold; background: transparent; border: none;")
+        text_label.setStyleSheet(f"font-size: 24px; color: {ThemeColor.TEXT_SECONDARY}; font-weight: bold; background: transparent; border: none;")
         text_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(text_label)
         
         # Texto secundario
         sub_label = QLabel("o haz clic en 'Abrir' (Ctrl+O)")
-        sub_label.setStyleSheet("font-size: 14px; color: #888; background: transparent; border: none;")
+        sub_label.setStyleSheet(f"font-size: 14px; color: {ThemeColor.TEXT_PLACEHOLDER}; background: transparent; border: none;")
         sub_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(sub_label)
 
@@ -103,54 +104,7 @@ class MainWindow(QMainWindow):
         self.resize(1200, 800)
         
         # Estilo oscuro moderno
-        self.setStyleSheet("""
-            QMainWindow {
-                background-color: #1e1e1e;
-            }
-            QMenuBar {
-                background-color: #2d2d30;
-                color: #ccc;
-            }
-            QMenuBar::item:selected {
-                background-color: #0078d4;
-            }
-            QMenu {
-                background-color: #2d2d30;
-                color: #ccc;
-                border: 1px solid #555;
-            }
-            QMenu::item:selected {
-                background-color: #0078d4;
-            }
-            QToolBar {
-                background-color: #2d2d30;
-                border: none;
-                spacing: 5px;
-                padding: 5px;
-            }
-            QToolButton {
-                background-color: transparent;
-                color: #ccc;
-                border: none;
-                padding: 8px 12px;
-                border-radius: 4px;
-                font-size: 13px;
-            }
-            QToolButton:hover {
-                background-color: #3d3d40;
-            }
-            QToolButton:checked {
-                background-color: #0078d4;
-                color: white;
-            }
-            QStatusBar {
-                background-color: #007acc;
-                color: white;
-            }
-            QSplitter::handle {
-                background-color: #3d3d40;
-            }
-        """)
+        self.setStyleSheet(ThemeStyles.main_window())
         
         # Widget central
         central_widget = QWidget()
@@ -326,16 +280,16 @@ class MainWindow(QMainWindow):
     
     def _reset_drop_zone_style(self):
         """Restaura el estilo de la zona de arrastre."""
-        self.drop_zone.setStyleSheet("""
-            DropZoneWidget {
-                background-color: #2d2d30;
-                border: 3px dashed #555;
+        self.drop_zone.setStyleSheet(f"""
+            DropZoneWidget {{
+                background-color: {ThemeColor.BG_SECONDARY};
+                border: 3px dashed {ThemeColor.BORDER_LIGHT};
                 border-radius: 20px;
-            }
-            DropZoneWidget:hover {
-                border-color: #0078d4;
+            }}
+            DropZoneWidget:hover {{
+                border-color: {ThemeColor.ACCENT};
                 background-color: #333;
-            }
+            }}
         """)
     
     def _select_or_create_folder(self, pdf_count: int = 0) -> str:
@@ -349,29 +303,29 @@ class MainWindow(QMainWindow):
         dialog = QDialog(self)
         dialog.setWindowTitle("📁 Configurar Ubicación de Grupos de Trabajo")
         dialog.setMinimumSize(650, 550)
-        dialog.setStyleSheet("""
-            QDialog { background-color: #1e1e1e; }
-            QLabel { color: #ffffff; font-size: 13px; }
-            QLineEdit {
-                background-color: #3d3d3d; color: #ffffff;
-                border: 1px solid #555; border-radius: 4px;
+        dialog.setStyleSheet(f"""
+            QDialog {{ background-color: {ThemeColor.BG_PRIMARY}; }}
+            QLabel {{ color: {ThemeColor.TEXT_PRIMARY}; font-size: 13px; }}
+            QLineEdit {{
+                background-color: #3d3d3d; color: {ThemeColor.TEXT_PRIMARY};
+                border: 1px solid {ThemeColor.BORDER_LIGHT}; border-radius: 4px;
                 padding: 8px; font-size: 13px;
-            }
-            QPushButton {
-                background-color: #0078d4; color: white;
+            }}
+            QPushButton {{
+                background-color: {ThemeColor.ACCENT}; color: white;
                 border: none; padding: 10px 20px;
                 border-radius: 4px; font-size: 13px; font-weight: bold;
-            }
-            QPushButton:hover { background-color: #1084d8; }
-            QPushButton.secondary { background-color: #3d3d3d; }
-            QPushButton.secondary:hover { background-color: #4d4d4d; }
-            QListWidget {
-                background-color: #2d2d30; color: #ffffff;
-                border: 1px solid #555; border-radius: 4px; font-size: 12px;
-            }
-            QListWidget::item { padding: 8px; }
-            QListWidget::item:selected { background-color: #0078d4; }
-            QListWidget::item:hover { background-color: #3d3d3d; }
+            }}
+            QPushButton:hover {{ background-color: {ThemeColor.ACCENT_HOVER}; }}
+            QPushButton.secondary {{ background-color: #3d3d3d; }}
+            QPushButton.secondary:hover {{ background-color: #4d4d4d; }}
+            QListWidget {{
+                background-color: {ThemeColor.BG_SECONDARY}; color: {ThemeColor.TEXT_PRIMARY};
+                border: 1px solid {ThemeColor.BORDER_LIGHT}; border-radius: 4px; font-size: 12px;
+            }}
+            QListWidget::item {{ padding: 8px; }}
+            QListWidget::item:selected {{ background-color: {ThemeColor.ACCENT}; }}
+            QListWidget::item:hover {{ background-color: #3d3d3d; }}
         """)
         
         layout = QVBoxLayout(dialog)
@@ -383,16 +337,16 @@ class MainWindow(QMainWindow):
             title = QLabel(f"📁 Crear Grupo de Trabajo con {pdf_count} PDFs")
         else:
             title = QLabel("📁 Configurar Ubicación de Grupos de Trabajo")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #0078d4;")
+        title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {ThemeColor.ACCENT};")
         layout.addWidget(title)
         
         # Explicación clara del proceso
         explanation_frame = QFrame()
-        explanation_frame.setStyleSheet("background: #252526; border-radius: 8px; padding: 12px;")
+        explanation_frame.setStyleSheet(f"background: {ThemeColor.BG_TERTIARY}; border-radius: 8px; padding: 12px;")
         exp_layout = QVBoxLayout(explanation_frame)
         
         exp_title = QLabel("📋 ¿Cómo funciona?")
-        exp_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #ffcc00;")
+        exp_title.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {ThemeColor.WARNING};")
         exp_layout.addWidget(exp_title)
         
         exp_text = QLabel(
@@ -405,14 +359,14 @@ class MainWindow(QMainWindow):
             "3️⃣ <b>Cada vez que importes más PDFs</b> → Nueva carpeta de grupo"
         )
         exp_text.setWordWrap(True)
-        exp_text.setStyleSheet("color: #ccc; font-size: 12px; line-height: 1.5;")
+        exp_text.setStyleSheet(f"color: {ThemeColor.TEXT_SECONDARY}; font-size: 12px; line-height: 1.5;")
         exp_layout.addWidget(exp_text)
         
         layout.addWidget(explanation_frame)
         
         # Sección: Elegir carpeta existente
         section1 = QLabel("📂 Opción 1: Seleccionar carpeta existente")
-        section1.setStyleSheet("font-size: 13px; font-weight: bold; color: #0078d4; margin-top: 10px;")
+        section1.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {ThemeColor.ACCENT}; margin-top: 10px;")
         layout.addWidget(section1)
         
         path_layout = QHBoxLayout()
@@ -453,7 +407,7 @@ class MainWindow(QMainWindow):
         
         # Sección: Crear nueva carpeta
         section2 = QLabel("➕ Opción 2: Crear nueva carpeta en la ubicación seleccionada")
-        section2.setStyleSheet("font-size: 13px; font-weight: bold; color: #4CAF50; margin-top: 15px;")
+        section2.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {ThemeColor.SUCCESS}; margin-top: 15px;")
         layout.addWidget(section2)
         
         new_folder_layout = QHBoxLayout()
@@ -462,7 +416,7 @@ class MainWindow(QMainWindow):
         new_folder_layout.addWidget(new_folder_edit)
         
         btn_create = QPushButton("➕ Crear Carpeta")
-        btn_create.setStyleSheet("background-color: #4CAF50;")
+        btn_create.setStyleSheet(f"background-color: {ThemeColor.SUCCESS};")
         new_folder_layout.addWidget(btn_create)
         
         layout.addLayout(new_folder_layout)
@@ -562,19 +516,19 @@ class MainWindow(QMainWindow):
         confirm_dialog = QDialog(self)
         confirm_dialog.setWindowTitle("📁 Crear Grupo de Trabajo")
         confirm_dialog.setMinimumWidth(600)
-        confirm_dialog.setStyleSheet("""
-            QDialog { background-color: #1e1e1e; }
-            QLabel { color: #ffffff; }
-            QPushButton {
-                background-color: #0078d4; color: white;
+        confirm_dialog.setStyleSheet(f"""
+            QDialog {{ background-color: {ThemeColor.BG_PRIMARY}; }}
+            QLabel {{ color: {ThemeColor.TEXT_PRIMARY}; }}
+            QPushButton {{
+                background-color: {ThemeColor.ACCENT}; color: white;
                 border: none; padding: 12px 20px;
                 border-radius: 6px; font-size: 13px; font-weight: bold;
-            }
-            QPushButton:hover { background-color: #1084d8; }
-            QPushButton.secondary { background-color: #3d3d3d; }
-            QPushButton.secondary:hover { background-color: #4d4d4d; }
-            QPushButton.green { background-color: #4CAF50; }
-            QPushButton.green:hover { background-color: #5CBF60; }
+            }}
+            QPushButton:hover {{ background-color: {ThemeColor.ACCENT_HOVER}; }}
+            QPushButton.secondary {{ background-color: #3d3d3d; }}
+            QPushButton.secondary:hover {{ background-color: #4d4d4d; }}
+            QPushButton.green {{ background-color: {ThemeColor.SUCCESS}; }}
+            QPushButton.green:hover {{ background-color: #5CBF60; }}
         """)
         
         layout = QVBoxLayout(confirm_dialog)
@@ -583,16 +537,16 @@ class MainWindow(QMainWindow):
         
         # Título
         title = QLabel(f"📁 Crear Grupo de Trabajo con {pdf_count} PDFs")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #0078d4;")
+        title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {ThemeColor.ACCENT};")
         layout.addWidget(title)
         
         # Lista de archivos seleccionados
         files_frame = QFrame()
-        files_frame.setStyleSheet("background: #252526; border-radius: 8px; padding: 10px;")
+        files_frame.setStyleSheet(f"background: {ThemeColor.BG_TERTIARY}; border-radius: 8px; padding: 10px;")
         files_layout = QVBoxLayout(files_frame)
         
         files_title = QLabel("📄 Archivos seleccionados:")
-        files_title.setStyleSheet("font-weight: bold; color: #ffcc00;")
+        files_title.setStyleSheet(f"font-weight: bold; color: {ThemeColor.WARNING};")
         files_layout.addWidget(files_title)
         
         files_text = ""
@@ -602,18 +556,18 @@ class MainWindow(QMainWindow):
             files_text += f"  ... y {pdf_count - 8} más"
         
         files_label = QLabel(files_text.strip())
-        files_label.setStyleSheet("color: #ccc; font-size: 12px;")
+        files_label.setStyleSheet(f"color: {ThemeColor.TEXT_SECONDARY}; font-size: 12px;")
         files_layout.addWidget(files_label)
         
         layout.addWidget(files_frame)
         
         # Explicación del proceso
         explain_frame = QFrame()
-        explain_frame.setStyleSheet("background: #1a3a1a; border-radius: 8px; padding: 12px; border: 1px solid #4CAF50;")
+        explain_frame.setStyleSheet(f"background: #1a3a1a; border-radius: 8px; padding: 12px; border: 1px solid {ThemeColor.SUCCESS};")
         explain_layout = QVBoxLayout(explain_frame)
         
         explain_title = QLabel("✨ ¿Qué pasará?")
-        explain_title.setStyleSheet("font-weight: bold; color: #4CAF50; font-size: 14px;")
+        explain_title.setStyleSheet(f"font-weight: bold; color: {ThemeColor.SUCCESS}; font-size: 14px;")
         explain_layout.addWidget(explain_title)
         
         explain_text = QLabel(
@@ -631,16 +585,16 @@ class MainWindow(QMainWindow):
         
         # Mostrar carpeta base actual o pedir una nueva
         location_frame = QFrame()
-        location_frame.setStyleSheet("background: #252526; border-radius: 8px; padding: 12px;")
+        location_frame.setStyleSheet(f"background: {ThemeColor.BG_TERTIARY}; border-radius: 8px; padding: 12px;")
         location_layout = QVBoxLayout(location_frame)
         
         if self.workspace_manager.base_path:
             location_title = QLabel("📍 Ubicación actual:")
-            location_title.setStyleSheet("font-weight: bold; color: #0078d4;")
+            location_title.setStyleSheet(f"font-weight: bold; color: {ThemeColor.ACCENT};")
             location_layout.addWidget(location_title)
             
             location_path = QLabel(self.workspace_manager.base_path)
-            location_path.setStyleSheet("color: #888; font-size: 11px;")
+            location_path.setStyleSheet(f"color: {ThemeColor.TEXT_PLACEHOLDER}; font-size: 11px;")
             location_path.setWordWrap(True)
             location_layout.addWidget(location_path)
             
@@ -650,11 +604,11 @@ class MainWindow(QMainWindow):
             location_layout.addWidget(btn_change)
         else:
             location_title = QLabel("⚠️ No hay ubicación configurada")
-            location_title.setStyleSheet("font-weight: bold; color: #ffcc00;")
+            location_title.setStyleSheet(f"font-weight: bold; color: {ThemeColor.WARNING};")
             location_layout.addWidget(location_title)
             
             location_info = QLabel("Necesitas elegir dónde guardar los grupos de trabajo.")
-            location_info.setStyleSheet("color: #888;")
+            location_info.setStyleSheet(f"color: {ThemeColor.TEXT_PLACEHOLDER};")
             location_layout.addWidget(location_info)
         
         layout.addWidget(location_frame)
@@ -969,18 +923,18 @@ class MainWindow(QMainWindow):
         mode_dialog = QDialog(self)
         mode_dialog.setWindowTitle("📂 Abrir PDF")
         mode_dialog.setMinimumWidth(450)
-        mode_dialog.setStyleSheet("""
-            QDialog { background-color: #1e1e1e; }
-            QLabel { color: #ffffff; }
-            QPushButton {
+        mode_dialog.setStyleSheet(f"""
+            QDialog {{ background-color: {ThemeColor.BG_PRIMARY}; }}
+            QLabel {{ color: {ThemeColor.TEXT_PRIMARY}; }}
+            QPushButton {{
                 background-color: #3d3d3d; color: white;
                 border: none; padding: 15px 20px;
                 border-radius: 8px; font-size: 13px;
                 text-align: left;
-            }
-            QPushButton:hover { background-color: #4d4d4d; }
-            QPushButton.primary { background-color: #0078d4; }
-            QPushButton.primary:hover { background-color: #1084d8; }
+            }}
+            QPushButton:hover {{ background-color: #4d4d4d; }}
+            QPushButton.primary {{ background-color: {ThemeColor.ACCENT}; }}
+            QPushButton.primary:hover {{ background-color: {ThemeColor.ACCENT_HOVER}; }}
         """)
         
         layout = QVBoxLayout(mode_dialog)
@@ -988,7 +942,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(25, 25, 25, 25)
         
         title = QLabel("¿Qué deseas hacer?")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #0078d4;")
+        title.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {ThemeColor.ACCENT};")
         layout.addWidget(title)
         
         # Opción 1: Abrir un solo PDF
@@ -1274,31 +1228,31 @@ class MainWindow(QMainWindow):
         dialog = QDialog(self)
         dialog.setWindowTitle("✅ Guardado Exitoso")
         dialog.setMinimumWidth(550)
-        dialog.setStyleSheet("""
-            QDialog {
-                background-color: #1e1e1e;
-            }
-            QLabel {
-                color: #ffffff;
-            }
-            QPushButton {
-                background-color: #0078d4;
+        dialog.setStyleSheet(f"""
+            QDialog {{
+                background-color: {ThemeColor.BG_PRIMARY};
+            }}
+            QLabel {{
+                color: {ThemeColor.TEXT_PRIMARY};
+            }}
+            QPushButton {{
+                background-color: {ThemeColor.ACCENT};
                 color: white;
                 border: none;
                 padding: 12px 24px;
                 border-radius: 6px;
                 font-size: 13px;
                 font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #1084d8;
-            }
-            QPushButton.secondary {
+            }}
+            QPushButton:hover {{
+                background-color: {ThemeColor.ACCENT_HOVER};
+            }}
+            QPushButton.secondary {{
                 background-color: #3d3d3d;
-            }
-            QPushButton.secondary:hover {
+            }}
+            QPushButton.secondary:hover {{
                 background-color: #4d4d4d;
-            }
+            }}
         """)
         
         layout = QVBoxLayout(dialog)
@@ -1307,18 +1261,18 @@ class MainWindow(QMainWindow):
         
         # Título con icono grande
         title = QLabel("✅ PDF Procesado Correctamente")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #4CAF50;")
+        title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {ThemeColor.SUCCESS};")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
         
         # === Diagrama visual del movimiento ===
         flow_frame = QFrame()
-        flow_frame.setStyleSheet("""
-            QFrame {
-                background-color: #252526;
+        flow_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {ThemeColor.BG_TERTIARY};
                 border-radius: 10px;
                 padding: 15px;
-            }
+            }}
         """)
         flow_layout = QVBoxLayout(flow_frame)
         
@@ -1329,24 +1283,24 @@ class MainWindow(QMainWindow):
         row1.addWidget(origin_icon)
         
         origin_label = QLabel("ORIGEN")
-        origin_label.setStyleSheet("color: #ffcc00; font-weight: bold; font-size: 14px;")
+        origin_label.setStyleSheet(f"color: {ThemeColor.WARNING}; font-weight: bold; font-size: 14px;")
         row1.addWidget(origin_label)
         
         origin_file = QLabel(f"<s>{os.path.basename(result['original'])}</s>")
-        origin_file.setStyleSheet("color: #888; font-size: 12px;")
+        origin_file.setStyleSheet(f"color: {ThemeColor.TEXT_PLACEHOLDER}; font-size: 12px;")
         row1.addWidget(origin_file)
         
         row1.addStretch()
         
         removed_badge = QLabel("❌ Removido")
-        removed_badge.setStyleSheet("color: #ff5555; font-size: 11px;")
+        removed_badge.setStyleSheet(f"color: {ThemeColor.ERROR}; font-size: 11px;")
         row1.addWidget(removed_badge)
         
         flow_layout.addLayout(row1)
         
         # Flecha
         arrow = QLabel("          ⬇️ Al guardar se movió automáticamente")
-        arrow.setStyleSheet("color: #888; font-size: 12px;")
+        arrow.setStyleSheet(f"color: {ThemeColor.TEXT_PLACEHOLDER}; font-size: 12px;")
         flow_layout.addWidget(arrow)
         
         # Fila 2: Modificado - Sí
@@ -1356,17 +1310,17 @@ class MainWindow(QMainWindow):
         row2.addWidget(mod_icon)
         
         mod_label = QLabel("MODIFICADO - SÍ")
-        mod_label.setStyleSheet("color: #4CAF50; font-weight: bold; font-size: 14px;")
+        mod_label.setStyleSheet(f"color: {ThemeColor.SUCCESS}; font-weight: bold; font-size: 14px;")
         row2.addWidget(mod_label)
         
         mod_file = QLabel(os.path.basename(result['modified']))
-        mod_file.setStyleSheet("color: #4CAF50; font-size: 12px;")
+        mod_file.setStyleSheet(f"color: {ThemeColor.SUCCESS}; font-size: 12px;")
         row2.addWidget(mod_file)
         
         row2.addStretch()
         
         new_badge = QLabel("✨ Nuevo")
-        new_badge.setStyleSheet("color: #4CAF50; font-size: 11px; font-weight: bold;")
+        new_badge.setStyleSheet(f"color: {ThemeColor.SUCCESS}; font-size: 11px; font-weight: bold;")
         row2.addWidget(new_badge)
         
         flow_layout.addLayout(row2)
@@ -1378,17 +1332,17 @@ class MainWindow(QMainWindow):
         row3.addWidget(orig_icon)
         
         orig_label = QLabel("MODIFICADO - NO")
-        orig_label.setStyleSheet("color: #9E9E9E; font-weight: bold; font-size: 14px;")
+        orig_label.setStyleSheet(f"color: {ThemeColor.TEXT_DISABLED}; font-weight: bold; font-size: 14px;")
         row3.addWidget(orig_label)
         
         orig_file = QLabel(os.path.basename(result['original']))
-        orig_file.setStyleSheet("color: #9E9E9E; font-size: 12px;")
+        orig_file.setStyleSheet(f"color: {ThemeColor.TEXT_DISABLED}; font-size: 12px;")
         row3.addWidget(orig_file)
         
         row3.addStretch()
         
         backup_badge = QLabel("🔒 Backup")
-        backup_badge.setStyleSheet("color: #9E9E9E; font-size: 11px;")
+        backup_badge.setStyleSheet(f"color: {ThemeColor.TEXT_DISABLED}; font-size: 11px;")
         row3.addWidget(backup_badge)
         
         flow_layout.addLayout(row3)
@@ -1397,23 +1351,23 @@ class MainWindow(QMainWindow):
         
         # === Estadísticas ===
         stats_frame = QFrame()
-        stats_frame.setStyleSheet("""
-            QFrame {
-                background-color: #2d2d30;
+        stats_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {ThemeColor.BG_SECONDARY};
                 border-radius: 8px;
                 padding: 10px;
-            }
+            }}
         """)
         stats_layout = QHBoxLayout(stats_frame)
         
         pending_label = QLabel(f"📥 Pendientes: {stats['pending']}")
-        pending_label.setStyleSheet("color: #ffcc00; font-size: 13px;")
+        pending_label.setStyleSheet(f"color: {ThemeColor.WARNING}; font-size: 13px;")
         stats_layout.addWidget(pending_label)
         
         stats_layout.addStretch()
         
         modified_label = QLabel(f"✅ Modificados: {stats['modified']}")
-        modified_label.setStyleSheet("color: #4CAF50; font-size: 13px;")
+        modified_label.setStyleSheet(f"color: {ThemeColor.SUCCESS}; font-size: 13px;")
         stats_layout.addWidget(modified_label)
         
         stats_layout.addStretch()

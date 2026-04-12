@@ -12,6 +12,8 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QUrl
 from PyQt5.QtGui import QFont, QDesktopServices
 
+from ui.theme_manager import ThemeColor
+
 
 # URL base del manual online (GitHub Pages)
 MANUAL_URL = "https://oriol-1.github.io/modificador-pdf/"
@@ -378,51 +380,51 @@ class HelpDialog(QDialog):
     
     def setup_ui(self):
         """Configura la interfaz del diálogo."""
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #1e1e1e;
-            }
-            QListWidget {
-                background-color: #252526;
-                color: #ccc;
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {ThemeColor.BG_PRIMARY};
+            }}
+            QListWidget {{
+                background-color: {ThemeColor.BG_TERTIARY};
+                color: {ThemeColor.TEXT_SECONDARY};
                 border: none;
                 font-size: 14px;
-            }
-            QListWidget::item {
+            }}
+            QListWidget::item {{
                 padding: 12px 16px;
                 border-bottom: 1px solid #333;
-            }
-            QListWidget::item:selected {
-                background-color: #0078d4;
+            }}
+            QListWidget::item:selected {{
+                background-color: {ThemeColor.ACCENT};
                 color: white;
-            }
-            QListWidget::item:hover {
+            }}
+            QListWidget::item:hover {{
                 background-color: #2a2d2e;
-            }
-            QTextBrowser {
-                background-color: #1e1e1e;
+            }}
+            QTextBrowser {{
+                background-color: {ThemeColor.BG_PRIMARY};
                 color: #d4d4d4;
                 border: none;
                 font-size: 14px;
                 padding: 20px;
-            }
-            QPushButton {
-                background-color: #0078d4;
+            }}
+            QPushButton {{
+                background-color: {ThemeColor.ACCENT};
                 color: white;
                 border: none;
                 padding: 10px 24px;
                 border-radius: 4px;
                 font-size: 13px;
-            }
-            QPushButton:hover {
-                background-color: #1a8ad4;
-            }
-            QPushButton#secondaryBtn {
+            }}
+            QPushButton:hover {{
+                background-color: {ThemeColor.ACCENT_HOVER};
+            }}
+            QPushButton#secondaryBtn {{
                 background-color: #3d3d40;
-            }
-            QPushButton#secondaryBtn:hover {
+            }}
+            QPushButton#secondaryBtn:hover {{
                 background-color: #4d4d50;
-            }
+            }}
         """)
         
         layout = QVBoxLayout(self)
@@ -433,18 +435,18 @@ class HelpDialog(QDialog):
         
         # Panel izquierdo - Lista de secciones
         left_panel = QFrame()
-        left_panel.setStyleSheet("background-color: #252526;")
+        left_panel.setStyleSheet(f"background-color: {ThemeColor.BG_TERTIARY};")
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(0, 0, 0, 0)
         
         # Título del panel
         title = QLabel("  📚 Contenido")
-        title.setStyleSheet("""
+        title.setStyleSheet(f"""
             font-size: 16px;
             font-weight: bold;
-            color: #0078d4;
+            color: {ThemeColor.ACCENT};
             padding: 16px;
-            background-color: #252526;
+            background-color: {ThemeColor.BG_TERTIARY};
         """)
         left_layout.addWidget(title)
         

@@ -9,6 +9,8 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal, QSize
 from PyQt5.QtGui import QIcon, QKeySequence, QFont
 
+from ui.theme_manager import ThemeColor
+
 
 class EditorToolBar(QToolBar):
     """Barra de herramientas principal del editor."""
@@ -42,18 +44,18 @@ class EditorToolBar(QToolBar):
         self.setIconSize(QSize(24, 24))
         
         # Estilo mejorado
-        self.setStyleSheet("""
-            QToolBar {
-                background-color: #2d2d30;
+        self.setStyleSheet(f"""
+            QToolBar {{
+                background-color: {ThemeColor.BG_SECONDARY};
                 border: none;
                 spacing: 8px;
                 padding: 8px;
-            }
-            QToolBar::separator {
-                background-color: #555;
+            }}
+            QToolBar::separator {{
+                background-color: {ThemeColor.BORDER_LIGHT};
                 width: 1px;
                 margin: 5px 10px;
-            }
+            }}
         """)
         
         self.current_tool = 'select'
@@ -165,21 +167,21 @@ class EditorToolBar(QToolBar):
         rotate_button = QToolButton(self)
         rotate_button.setDefaultAction(self.action_rotate)
         rotate_button.setPopupMode(QToolButton.InstantPopup)
-        rotate_button.setStyleSheet("""
-            QToolButton {
+        rotate_button.setStyleSheet(f"""
+            QToolButton {{
                 background-color: transparent;
                 color: white;
                 border: none;
                 padding: 4px 8px;
                 font-size: 13px;
-            }
-            QToolButton:hover {
-                background-color: #3e3e42;
-            }
-            QToolButton::menu-indicator {
+            }}
+            QToolButton:hover {{
+                background-color: {ThemeColor.BG_HOVER};
+            }}
+            QToolButton::menu-indicator {{
                 image: none;
                 width: 0px;
-            }
+            }}
         """)
         self.addWidget(rotate_button)
         

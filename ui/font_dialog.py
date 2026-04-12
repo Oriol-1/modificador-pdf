@@ -16,6 +16,8 @@ from PyQt5.QtCore import Qt, pyqtSignal
 
 from core.font_manager import FontDescriptor, get_font_manager
 
+from ui.theme_manager import ThemeColor
+
 import logging
 logger = logging.getLogger(__name__)
 
@@ -142,87 +144,88 @@ class FontDialog(QDialog):
     
     def _setup_style(self):
         """Configura el estilo del diálogo."""
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #1e1e1e;
-            }
-            QLabel {
-                color: #ffffff;
-            }
-            QGroupBox {
-                color: #ffffff;
-                border: 1px solid #555;
+        c = ThemeColor
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {c.BG_PRIMARY};
+            }}
+            QLabel {{
+                color: {c.TEXT_PRIMARY};
+            }}
+            QGroupBox {{
+                color: {c.TEXT_PRIMARY};
+                border: 1px solid {c.BORDER_LIGHT};
                 border-radius: 4px;
                 margin-top: 10px;
                 padding-top: 10px;
-            }
-            QGroupBox::title {
+            }}
+            QGroupBox::title {{
                 subcontrol-origin: margin;
                 left: 10px;
                 padding: 0 5px;
-            }
-            QComboBox {
+            }}
+            QComboBox {{
                 background-color: #3d3d3d;
                 color: white;
-                border: 1px solid #555;
+                border: 1px solid {c.BORDER_LIGHT};
                 padding: 5px 10px;
                 border-radius: 4px;
                 min-height: 25px;
-            }
-            QComboBox:hover {
-                border-color: #0078d4;
-            }
-            QComboBox::drop-down {
+            }}
+            QComboBox:hover {{
+                border-color: {c.ACCENT};
+            }}
+            QComboBox::drop-down {{
                 border: none;
                 width: 20px;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #2d2d30;
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: {c.BG_SECONDARY};
                 color: white;
-                selection-background-color: #0078d4;
-            }
-            QSpinBox, QDoubleSpinBox {
+                selection-background-color: {c.ACCENT};
+            }}
+            QSpinBox, QDoubleSpinBox {{
                 background-color: #3d3d3d;
                 color: white;
-                border: 1px solid #555;
+                border: 1px solid {c.BORDER_LIGHT};
                 padding: 5px;
                 border-radius: 4px;
-            }
-            QCheckBox {
+            }}
+            QCheckBox {{
                 color: white;
-            }
-            QCheckBox::indicator {
+            }}
+            QCheckBox::indicator {{
                 width: 18px;
                 height: 18px;
-            }
-            QCheckBox::indicator:unchecked {
+            }}
+            QCheckBox::indicator:unchecked {{
                 background-color: #3d3d3d;
-                border: 1px solid #555;
+                border: 1px solid {c.BORDER_LIGHT};
                 border-radius: 3px;
-            }
-            QCheckBox::indicator:checked {
-                background-color: #0078d4;
-                border: 1px solid #0078d4;
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {c.ACCENT};
+                border: 1px solid {c.ACCENT};
                 border-radius: 3px;
-            }
-            QPushButton {
+            }}
+            QPushButton {{
                 background-color: #3d3d3d;
                 color: white;
-                border: 1px solid #555;
+                border: 1px solid {c.BORDER_LIGHT};
                 padding: 8px 20px;
                 border-radius: 4px;
-            }
-            QPushButton:hover {
+            }}
+            QPushButton:hover {{
                 background-color: #4d4d4d;
-                border-color: #0078d4;
-            }
-            QPushButton#acceptBtn {
-                background-color: #0078d4;
-                border-color: #0078d4;
-            }
-            QPushButton#acceptBtn:hover {
-                background-color: #1084d8;
-            }
+                border-color: {c.ACCENT};
+            }}
+            QPushButton#acceptBtn {{
+                background-color: {c.ACCENT};
+                border-color: {c.ACCENT};
+            }}
+            QPushButton#acceptBtn:hover {{
+                background-color: {c.ACCENT_HOVER};
+            }}
         """)
     
     def _setup_ui(self):

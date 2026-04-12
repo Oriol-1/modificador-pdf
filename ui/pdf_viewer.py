@@ -15,6 +15,8 @@ from PyQt5.QtGui import (
 import fitz
 from collections import Counter
 
+from ui.theme_manager import ThemeColor, ThemeStyles
+
 
 def _dominant_style(spans_or_runs):
     """Calcula la fuente/tamaño/bold/color dominante ponderado por longitud de texto.
@@ -153,41 +155,41 @@ class PDFPageView(QGraphicsView):
         self.setBackgroundBrush(QBrush(QColor(50, 50, 50)))
         
         # Estilo moderno
-        self.setStyleSheet("""
-            QGraphicsView {
+        self.setStyleSheet(f"""
+            QGraphicsView {{
                 border: none;
-                background-color: #323232;
-            }
-            QScrollBar:vertical {
-                background-color: #2d2d30;
+                background-color: {ThemeColor.VIEWER_BG};
+            }}
+            QScrollBar:vertical {{
+                background-color: {ThemeColor.SCROLLBAR_BG};
                 width: 12px;
                 border: none;
-            }
-            QScrollBar::handle:vertical {
-                background-color: #5a5a5a;
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {ThemeColor.SCROLLBAR_HANDLE};
                 border-radius: 6px;
                 min-height: 30px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background-color: #787878;
-            }
-            QScrollBar:horizontal {
-                background-color: #2d2d30;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background-color: {ThemeColor.SCROLLBAR_HOVER};
+            }}
+            QScrollBar:horizontal {{
+                background-color: {ThemeColor.SCROLLBAR_BG};
                 height: 12px;
                 border: none;
-            }
-            QScrollBar::handle:horizontal {
-                background-color: #5a5a5a;
+            }}
+            QScrollBar::handle:horizontal {{
+                background-color: {ThemeColor.SCROLLBAR_HANDLE};
                 border-radius: 6px;
                 min-width: 30px;
-            }
-            QScrollBar::handle:horizontal:hover {
-                background-color: #787878;
-            }
-            QScrollBar::add-line, QScrollBar::sub-line {
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background-color: {ThemeColor.SCROLLBAR_HOVER};
+            }}
+            QScrollBar::add-line, QScrollBar::sub-line {{
                 height: 0px;
                 width: 0px;
-            }
+            }}
         """)
         
         # Estado
@@ -1490,30 +1492,7 @@ class PDFPageView(QGraphicsView):
         msg.button(QMessageBox.No).setText('Cancelar')
         
         # Estilo del diálogo
-        msg.setStyleSheet("""
-            QMessageBox {
-                background-color: #2d2d30;
-            }
-            QMessageBox QLabel {
-                color: #ffffff;
-                font-size: 13px;
-            }
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                border: none;
-                padding: 8px 20px;
-                border-radius: 4px;
-                font-size: 12px;
-                min-width: 80px;
-            }
-            QPushButton:hover {
-                background-color: #1084d8;
-            }
-            QPushButton:pressed {
-                background-color: #006cbd;
-            }
-        """)
+        msg.setStyleSheet(ThemeStyles.message_box())
         
         reply = msg.exec_()
         
@@ -1577,27 +1556,7 @@ class PDFPageView(QGraphicsView):
         msg.button(QMessageBox.Yes).setText('🧹 Borrar área')
         msg.button(QMessageBox.No).setText('Cancelar')
         
-        msg.setStyleSheet("""
-            QMessageBox {
-                background-color: #2d2d30;
-            }
-            QMessageBox QLabel {
-                color: #ffffff;
-                font-size: 13px;
-            }
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                border: none;
-                padding: 8px 20px;
-                border-radius: 4px;
-                font-size: 12px;
-                min-width: 80px;
-            }
-            QPushButton:hover {
-                background-color: #1084d8;
-            }
-        """)
+        msg.setStyleSheet(ThemeStyles.message_box())
         
         reply = msg.exec_()
         
@@ -1866,27 +1825,7 @@ class PDFPageView(QGraphicsView):
             btn_remove = msg.addButton('🗑️ Eliminar', QMessageBox.DestructiveRole)
             btn_cancel = msg.addButton('Cancelar', QMessageBox.RejectRole)
             
-            msg.setStyleSheet("""
-                QMessageBox {
-                    background-color: #2d2d30;
-                }
-                QMessageBox QLabel {
-                    color: #ffffff;
-                    font-size: 13px;
-                }
-                QPushButton {
-                    background-color: #0078d4;
-                    color: white;
-                    border: none;
-                    padding: 8px 16px;
-                    border-radius: 4px;
-                    font-size: 12px;
-                    min-width: 80px;
-                }
-                QPushButton:hover {
-                    background-color: #1084d8;
-                }
-            """)
+            msg.setStyleSheet(ThemeStyles.message_box())
             
             msg.exec_()
             
@@ -3336,27 +3275,7 @@ class PDFPageView(QGraphicsView):
         msg.button(QMessageBox.Yes).setText('🗑️ Eliminar')
         msg.button(QMessageBox.No).setText('Cancelar')
         
-        msg.setStyleSheet("""
-            QMessageBox {
-                background-color: #2d2d30;
-            }
-            QMessageBox QLabel {
-                color: #ffffff;
-                font-size: 13px;
-            }
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                border: none;
-                padding: 8px 20px;
-                border-radius: 4px;
-                font-size: 12px;
-                min-width: 80px;
-            }
-            QPushButton:hover {
-                background-color: #1084d8;
-            }
-        """)
+        msg.setStyleSheet(ThemeStyles.message_box())
         
         if msg.exec_() == QMessageBox.Yes:
             self._delete_text_item(text_item, is_empty=False)
@@ -3379,27 +3298,7 @@ class PDFPageView(QGraphicsView):
         msg.button(QMessageBox.Yes).setText('🗑️ Eliminar')
         msg.button(QMessageBox.No).setText('Cancelar')
         
-        msg.setStyleSheet("""
-            QMessageBox {
-                background-color: #2d2d30;
-            }
-            QMessageBox QLabel {
-                color: #ffffff;
-                font-size: 13px;
-            }
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                border: none;
-                padding: 8px 20px;
-                border-radius: 4px;
-                font-size: 12px;
-                min-width: 80px;
-            }
-            QPushButton:hover {
-                background-color: #1084d8;
-            }
-        """)
+        msg.setStyleSheet(ThemeStyles.message_box())
         
         if msg.exec_() == QMessageBox.Yes:
             self._delete_text_item(text_item, is_empty=False)
