@@ -36,6 +36,7 @@ class EditorToolBar(QToolBar):
     
     ocrRequested = pyqtSignal()
     compressRequested = pyqtSignal()
+    pageManagerRequested = pyqtSignal()
     chatRequested = pyqtSignal()
     translateRequested = pyqtSignal()
     aiSettingsRequested = pyqtSignal()
@@ -205,6 +206,13 @@ class EditorToolBar(QToolBar):
         self.action_compress.setEnabled(False)
         self.addAction(self.action_compress)
         
+        # === Páginas ===
+        self.action_page_manager = QAction("📑 Páginas", self)
+        self.action_page_manager.setToolTip("Unir, dividir, extraer, eliminar y reordenar páginas")
+        self.action_page_manager.triggered.connect(self.pageManagerRequested.emit)
+        self.action_page_manager.setEnabled(False)
+        self.addAction(self.action_page_manager)
+        
         self.addSeparator()
         
         # === IA ===
@@ -362,6 +370,7 @@ class EditorToolBar(QToolBar):
         self.action_rotate.setEnabled(loaded)
         self.action_ocr.setEnabled(loaded)
         self.action_compress.setEnabled(loaded)
+        self.action_page_manager.setEnabled(loaded)
         self.action_chat.setEnabled(loaded)
         self.action_translate.setEnabled(loaded)
         

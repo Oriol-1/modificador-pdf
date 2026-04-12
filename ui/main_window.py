@@ -889,6 +889,7 @@ class MainWindow(QMainWindow):
         self.toolbar.rotatePageRequested.connect(self._rotate_current_page)
         self.toolbar.ocrRequested.connect(self._on_ocr_requested)
         self.toolbar.compressRequested.connect(self._on_compress_requested)
+        self.toolbar.pageManagerRequested.connect(self._on_page_manager_requested)
         self.toolbar.chatRequested.connect(self._on_chat_requested)
         self.toolbar.translateRequested.connect(self._on_translate_requested)
         self.toolbar.aiSettingsRequested.connect(self._on_ai_settings_requested)
@@ -1615,6 +1616,35 @@ class MainWindow(QMainWindow):
     
     # ─── Compresión ───
     
+    # ─── Gestión de páginas ───
+
+    def _on_page_manager_requested(self):
+        """Abre el diálogo de gestión de páginas."""
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+
+        file_path = self.pdf_doc.file_path
+        if not file_path or not os.path.isfile(file_path):
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("Gestión de páginas")
+            msg.setText("Guarde el documento primero.")
+            msg.setStyleSheet(ThemeStyles.message_box())
+            msg.exec_()
+            return
+
+        from ui.page_manager_dialog import PageManagerDialog
+        page_count = self.pdf_doc.page_count
+        dialog = PageManagerDialog(file_path, page_count, parent=self)
+        dialog.operation_completed.connect(self._on_page_operation_completed)
+        dialog.exec_()
+
+    def _on_page_operation_completed(self, output_path: str):
+        """Maneja la finalización de una operación de páginas."""
+        self.status_label.setText(
+            f"Operación completada: {os.path.basename(output_path)}"
+        )
+
     def _on_compress_requested(self):
         """Abre el diálogo de compresión del PDF actual."""
         if not self.pdf_doc or not self.pdf_doc.is_open():
