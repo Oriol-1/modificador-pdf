@@ -803,6 +803,7 @@ class MainWindow(QMainWindow):
         # Toolbar
         self.toolbar.openFile.connect(self.open_file)
         self.toolbar.insertPdf.connect(self._insert_pdf_dialog)
+        self.toolbar.insertImage.connect(self._insert_image_dialog)
         self.toolbar.saveFile.connect(self.save_file)
         self.toolbar.saveFileAs.connect(self.save_file_as)
         self.toolbar.closeFile.connect(self.close_file)
@@ -1053,6 +1054,13 @@ class MainWindow(QMainWindow):
             if not commit_result:
                 print("⚠️ ADVERTENCIA: commit_overlay_texts retornó False")
         
+        # IMPORTANTE: Escribir imágenes overlay pendientes al PDF antes de guardar
+        if hasattr(self.pdf_viewer, 'commit_overlay_images'):
+            img_result = self.pdf_viewer.commit_overlay_images()
+            print(f"commit_overlay_images resultado: {img_result}")
+            if not img_result:
+                print("⚠️ ADVERTENCIA: commit_overlay_images retornó False")
+        
         # Verificar si el archivo está en el workspace
         is_from_workspace = (self.original_file_path and 
                             self.workspace_manager.is_file_in_origin(self.original_file_path))
@@ -1291,8 +1299,19 @@ class MainWindow(QMainWindow):
             if hasattr(self.pdf_viewer, 'commit_overlay_texts'):
                 self.pdf_viewer.commit_overlay_texts()
             
+            # IMPORTANTE: Escribir imágenes overlay pendientes al PDF antes de guardar
+            if hasattr(self.pdf_viewer, 'commit_overlay_images'):
+                self.pdf_viewer.commit_overlay_images()
+            
             if self.pdf_doc.save_as(file_path):
                 self.current_file = file_path
+                
+                # Limpiar overlays confirmados y re-renderizar para mostrar
+                # el texto desde el PDF en lugar de desde los overlays
+                if hasattr(self.pdf_viewer, 'clear_committed_overlays'):
+                    self.pdf_viewer.clear_committed_overlays()
+                self.pdf_viewer.render_page()
+                
                 self.update_title()
                 self.update_status()
                 self.status_label.setText(f"Guardado como: {os.path.basename(file_path)}")
@@ -1575,6 +1594,7 @@ class MainWindow(QMainWindow):
             if reply == QMessageBox.Yes:
                 self.pdf_viewer.sync_all_text_items_to_data()
                 self.pdf_viewer.commit_overlay_texts()
+                self.pdf_viewer.commit_overlay_images()
         
         # Elegir posición de inserción
         page_count = self.pdf_doc.page_count()
@@ -1879,7 +1899,7 @@ class MainWindow(QMainWindow):
     # --- Insertar Imagen ---
     
     def _insert_image_dialog(self):
-        """Diálogo para insertar una imagen en la página actual."""
+        """Diálogo para insertar una imagen como overlay editable en la página actual."""
         if not self.pdf_doc or not self.pdf_doc.is_open():
             QMessageBox.warning(self, "Sin documento", "Abre un PDF primero.")
             return
@@ -1894,137 +1914,21 @@ class MainWindow(QMainWindow):
         if not image_path:
             return
         
-        # Obtener dimensiones de la página actual
-        page = self.pdf_doc.get_page(self.pdf_viewer.current_page)
-        if not page:
-            return
+        # Cambiar a modo edición para permitir interacción con la imagen
+        if self.pdf_viewer.tool_mode != 'edit':
+            self.pdf_viewer.set_tool_mode('edit')
         
-        page_rect = page.rect
+        # Añadir como imagen editable (overlay visual, se escribe al PDF al guardar)
+        item = self.pdf_viewer.add_editable_image(image_path)
         
-        # Diálogo para configurar posición y tamaño
-        from PyQt5.QtWidgets import (
-            QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-            QSpinBox, QDoubleSpinBox, QGroupBox, QCheckBox, QPushButton
-        )
-        
-        dialog = QDialog(self)
-        dialog.setWindowTitle("🖼️ Insertar Imagen")
-        dialog.setMinimumWidth(400)
-        dialog.setStyleSheet("""
-            QDialog { background-color: #1e1e1e; color: #ffffff; }
-            QGroupBox {
-                border: 1px solid #3e3e42; border-radius: 4px;
-                margin-top: 8px; padding-top: 12px;
-                color: #ffffff; font-weight: bold;
-            }
-            QLabel { color: #cccccc; }
-            QSpinBox, QDoubleSpinBox {
-                background: #2d2d30; color: #ffffff;
-                border: 1px solid #3e3e42; border-radius: 3px;
-                padding: 2px 6px;
-            }
-            QCheckBox { color: #cccccc; }
-            QPushButton {
-                background-color: #0078d4; color: #ffffff;
-                border: none; border-radius: 3px;
-                padding: 6px 16px; min-width: 80px;
-            }
-            QPushButton:hover { background-color: #1a8ad4; }
-        """)
-        
-        layout = QVBoxLayout(dialog)
-        
-        # Info archivo
-        file_label = QLabel(f"Archivo: {os.path.basename(image_path)}")
-        layout.addWidget(file_label)
-        
-        # Posición
-        pos_group = QGroupBox("Posición (puntos PDF)")
-        pos_layout = QHBoxLayout(pos_group)
-        
-        pos_layout.addWidget(QLabel("X:"))
-        spin_x = QDoubleSpinBox()
-        spin_x.setRange(0, page_rect.width)
-        spin_x.setValue(50)
-        spin_x.setSuffix(" pt")
-        pos_layout.addWidget(spin_x)
-        
-        pos_layout.addWidget(QLabel("Y:"))
-        spin_y = QDoubleSpinBox()
-        spin_y.setRange(0, page_rect.height)
-        spin_y.setValue(50)
-        spin_y.setSuffix(" pt")
-        pos_layout.addWidget(spin_y)
-        
-        layout.addWidget(pos_group)
-        
-        # Tamaño
-        size_group = QGroupBox("Tamaño")
-        size_layout = QHBoxLayout(size_group)
-        
-        size_layout.addWidget(QLabel("Ancho:"))
-        spin_w = QDoubleSpinBox()
-        spin_w.setRange(10, page_rect.width)
-        spin_w.setValue(min(200, page_rect.width - 100))
-        spin_w.setSuffix(" pt")
-        size_layout.addWidget(spin_w)
-        
-        size_layout.addWidget(QLabel("Alto:"))
-        spin_h = QDoubleSpinBox()
-        spin_h.setRange(10, page_rect.height)
-        spin_h.setValue(min(200, page_rect.height - 100))
-        spin_h.setSuffix(" pt")
-        size_layout.addWidget(spin_h)
-        
-        layout.addWidget(size_group)
-        
-        # Opciones
-        chk_proportion = QCheckBox("Mantener proporción")
-        chk_proportion.setChecked(True)
-        layout.addWidget(chk_proportion)
-        
-        chk_overlay = QCheckBox("Sobre el contenido existente")
-        chk_overlay.setChecked(True)
-        layout.addWidget(chk_overlay)
-        
-        # Botones
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
-        btn_cancel = QPushButton("Cancelar")
-        btn_cancel.clicked.connect(dialog.reject)
-        btn_layout.addWidget(btn_cancel)
-        btn_insert = QPushButton("Insertar")
-        btn_insert.clicked.connect(dialog.accept)
-        btn_layout.addWidget(btn_insert)
-        layout.addLayout(btn_layout)
-        
-        if dialog.exec_() != QDialog.Accepted:
-            return
-        
-        import fitz
-        rect = fitz.Rect(
-            spin_x.value(), spin_y.value(),
-            spin_x.value() + spin_w.value(),
-            spin_y.value() + spin_h.value()
-        )
-        
-        success = self.pdf_doc.insert_image(
-            self.pdf_viewer.current_page,
-            rect,
-            image_path,
-            keep_proportion=chk_proportion.isChecked(),
-            overlay=chk_overlay.isChecked()
-        )
-        
-        if success:
-            self.pdf_viewer.render_page()
+        if item:
             self.statusBar().showMessage(
-                f"Imagen insertada en página {self.pdf_viewer.current_page + 1}", 3000
+                f"Imagen insertada — mueve o redimensiona, se guardará con el PDF", 5000
             )
         else:
             QMessageBox.warning(
                 self, "Error",
-                f"No se pudo insertar la imagen:\n{self.pdf_doc._last_error}"
+                "No se pudo cargar la imagen seleccionada."
             )
     
     # --- Anotaciones ---
@@ -2129,7 +2033,7 @@ class MainWindow(QMainWindow):
             self,
             "Acerca de PDF Editor Pro",
             "<h2>PDF Editor Pro</h2>"
-            "<p>Versión 1.7.0</p>"
+            "<p>Versión 2.0.0</p>"
             "<p>Editor de PDF con capacidades de:</p>"
             "<ul>"
             "<li>Selección de texto</li>"

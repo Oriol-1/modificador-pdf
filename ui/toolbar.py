@@ -144,6 +144,7 @@ class EditorToolBar(QWidget):
     # Señales (API idéntica a la versión anterior)
     openFile = pyqtSignal()
     insertPdf = pyqtSignal()
+    insertImage = pyqtSignal()
     saveFile = pyqtSignal()
     saveFileAs = pyqtSignal()
     closeFile = pyqtSignal()
@@ -207,6 +208,13 @@ class EditorToolBar(QWidget):
         self.action_insert_pdf.triggered.connect(self.insertPdf.emit)
         self.action_insert_pdf.setEnabled(False)
         self._flow.addWidget(_make_button(self.action_insert_pdf, self))
+
+        self.action_insert_image = QAction("🖼️ Insertar Imagen", self)
+        self.action_insert_image.setShortcut("Ctrl+Shift+M")
+        self.action_insert_image.setToolTip("Insertar imagen en la página actual (Ctrl+Shift+M)")
+        self.action_insert_image.triggered.connect(self.insertImage.emit)
+        self.action_insert_image.setEnabled(False)
+        self._flow.addWidget(_make_button(self.action_insert_image, self))
 
         self.action_save = QAction("💾 Guardar", self)
         self.action_save.setShortcut(QKeySequence.Save)
@@ -447,6 +455,7 @@ class EditorToolBar(QWidget):
         self.action_save_as.setEnabled(loaded)
         self.action_close.setEnabled(loaded)
         self.action_insert_pdf.setEnabled(loaded)
+        self.action_insert_image.setEnabled(loaded)
 
         for action in self.tool_actions.values():
             action.setEnabled(loaded)

@@ -25,7 +25,7 @@ cd "$SCRIPT_DIR"
 
 # Variables
 APP_NAME="PDF_Editor_Pro"
-VERSION="1.0.0"
+VERSION="2.0.0"
 
 # Verificar que existe la compilación
 if [ ! -d "dist/ModificadorPDF" ] && [ ! -d "dist/PDF_Editor_Pro" ]; then

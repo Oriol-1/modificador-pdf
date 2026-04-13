@@ -2278,8 +2278,9 @@ class PDFDocument:
             print(f"Error al insertar PDF: {e}")
             return None
     
-    def insert_image(self, page_num: int, rect: fitz.Rect, image_path: str,
-                     keep_proportion: bool = True, overlay: bool = True) -> bool:
+    def insert_image(self, page_num: int, rect: fitz.Rect, image_path: str = None,
+                     keep_proportion: bool = True, overlay: bool = True,
+                     image_bytes: bytes = None) -> bool:
         """Inserta una imagen en una página del PDF.
         
         Args:
@@ -2288,6 +2289,7 @@ class PDFDocument:
             image_path: Ruta al archivo de imagen (PNG, JPEG, BMP, etc.).
             keep_proportion: Mantener proporción de la imagen.
             overlay: True para colocar sobre el contenido existente.
+            image_bytes: Bytes de la imagen (alternativa a image_path).
             
         Returns:
             True si la imagen se insertó correctamente.
@@ -2301,18 +2303,30 @@ class PDFDocument:
             self._last_error = f"Página {page_num} no válida"
             return False
         
-        if not os.path.isfile(image_path):
+        if not image_bytes and not image_path:
+            self._last_error = "Se requiere image_path o image_bytes"
+            return False
+        
+        if image_path and not image_bytes and not os.path.isfile(image_path):
             self._last_error = f"Archivo de imagen no encontrado: {image_path}"
             return False
         
         try:
             self._save_snapshot()
-            page.insert_image(
-                rect,
-                filename=image_path,
-                keep_proportion=keep_proportion,
-                overlay=overlay,
-            )
+            if image_bytes:
+                page.insert_image(
+                    rect,
+                    stream=image_bytes,
+                    keep_proportion=keep_proportion,
+                    overlay=overlay,
+                )
+            else:
+                page.insert_image(
+                    rect,
+                    filename=image_path,
+                    keep_proportion=keep_proportion,
+                    overlay=overlay,
+                )
             self.modified = True
             return True
         except Exception as e:

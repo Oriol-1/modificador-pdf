@@ -25,7 +25,7 @@ cd "$SCRIPT_DIR"
 
 # Variables
 APP_NAME="pdf-editor-pro"
-VERSION="1.0.0"
+VERSION="2.0.0"
 MAINTAINER="Oriol Alonso Esplugas <alonsoesplugas@gmail.com>"
 DESCRIPTION="Editor de PDF profesional con capacidades de edición de texto"
 ARCH="amd64"

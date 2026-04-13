@@ -275,7 +275,7 @@ jobs:
         # Crear archivo de control
         cat > deb_package/DEBIAN/control << EOF
         Package: modificador-pdf
-        Version: 1.1.0
+        Version: 2.0.0
         Section: utils
         Priority: optional
         Architecture: amd64

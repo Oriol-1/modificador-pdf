@@ -40,7 +40,7 @@ elif [ -d "dist/PDF_Editor_Pro" ]; then
 fi
 
 # Nombre del portable
-VERSION="1.0.0"
+VERSION="2.0.0"
 PORTABLE_NAME="PDF_Editor_Pro_${VERSION}_Linux_Portable"
 PORTABLE_DIR="dist/${PORTABLE_NAME}"
 

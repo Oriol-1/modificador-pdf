@@ -6,10 +6,13 @@ Incluye rectángulos de selección, items de texto editables y diálogos.
 from PyQt5.QtWidgets import (
     QGraphicsRectItem, QGraphicsTextItem, QGraphicsDropShadowEffect,
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QTextEdit,
-    QSpinBox, QCheckBox, QDialogButtonBox, QGroupBox, QMenu, QToolButton
+    QSpinBox, QCheckBox, QDialogButtonBox, QGroupBox, QMenu, QToolButton,
+    QGraphicsPixmapItem
 )
-from PyQt5.QtCore import Qt, QRectF
-from PyQt5.QtGui import QPen, QBrush, QColor, QCursor, QFont
+from PyQt5.QtCore import Qt, QRectF, QPointF
+from PyQt5.QtGui import QPen, QBrush, QColor, QCursor, QFont, QPixmap, QPainter
+
+from enum import IntEnum
 
 
 class SelectionRect(QGraphicsRectItem):
@@ -1004,3 +1007,430 @@ class EditableTextItem(QGraphicsRectItem):
         
         painter.restore()
 
+
+class ResizeHandle(IntEnum):
+    """Identificadores de los 8 handles de redimensión."""
+    TOP_LEFT = 0
+    TOP_CENTER = 1
+    TOP_RIGHT = 2
+    MIDDLE_LEFT = 3
+    MIDDLE_RIGHT = 4
+    BOTTOM_LEFT = 5
+    BOTTOM_CENTER = 6
+    BOTTOM_RIGHT = 7
+
+
+# Cursores para cada handle de redimensión
+_HANDLE_CURSORS = {
+    ResizeHandle.TOP_LEFT: Qt.SizeFDiagCursor,
+    ResizeHandle.TOP_CENTER: Qt.SizeVerCursor,
+    ResizeHandle.TOP_RIGHT: Qt.SizeBDiagCursor,
+    ResizeHandle.MIDDLE_LEFT: Qt.SizeHorCursor,
+    ResizeHandle.MIDDLE_RIGHT: Qt.SizeHorCursor,
+    ResizeHandle.BOTTOM_LEFT: Qt.SizeBDiagCursor,
+    ResizeHandle.BOTTOM_CENTER: Qt.SizeVerCursor,
+    ResizeHandle.BOTTOM_RIGHT: Qt.SizeFDiagCursor,
+}
+
+
+class EditableImageItem(QGraphicsRectItem):
+    """Imagen editable en el visor PDF con movimiento, redimensión y z-order.
+
+    Sigue el patrón de EditableTextItem: item visual en QGraphicsScene,
+    datos almacenados en dict, commit al PDF solo al guardar.
+
+    Attributes:
+        module_id: Identificador único de la imagen.
+        pixmap: QPixmap con la imagen original.
+        image_path: Ruta al archivo de imagen (puede ser None si se cargó desde bytes).
+        image_bytes: Bytes de la imagen para commit al PDF.
+        pdf_rect: Rectángulo en coordenadas PDF.
+        pending_write: True si necesita escribirse al PDF al guardar.
+        keep_proportion: Mantener proporción al redimensionar.
+        overlay_mode: True para colocar sobre el contenido, False debajo.
+    """
+
+    _next_id = 1
+
+    # Tamaño de los handles de redimensión en píxeles
+    HANDLE_SIZE = 8
+    # Tamaño mínimo de la imagen en píxeles de vista
+    MIN_SIZE = 20
+
+    def __init__(self, rect: QRectF, pixmap: QPixmap, page_num: int = 0,
+                 image_path: str = None, image_bytes: bytes = None,
+                 keep_proportion: bool = True, overlay_mode: bool = True,
+                 zoom_level: float = 1.0, parent=None):
+        super().__init__(rect, parent)
+
+        self.module_id = EditableImageItem._next_id
+        EditableImageItem._next_id += 1
+
+        self.pixmap = pixmap
+        self.page_num = page_num
+        self.image_path = image_path
+        self.image_bytes = image_bytes
+        self.pdf_rect = None  # Se establece después de añadir a la scene
+        self.zoom_level = zoom_level
+        self.keep_proportion = keep_proportion
+        self.overlay_mode = overlay_mode  # True = sobre contenido
+
+        # Estado de overlay (mismo patrón que EditableTextItem)
+        self.is_overlay = True
+        self.pending_write = True
+
+        # Proporción original de la imagen
+        if pixmap and not pixmap.isNull() and pixmap.height() > 0:
+            self._aspect_ratio = pixmap.width() / pixmap.height()
+        else:
+            self._aspect_ratio = 1.0
+
+        # Estado visual e interacción
+        self.is_selected = False
+        self.is_hovered = False
+        self._active_handle = None  # Handle siendo arrastrado
+        self._resize_start_scene_pos = None  # Posición inicial en coordenadas de escena
+        self._resize_start_rect = None  # Rect local inicial antes del resize
+        self._resize_start_item_pos = None  # Pos del item al inicio del resize
+        self._request_delete = False  # Flag para eliminación desde menú contextual
+
+        self._update_visual()
+        self.setZValue(160 if overlay_mode else 140)
+        self.setAcceptHoverEvents(True)
+        self.setCursor(QCursor(Qt.OpenHandCursor))
+
+        # Flags de interacción
+        self.setFlag(QGraphicsRectItem.ItemIsSelectable, True)
+        self.setFlag(QGraphicsRectItem.ItemIsMovable, True)
+        self.setFlag(QGraphicsRectItem.ItemSendsGeometryChanges, True)
+
+    # ------------------------------------------------------------------
+    # Visual state
+    # ------------------------------------------------------------------
+
+    def _update_visual(self):
+        """Actualiza el estilo visual según el estado."""
+        if self.is_selected:
+            self.setPen(QPen(QColor(0, 120, 215), 2, Qt.SolidLine))
+            self.setBrush(QBrush(Qt.NoBrush))
+        elif self.is_hovered:
+            self.setPen(QPen(QColor(0, 120, 215), 1, Qt.DashLine))
+            self.setBrush(QBrush(Qt.NoBrush))
+        else:
+            self.setPen(QPen(Qt.NoPen))
+            self.setBrush(QBrush(Qt.NoBrush))
+
+    def set_selected(self, selected: bool):
+        """Establece el estado de selección."""
+        self.is_selected = selected
+        self._update_visual()
+        self.update()
+
+    def hoverEnterEvent(self, event):
+        """Mouse entra en el área."""
+        self.is_hovered = True
+        self._update_visual()
+        super().hoverEnterEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        """Mouse sale del área."""
+        self.is_hovered = False
+        if not self._active_handle:
+            self._update_visual()
+        super().hoverLeaveEvent(event)
+
+    def hoverMoveEvent(self, event):
+        """Actualiza el cursor según la posición sobre un handle."""
+        if self.is_selected:
+            handle = self._handle_at(event.pos())
+            if handle is not None:
+                self.setCursor(QCursor(_HANDLE_CURSORS[handle]))
+            else:
+                self.setCursor(QCursor(Qt.OpenHandCursor))
+        super().hoverMoveEvent(event)
+
+    # ------------------------------------------------------------------
+    # Resize handles
+    # ------------------------------------------------------------------
+
+    def _get_handle_rects(self):
+        """Retorna un dict {ResizeHandle: QRectF} con la posición de cada handle."""
+        r = self.rect()
+        s = self.HANDLE_SIZE
+        hs = s / 2
+        cx = r.x() + r.width() / 2
+        cy = r.y() + r.height() / 2
+
+        return {
+            ResizeHandle.TOP_LEFT: QRectF(r.left() - hs, r.top() - hs, s, s),
+            ResizeHandle.TOP_CENTER: QRectF(cx - hs, r.top() - hs, s, s),
+            ResizeHandle.TOP_RIGHT: QRectF(r.right() - hs, r.top() - hs, s, s),
+            ResizeHandle.MIDDLE_LEFT: QRectF(r.left() - hs, cy - hs, s, s),
+            ResizeHandle.MIDDLE_RIGHT: QRectF(r.right() - hs, cy - hs, s, s),
+            ResizeHandle.BOTTOM_LEFT: QRectF(r.left() - hs, r.bottom() - hs, s, s),
+            ResizeHandle.BOTTOM_CENTER: QRectF(cx - hs, r.bottom() - hs, s, s),
+            ResizeHandle.BOTTOM_RIGHT: QRectF(r.right() - hs, r.bottom() - hs, s, s),
+        }
+
+    def _handle_at(self, pos: QPointF):
+        """Retorna el ResizeHandle en la posición dada, o None."""
+        if not self.is_selected:
+            return None
+        for handle, rect in self._get_handle_rects().items():
+            if rect.contains(pos):
+                return handle
+        return None
+
+    # ------------------------------------------------------------------
+    # Mouse events for resize
+    # ------------------------------------------------------------------
+
+    def mousePressEvent(self, event):
+        """Inicia redimensión si se presiona en un handle, sino delega a movimiento."""
+        if event.button() == Qt.LeftButton and self.is_selected:
+            handle = self._handle_at(event.pos())
+            if handle is not None:
+                self._active_handle = handle
+                self._resize_start_scene_pos = self.mapToScene(event.pos())
+                self._resize_start_rect = QRectF(self.rect())
+                self._resize_start_item_pos = QPointF(self.pos())
+                event.accept()
+                return
+        self.setCursor(QCursor(Qt.ClosedHandCursor))
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """Redimensiona si hay handle activo, sino mueve."""
+        if self._active_handle is not None:
+            scene_pos = self.mapToScene(event.pos())
+            self._do_resize(scene_pos)
+            event.accept()
+            return
+        # Marcamos pending_write al mover
+        self.pending_write = True
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """Finaliza redimensión o movimiento."""
+        if self._active_handle is not None:
+            self._active_handle = None
+            self._resize_start_scene_pos = None
+            self._resize_start_rect = None
+            self._resize_start_item_pos = None
+            self.pending_write = True
+            event.accept()
+            return
+        self.setCursor(QCursor(Qt.OpenHandCursor))
+        super().mouseReleaseEvent(event)
+
+    def contextMenuEvent(self, event):
+        """Menú contextual con opciones de z-order, proporción y eliminar."""
+        menu = QMenu()
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #2d2d30; color: #ffffff;
+                border: 1px solid #3e3e42;
+            }
+            QMenu::item:selected { background-color: #0078d4; }
+        """)
+
+        # Z-order
+        action_above = menu.addAction("Sobre el texto")
+        action_below = menu.addAction("Debajo del texto")
+        menu.addSeparator()
+
+        # Proporción
+        action_proportion = menu.addAction(
+            "Mantener proporción" if not self.keep_proportion else "Proporción libre"
+        )
+        menu.addSeparator()
+
+        # Eliminar
+        action_delete = menu.addAction("Eliminar imagen")
+
+        chosen = menu.exec_(event.screenPos())
+
+        if chosen == action_above:
+            self.overlay_mode = True
+            self.setZValue(160)
+            self.pending_write = True
+        elif chosen == action_below:
+            self.overlay_mode = False
+            self.setZValue(140)
+            self.pending_write = True
+        elif chosen == action_proportion:
+            self.keep_proportion = not self.keep_proportion
+        elif chosen == action_delete:
+            self._request_delete = True  # Flag para que el viewer lo elimine
+            self.update()
+
+    def _do_resize(self, scene_pos: QPointF):
+        """Aplica la redimensión usando coordenadas de escena para estabilidad.
+        
+        Trabaja siempre con el rect en coordenadas de escena (pos + size)
+        para evitar drift por cambios en el origen local del item.
+        """
+        if (self._resize_start_rect is None or self._resize_start_scene_pos is None 
+                or self._resize_start_item_pos is None):
+            return
+
+        delta = scene_pos - self._resize_start_scene_pos
+        handle = self._active_handle
+
+        # Construir rect en coordenadas de escena desde el estado original
+        orig_pos = self._resize_start_item_pos
+        orig_rect = self._resize_start_rect
+        sr = QRectF(orig_pos.x(), orig_pos.y(),
+                    orig_rect.width(), orig_rect.height())
+
+        # Aplicar delta según el handle
+        if handle in (ResizeHandle.TOP_LEFT, ResizeHandle.TOP_CENTER, ResizeHandle.TOP_RIGHT):
+            sr.setTop(sr.top() + delta.y())
+        if handle in (ResizeHandle.BOTTOM_LEFT, ResizeHandle.BOTTOM_CENTER, ResizeHandle.BOTTOM_RIGHT):
+            sr.setBottom(sr.bottom() + delta.y())
+        if handle in (ResizeHandle.TOP_LEFT, ResizeHandle.MIDDLE_LEFT, ResizeHandle.BOTTOM_LEFT):
+            sr.setLeft(sr.left() + delta.x())
+        if handle in (ResizeHandle.TOP_RIGHT, ResizeHandle.MIDDLE_RIGHT, ResizeHandle.BOTTOM_RIGHT):
+            sr.setRight(sr.right() + delta.x())
+
+        # Mantener proporción si está habilitado
+        if self.keep_proportion:
+            w = sr.width()
+            h = sr.height()
+
+            if handle in (ResizeHandle.TOP_LEFT, ResizeHandle.TOP_RIGHT,
+                          ResizeHandle.BOTTOM_LEFT, ResizeHandle.BOTTOM_RIGHT):
+                # Esquinas: ajustar la dimensión menor para mantener proporción
+                if abs(w) >= abs(h):
+                    new_h = w / self._aspect_ratio
+                    if handle in (ResizeHandle.TOP_LEFT, ResizeHandle.TOP_RIGHT):
+                        sr.setTop(sr.bottom() - new_h)
+                    else:
+                        sr.setBottom(sr.top() + new_h)
+                else:
+                    new_w = h * self._aspect_ratio
+                    if handle in (ResizeHandle.TOP_LEFT, ResizeHandle.BOTTOM_LEFT):
+                        sr.setLeft(sr.right() - new_w)
+                    else:
+                        sr.setRight(sr.left() + new_w)
+
+            elif handle in (ResizeHandle.MIDDLE_LEFT, ResizeHandle.MIDDLE_RIGHT):
+                # Laterales: ancho cambió, ajustar alto simétricamente
+                new_h = abs(w) / self._aspect_ratio
+                center_y = sr.center().y()
+                sr.setTop(center_y - new_h / 2)
+                sr.setBottom(center_y + new_h / 2)
+
+            elif handle in (ResizeHandle.TOP_CENTER, ResizeHandle.BOTTOM_CENTER):
+                # Verticales: alto cambió, ajustar ancho simétricamente
+                new_w = abs(h) * self._aspect_ratio
+                center_x = sr.center().x()
+                sr.setLeft(center_x - new_w / 2)
+                sr.setRight(center_x + new_w / 2)
+
+        # Aplicar tamaño mínimo respetando qué borde se arrastra
+        if sr.width() < self.MIN_SIZE:
+            if handle in (ResizeHandle.TOP_LEFT, ResizeHandle.MIDDLE_LEFT, ResizeHandle.BOTTOM_LEFT):
+                sr.setLeft(sr.right() - self.MIN_SIZE)
+            else:
+                sr.setRight(sr.left() + self.MIN_SIZE)
+        if sr.height() < self.MIN_SIZE:
+            if handle in (ResizeHandle.TOP_LEFT, ResizeHandle.TOP_CENTER, ResizeHandle.TOP_RIGHT):
+                sr.setTop(sr.bottom() - self.MIN_SIZE)
+            else:
+                sr.setBottom(sr.top() + self.MIN_SIZE)
+
+        # Descomponer rect de escena en pos + rect local
+        self.setPos(QPointF(sr.x(), sr.y()))
+        self.setRect(QRectF(0, 0, sr.width(), sr.height()))
+        self.update()
+
+    # ------------------------------------------------------------------
+    # Paint
+    # ------------------------------------------------------------------
+
+    def boundingRect(self):
+        """Expandir bounding rect para incluir los handles de resize."""
+        r = self.rect()
+        margin = self.HANDLE_SIZE
+        return r.adjusted(-margin, -margin, margin, margin)
+
+    def paint(self, painter, option, widget=None):
+        """Dibuja la imagen escalada al rect y los handles si está seleccionada."""
+        rect = self.rect()
+
+        # Dibujar la imagen escalada al rect
+        if self.pixmap and not self.pixmap.isNull():
+            scaled = self.pixmap.scaled(
+                int(rect.width()), int(rect.height()),
+                Qt.KeepAspectRatio if self.keep_proportion else Qt.IgnoreAspectRatio,
+                Qt.SmoothTransformation
+            )
+            # Centrar si la proporción deja espacio
+            x_offset = (rect.width() - scaled.width()) / 2
+            y_offset = (rect.height() - scaled.height()) / 2
+            painter.drawPixmap(
+                int(rect.x() + x_offset),
+                int(rect.y() + y_offset),
+                scaled
+            )
+
+        # Dibujar borde según estado visual
+        super().paint(painter, option, widget)
+
+        # Dibujar handles si está seleccionada
+        if self.is_selected:
+            handle_pen = QPen(QColor(255, 255, 255), 1)
+            handle_brush = QBrush(QColor(0, 120, 215))
+            painter.setPen(handle_pen)
+            painter.setBrush(handle_brush)
+            for handle_rect in self._get_handle_rects().values():
+                painter.drawRect(handle_rect)
+
+    # ------------------------------------------------------------------
+    # Data conversion
+    # ------------------------------------------------------------------
+
+    def to_dict(self):
+        """Serializa el estado a diccionario para almacenamiento."""
+        pos = self.pos()
+        rect = self.rect()
+        return {
+            'module_id': self.module_id,
+            'x': pos.x(),
+            'y': pos.y(),
+            'width': rect.width(),
+            'height': rect.height(),
+            'page_num': self.page_num,
+            'image_path': self.image_path,
+            'keep_proportion': self.keep_proportion,
+            'overlay_mode': self.overlay_mode,
+            'is_overlay': self.is_overlay,
+            'pending_write': self.pending_write,
+            'pdf_rect': list(self.pdf_rect) if self.pdf_rect else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict, pixmap: QPixmap, zoom_level: float = 1.0):
+        """Crea una instancia desde un diccionario serializado."""
+        x = data.get('x', 0)
+        y = data.get('y', 0)
+        w = data.get('width', 100)
+        h = data.get('height', 100)
+
+        item = cls(
+            rect=QRectF(0, 0, w, h),
+            pixmap=pixmap,
+            page_num=data.get('page_num', 0),
+            image_path=data.get('image_path'),
+            keep_proportion=data.get('keep_proportion', True),
+            overlay_mode=data.get('overlay_mode', True),
+            zoom_level=zoom_level,
+        )
+        item.module_id = data.get('module_id', item.module_id)
+        item.is_overlay = data.get('is_overlay', True)
+        item.pending_write = data.get('pending_write', True)
+        if data.get('pdf_rect'):
+            item.pdf_rect = tuple(data['pdf_rect'])
+        item.setPos(QPointF(x, y))
+        return item

@@ -51,7 +51,7 @@ def _dominant_style(spans_or_runs):
 # Importar elementos gráficos y utilidades desde módulos separados
 from .graphics_items import (
     SelectionRect, DeletePreviewRect, FloatingLabel, HighlightRect,
-    TextEditDialog, EditableTextItem
+    TextEditDialog, EditableTextItem, EditableImageItem
 )
 from .coordinate_utils import CoordinateConverter
 
@@ -232,6 +232,14 @@ class PDFPageView(QGraphicsView):
         self.drag_start_pos = None  # Posición inicial del arrastre
         self.drag_original_rect = None  # Rectángulo original antes de mover
         self.text_was_moved = False  # Si el texto realmente se movió
+        
+        # Imágenes editables añadidas por el usuario (por página, clave = UUID)
+        # Estructura: {page_uuid: [dict con datos de la imagen, ...]}
+        self.editable_images_data = {}
+        self.editable_image_items = []  # Items gráficos actuales
+        self.selected_image_item = None  # Imagen actualmente seleccionada
+        self.dragging_image = False
+        self.image_was_moved = False
         
         # Modo de herramienta
         self.tool_mode = 'select'  # 'select', 'highlight', 'delete', 'edit'
@@ -757,6 +765,7 @@ class PDFPageView(QGraphicsView):
         
         # Limpiar textos editables
         self.clear_editable_texts_data()
+        self.clear_editable_images_data()
         
         # Reiniciar página
         self.current_page = 0
@@ -770,6 +779,14 @@ class PDFPageView(QGraphicsView):
         self.drag_start_pos = None
         self.drag_original_rect = None
         self.text_was_moved = False
+    
+    def clear_editable_images_data(self):
+        """Limpia los datos de imágenes editables."""
+        self.editable_images_data = {}
+        self.editable_image_items = []
+        self.selected_image_item = None
+        self.dragging_image = False
+        self.image_was_moved = False
     
     # --- Helpers de identidad de página (UUID) ---
     
@@ -793,12 +810,25 @@ class PDFPageView(QGraphicsView):
     def get_overlay_state(self) -> dict:
         """Obtiene una copia del estado actual de overlays para el sistema de undo."""
         import copy
-        return copy.deepcopy(self.editable_texts_data)
+        return {
+            'texts': copy.deepcopy(self.editable_texts_data),
+            'images': copy.deepcopy(self.editable_images_data),
+        }
     
     def restore_overlay_state(self, state: dict):
         """Restaura el estado de overlays desde un snapshot del sistema de undo."""
         import copy
-        self.editable_texts_data = copy.deepcopy(state) if state else {}
+        if not state:
+            self.editable_texts_data = {}
+            self.editable_images_data = {}
+        elif 'texts' in state:
+            # Nuevo formato con textos e imágenes
+            self.editable_texts_data = copy.deepcopy(state.get('texts', {}))
+            self.editable_images_data = copy.deepcopy(state.get('images', {}))
+        else:
+            # Compatibilidad con snapshots antiguos (solo textos)
+            self.editable_texts_data = copy.deepcopy(state)
+            self.editable_images_data = {}
         # Nota: los items visuales se recrearán al renderizar la página
     
     def load_page(self, page_num: int):
@@ -922,6 +952,9 @@ class PDFPageView(QGraphicsView):
         
         # Restaurar textos editables para esta página
         self._restore_editable_texts_for_page()
+        
+        # Restaurar imágenes editables para esta página
+        self._restore_editable_images_for_page()
     
     def show_existing_highlights(self):
         """Muestra indicadores visuales de los resaltados existentes que pueden eliminarse."""
@@ -1074,11 +1107,35 @@ class PDFPageView(QGraphicsView):
             
             # En modo edición, primero verificar si se hace clic en un texto editable
             if self.tool_mode == 'edit':
+                # Verificar clic en imagen editable
+                clicked_image = self._find_image_at_position(scene_pos)
+                if clicked_image:
+                    self._select_image_item(clicked_image)
+                    self._deselect_all_texts()
+                    # Verificar si el clic es en un handle de resize
+                    item_pos = clicked_image.mapFromScene(scene_pos)
+                    handle = clicked_image._handle_at(item_pos)
+                    if handle is not None:
+                        # Delegar resize al propio item (coordenadas de escena)
+                        clicked_image._active_handle = handle
+                        clicked_image._resize_start_scene_pos = scene_pos
+                        clicked_image._resize_start_rect = QRectF(clicked_image.rect())
+                        clicked_image._resize_start_item_pos = QPointF(clicked_image.pos())
+                        self.dragging_image = False
+                        event.accept()
+                        return
+                    self.dragging_image = True
+                    self.drag_start_pos = scene_pos
+                    self.image_was_moved = False
+                    event.accept()
+                    return
+                
                 # Buscar en textos editables ya registrados (overlays)
                 clicked_text = self._find_text_at_position(scene_pos)
                 if clicked_text:
                     # Clic en un texto editable existente - permitir arrastre
                     self._select_text_item(clicked_text)
+                    self._deselect_image_item()
                     self.dragging_text = True
                     self.drag_start_pos = scene_pos
                     self.drag_original_rect = QRectF(clicked_text.rect())
@@ -1091,6 +1148,7 @@ class PDFPageView(QGraphicsView):
                 
                 # Deseleccionar cualquier texto previamente seleccionado
                 self._deselect_all_texts()
+                self._deselect_image_item()
             
             if self.tool_mode in ['select', 'highlight', 'delete', 'edit']:
                 self.is_selecting = True
@@ -1114,6 +1172,25 @@ class PDFPageView(QGraphicsView):
     def mouseMoveEvent(self, event):
         """Maneja el evento de mover el ratón."""
         scene_pos = self.mapToScene(event.pos())
+        
+        # Manejar redimensión de imagen editable (handle activo)
+        if (self.selected_image_item and 
+                self.selected_image_item._active_handle is not None):
+            self.selected_image_item._do_resize(scene_pos)
+            event.accept()
+            return
+        
+        # Manejar arrastre de imagen editable
+        if self.dragging_image and self.selected_image_item and self.drag_start_pos:
+            delta = scene_pos - self.drag_start_pos
+            if not self.image_was_moved:
+                self.selected_image_item.pending_write = True
+            new_pos = self.selected_image_item.pos() + delta
+            self.selected_image_item.setPos(new_pos)
+            self.drag_start_pos = scene_pos
+            self.image_was_moved = True
+            event.accept()
+            return
         
         # Manejar arrastre de texto editable
         if self.dragging_text and self.selected_text_item and self.drag_start_pos:
@@ -1149,6 +1226,37 @@ class PDFPageView(QGraphicsView):
     def mouseReleaseEvent(self, event):
         """Maneja el evento de soltar el ratón."""
         if event.button() == Qt.LeftButton:
+            # Manejar fin de redimensión de imagen
+            if (self.selected_image_item and 
+                    self.selected_image_item._active_handle is not None):
+                self.selected_image_item._active_handle = None
+                self.selected_image_item._resize_start_scene_pos = None
+                self.selected_image_item._resize_start_rect = None
+                self.selected_image_item._resize_start_item_pos = None
+                self.selected_image_item.pending_write = True
+                self._update_image_data(self.selected_image_item)
+                event.accept()
+                super().mouseReleaseEvent(event)
+                return
+            
+            # Manejar fin del arrastre de imagen
+            if self.dragging_image and self.selected_image_item:
+                self.dragging_image = False
+                self.drag_start_pos = None
+                if self.image_was_moved:
+                    self._update_image_data(self.selected_image_item)
+                    self.image_was_moved = False
+                event.accept()
+                super().mouseReleaseEvent(event)
+                return
+            
+            # Verificar flags de eliminación de imágenes (desde context menu)
+            self._check_image_delete_flags()
+            
+            # Sincronizar datos de imagen seleccionada (por si fue redimensionada)
+            if self.selected_image_item and self.selected_image_item.pending_write:
+                self._update_image_data(self.selected_image_item)
+            
             # Manejar fin del arrastre de texto
             if self.dragging_text and self.selected_text_item:
                 self.dragging_text = False
@@ -2191,6 +2299,36 @@ class PDFPageView(QGraphicsView):
                 return text_item
         
         return None
+    
+    def _find_image_at_position(self, scene_pos):
+        """Busca una imagen editable en la posición dada."""
+        for img_item in self.editable_image_items:
+            scene_rect = img_item.sceneBoundingRect()
+            if scene_rect.contains(scene_pos):
+                return img_item
+        return None
+    
+    def _update_image_data(self, image_item):
+        """Actualiza los datos almacenados de una imagen después de moverla/redimensionarla."""
+        page_key = self._current_page_key()
+        data_index = getattr(image_item, 'data_index', None)
+        if data_index is not None and page_key in self.editable_images_data:
+            page_data = self.editable_images_data[page_key]
+            if 0 <= data_index < len(page_data):
+                pos = image_item.pos()
+                rect = image_item.rect()
+                page_data[data_index]['x'] = pos.x()
+                page_data[data_index]['y'] = pos.y()
+                page_data[data_index]['width'] = rect.width()
+                page_data[data_index]['height'] = rect.height()
+                page_data[data_index]['pending_write'] = True
+                page_data[data_index]['overlay_mode'] = image_item.overlay_mode
+                page_data[data_index]['keep_proportion'] = image_item.keep_proportion
+                # Recalcular pdf_rect desde la posición en vista
+                view_rect = QRectF(pos.x(), pos.y(), rect.width(), rect.height())
+                pdf_rect = self.view_to_pdf_rect(view_rect)
+                page_data[data_index]['pdf_rect'] = list(pdf_rect)
+                image_item.pdf_rect = tuple(pdf_rect)
     
     def _find_pdf_text_at_position(self, scene_pos: QPointF):
         """Busca cualquier texto del PDF en la posición dada."""
@@ -3710,6 +3848,194 @@ class PDFPageView(QGraphicsView):
             self.editable_text_items.append(text_item)
             self.scene.addItem(text_item)
     
+    def _restore_editable_images_for_page(self):
+        """Restaura las imágenes editables para la página actual después de re-renderizar."""
+        self.editable_image_items = []
+        self.selected_image_item = None
+        
+        page_data = self.editable_images_data.get(self._current_page_key(), [])
+        
+        for i, img_data in enumerate(page_data):
+            image_path = img_data.get('image_path')
+            image_bytes = img_data.get('image_bytes')
+            
+            # Cargar pixmap desde path o bytes
+            pixmap = QPixmap()
+            if image_bytes:
+                pixmap.loadFromData(image_bytes)
+            elif image_path:
+                pixmap.load(image_path)
+            
+            if pixmap.isNull():
+                continue
+            
+            # Recalcular posición desde pdf_rect con zoom actual
+            if img_data.get('pdf_rect'):
+                view_rect = self.pdf_to_view_rect(fitz.Rect(img_data['pdf_rect']))
+            else:
+                view_rect = QRectF(
+                    img_data.get('x', 0), img_data.get('y', 0),
+                    img_data.get('width', 100), img_data.get('height', 100)
+                )
+            
+            pos_x = view_rect.x()
+            pos_y = view_rect.y()
+            normalized_rect = QRectF(0, 0, view_rect.width(), view_rect.height())
+            
+            item = EditableImageItem(
+                rect=normalized_rect,
+                pixmap=pixmap,
+                page_num=self.current_page,
+                image_path=image_path,
+                image_bytes=image_bytes,
+                keep_proportion=img_data.get('keep_proportion', True),
+                overlay_mode=img_data.get('overlay_mode', True),
+                zoom_level=self.zoom_level,
+            )
+            item.setPos(pos_x, pos_y)
+            item.module_id = img_data.get('module_id', item.module_id)
+            item.is_overlay = img_data.get('is_overlay', True)
+            item.pending_write = img_data.get('pending_write', True)
+            if img_data.get('pdf_rect'):
+                item.pdf_rect = tuple(img_data['pdf_rect'])
+            item.data_index = i
+            
+            self.editable_image_items.append(item)
+            self.scene.addItem(item)
+    
+    def add_editable_image(self, image_path: str, pdf_rect=None, 
+                           keep_proportion: bool = True, overlay_mode: bool = True):
+        """Añade una imagen editable a la página actual.
+        
+        Args:
+            image_path: Ruta al archivo de imagen.
+            pdf_rect: Rectángulo en coordenadas PDF (x0, y0, x1, y1). Si None, se centra.
+            keep_proportion: Mantener proporción de la imagen.
+            overlay_mode: True = sobre el contenido existente.
+        """
+        pixmap = QPixmap(image_path)
+        if pixmap.isNull():
+            return
+        
+        # Leer bytes de la imagen para commit posterior
+        try:
+            with open(image_path, 'rb') as f:
+                image_bytes = f.read()
+        except Exception:
+            image_bytes = None
+        
+        # Calcular rect por defecto si no se proporciona
+        if pdf_rect is None:
+            page = self.pdf_doc.get_page(self.current_page) if self.pdf_doc else None
+            if page:
+                page_rect = page.rect
+                # Centrar la imagen, máximo 50% del ancho de página
+                img_w = min(pixmap.width(), page_rect.width * 0.5)
+                scale = img_w / pixmap.width()
+                img_h = pixmap.height() * scale
+                cx = page_rect.width / 2 - img_w / 2
+                cy = page_rect.height / 2 - img_h / 2
+                pdf_rect = (cx, cy, cx + img_w, cy + img_h)
+            else:
+                pdf_rect = (50, 50, 250, 250)
+        
+        # Calcular view_rect desde pdf_rect
+        view_rect = self.pdf_to_view_rect(fitz.Rect(pdf_rect))
+        pos_x = view_rect.x()
+        pos_y = view_rect.y()
+        normalized_rect = QRectF(0, 0, view_rect.width(), view_rect.height())
+        
+        item = EditableImageItem(
+            rect=normalized_rect,
+            pixmap=pixmap,
+            page_num=self.current_page,
+            image_path=image_path,
+            image_bytes=image_bytes,
+            keep_proportion=keep_proportion,
+            overlay_mode=overlay_mode,
+            zoom_level=self.zoom_level,
+        )
+        item.setPos(pos_x, pos_y)
+        item.pdf_rect = pdf_rect
+        item.is_overlay = True
+        item.pending_write = True
+        
+        # Guardar datos
+        page_key = self._current_page_key()
+        if page_key not in self.editable_images_data:
+            self.editable_images_data[page_key] = []
+        
+        img_data = {
+            'module_id': item.module_id,
+            'image_path': image_path,
+            'image_bytes': image_bytes,
+            'pdf_rect': list(pdf_rect),
+            'keep_proportion': keep_proportion,
+            'overlay_mode': overlay_mode,
+            'is_overlay': True,
+            'pending_write': True,
+            'x': pos_x,
+            'y': pos_y,
+            'width': normalized_rect.width(),
+            'height': normalized_rect.height(),
+        }
+        self.editable_images_data[page_key].append(img_data)
+        item.data_index = len(self.editable_images_data[page_key]) - 1
+        
+        # Añadir a la scene
+        self.editable_image_items.append(item)
+        self.scene.addItem(item)
+        
+        # Seleccionar la imagen recién añadida
+        self._select_image_item(item)
+        
+        return item
+    
+    def _select_image_item(self, item):
+        """Selecciona una imagen y deselecciona la anterior."""
+        if self.selected_image_item and self.selected_image_item != item:
+            self.selected_image_item.set_selected(False)
+        # También deseleccionar texto si hay alguno seleccionado
+        if self.selected_text_item:
+            self.selected_text_item.set_selected(False)
+            self.selected_text_item = None
+        self.selected_image_item = item
+        item.set_selected(True)
+    
+    def _deselect_image_item(self):
+        """Deselecciona la imagen actual."""
+        if self.selected_image_item:
+            self.selected_image_item.set_selected(False)
+            self.selected_image_item = None
+    
+    def _delete_image_item(self, item):
+        """Elimina una imagen editable de la scene y los datos."""
+        page_key = self._current_page_key()
+        data_index = getattr(item, 'data_index', None)
+        
+        # Quitar de la scene
+        if item.scene():
+            self.scene.removeItem(item)
+        if item in self.editable_image_items:
+            self.editable_image_items.remove(item)
+        if self.selected_image_item == item:
+            self.selected_image_item = None
+        
+        # Quitar de los datos
+        if data_index is not None and page_key in self.editable_images_data:
+            page_data = self.editable_images_data[page_key]
+            if 0 <= data_index < len(page_data):
+                page_data.pop(data_index)
+                # Reindexar
+                for i, img_item in enumerate(self.editable_image_items):
+                    img_item.data_index = i
+    
+    def _check_image_delete_flags(self):
+        """Verifica si alguna imagen tiene el flag de eliminación."""
+        for item in list(self.editable_image_items):
+            if getattr(item, '_request_delete', False):
+                self._delete_image_item(item)
+    
     def commit_overlay_texts(self) -> bool:
         """
         Escribe todos los textos overlay pendientes al PDF.
@@ -3845,16 +4171,17 @@ class PDFPageView(QGraphicsView):
                         print(f"    ERROR al escribir texto al PDF")
                         error_count += 1
         
-        # CRÍTICO: Actualizar los EditableTextItems en escena con los nuevos valores
-        # para que al mover sepan que hay que borrar del PDF
+        # Actualizar metadatos en los EditableTextItems de escena.
+        # NOTA: NO se toca pending_write aquí — los items siguen dibujándose
+        # hasta que render_page() los limpie con scene.clear() + re-render.
+        # Cambiar pending_write=False aquí causaría que el texto desparezca
+        # visualmente antes de que el pixmap se actualice.
         for item in self.scene.items():
             if isinstance(item, EditableTextItem):
                 data_index = getattr(item, 'data_index', None)
                 page_data = self.editable_texts_data.get(self._current_page_key(), [])
                 if data_index is not None and 0 <= data_index < len(page_data):
                     data = page_data[data_index]
-                    item.is_overlay = data.get('is_overlay', False)
-                    item.pending_write = data.get('pending_write', False)
                     item.needs_erase = data.get('needs_erase', False)
                     item.internal_pdf_rect = data.get('internal_pdf_rect')
         
@@ -3865,11 +4192,70 @@ class PDFPageView(QGraphicsView):
         
         return error_count == 0
     
+    def commit_overlay_images(self) -> bool:
+        """Escribe todas las imágenes overlay pendientes al PDF.
+        
+        Returns:
+            True si todas las imágenes se escribieron correctamente.
+        """
+        import fitz
+        
+        if not self.pdf_doc:
+            return True
+        
+        error_count = 0
+        
+        for page_key, images in self.editable_images_data.items():
+            # Resolver índice de página desde UUID
+            page_index = None
+            if isinstance(page_key, int):
+                page_index = page_key
+            elif self.pdf_doc and hasattr(self.pdf_doc, 'page_map'):
+                page_index = self.pdf_doc.page_map.index_for_uuid(page_key)
+            
+            if page_index is None:
+                continue
+            
+            for img_data in images:
+                if not img_data.get('pending_write'):
+                    continue
+                
+                pdf_rect = img_data.get('pdf_rect')
+                if not pdf_rect:
+                    continue
+                
+                rect = fitz.Rect(pdf_rect)
+                image_path = img_data.get('image_path')
+                image_bytes = img_data.get('image_bytes')
+                overlay = img_data.get('overlay_mode', True)
+                keep_proportion = img_data.get('keep_proportion', True)
+                
+                success = self.pdf_doc.insert_image(
+                    page_num=page_index,
+                    rect=rect,
+                    image_path=image_path,
+                    keep_proportion=keep_proportion,
+                    overlay=overlay,
+                    image_bytes=image_bytes,
+                )
+                
+                if success:
+                    img_data['is_overlay'] = False
+                    img_data['pending_write'] = False
+                else:
+                    error_count += 1
+        
+        return error_count == 0
+    
     def has_pending_overlays(self) -> bool:
-        """Verifica si hay textos overlay pendientes de escribir."""
+        """Verifica si hay textos u imágenes overlay pendientes de escribir."""
         for page_texts in self.editable_texts_data.values():
             for text_data in page_texts:
                 if text_data.get('is_overlay') and text_data.get('pending_write'):
+                    return True
+        for page_images in self.editable_images_data.values():
+            for img_data in page_images:
+                if img_data.get('is_overlay') and img_data.get('pending_write'):
                     return True
         return False
     
@@ -3892,6 +4278,18 @@ class PDFPageView(QGraphicsView):
                 del self.editable_texts_data[page_key]
         self.editable_text_items = []
         self.selected_text_item = None
+        
+        # Limpiar imágenes confirmadas
+        for page_key in list(self.editable_images_data.keys()):
+            page_images = self.editable_images_data[page_key]
+            self.editable_images_data[page_key] = [
+                img for img in page_images
+                if img.get('is_overlay') or img.get('pending_write')
+            ]
+            if not self.editable_images_data[page_key]:
+                del self.editable_images_data[page_key]
+        self.editable_image_items = []
+        self.selected_image_item = None
     
     def sync_all_text_items_to_data(self):
         """
