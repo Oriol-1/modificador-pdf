@@ -7,11 +7,6 @@ PyMuPDF>=1.23.0
 # Interfaz gráfica
 PyQt5>=5.15.0
 
-# OCR (opcional)
-opencv-python-headless>=4.8.0
-numpy>=1.24.0
-pytesseract>=0.3.10
-
 # Para crear ejecutable
 pyinstaller>=6.0.0
 # Para tests

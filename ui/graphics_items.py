@@ -776,15 +776,14 @@ class EditableTextItem(QGraphicsRectItem):
         # Primero dibujar el rectángulo base (bordes de selección)
         super().paint(painter, option, widget)
         
-        # Dibujar el texto si:
-        # - Es overlay (texto visual no escrito al PDF)
-        # - O está seleccionado (puede estar siendo arrastrado)
-        # - O tiene pending_write (editado pero no guardado)
-        should_draw_text = (
-            getattr(self, 'is_overlay', False) or 
-            getattr(self, 'is_selected', False) or
-            getattr(self, 'pending_write', False)
-        )
+        # Dibujar texto SOLO si pending_write=True.
+        # pending_write indica que el texto NO está en el pixmap del PDF:
+        # - editado/movido y pendiente de guardar
+        # - overlay recién creado
+        # NO dibujar por is_overlay solo (puede ser True sin pending_write
+        # después de commit, y el pixmap ya lo muestra → duplicado).
+        # NO dibujar por is_selected (texto ya visible en pixmap → sombra).
+        should_draw_text = getattr(self, 'pending_write', False)
         
         if should_draw_text and self.text:
             rect = self.rect()

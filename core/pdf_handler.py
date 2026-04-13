@@ -867,7 +867,8 @@ class PDFDocument:
             
             # Expandir ligeramente para compensar imprecisiones de coordenadas
             # Esto evita que queden restos de texto al borde del rect
-            expanded_rect = transformed_rect + (-1, -0.5, 1, 0.5)
+            # Expansión ampliada para cubrir imprecisión de coordenadas OCR tras escalado DPI
+            expanded_rect = transformed_rect + (-2, -1, 2, 1)
             print(f"erase_text_transparent - Usando rect expandido: {expanded_rect}")
             
             # Verificar qué texto hay en esa área antes de borrar

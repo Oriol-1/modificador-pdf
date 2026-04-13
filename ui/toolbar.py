@@ -34,13 +34,8 @@ class EditorToolBar(QToolBar):
     
     rotatePageRequested = pyqtSignal(int)  # Ángulo: 90, 180, 270
     
-    ocrRequested = pyqtSignal()
     compressRequested = pyqtSignal()
     pageManagerRequested = pyqtSignal()
-    signatureRequested = pyqtSignal()
-    chatRequested = pyqtSignal()
-    translateRequested = pyqtSignal()
-    aiSettingsRequested = pyqtSignal()
     
     pageChanged = pyqtSignal(int)
     
@@ -193,13 +188,6 @@ class EditorToolBar(QToolBar):
         """)
         self.addWidget(rotate_button)
         
-        # === OCR ===
-        self.action_ocr = QAction("🔤 OCR", self)
-        self.action_ocr.setToolTip("Reconocimiento de texto en páginas escaneadas")
-        self.action_ocr.triggered.connect(self.ocrRequested.emit)
-        self.action_ocr.setEnabled(False)
-        self.addAction(self.action_ocr)
-        
         # === Comprimir ===
         self.action_compress = QAction("🗜️ Comprimir", self)
         self.action_compress.setToolTip("Comprimir PDF para reducir tamaño")
@@ -213,33 +201,6 @@ class EditorToolBar(QToolBar):
         self.action_page_manager.triggered.connect(self.pageManagerRequested.emit)
         self.action_page_manager.setEnabled(False)
         self.addAction(self.action_page_manager)
-        
-        # === Firma digital ===
-        self.action_signature = QAction("🔐 Firmar", self)
-        self.action_signature.setToolTip("Firmar digitalmente o verificar firmas")
-        self.action_signature.triggered.connect(self.signatureRequested.emit)
-        self.action_signature.setEnabled(False)
-        self.addAction(self.action_signature)
-        
-        self.addSeparator()
-        
-        # === IA ===
-        self.action_chat = QAction("💬 Chat IA", self)
-        self.action_chat.setToolTip("Abrir chat con IA sobre el documento")
-        self.action_chat.triggered.connect(self.chatRequested.emit)
-        self.action_chat.setEnabled(False)
-        self.addAction(self.action_chat)
-        
-        self.action_translate = QAction("🌐 Traducir", self)
-        self.action_translate.setToolTip("Traducir documento con IA")
-        self.action_translate.triggered.connect(self.translateRequested.emit)
-        self.action_translate.setEnabled(False)
-        self.addAction(self.action_translate)
-        
-        self.action_ai_settings = QAction("⚙️ IA Ajustes", self)
-        self.action_ai_settings.setToolTip("Configurar proveedor de IA")
-        self.action_ai_settings.triggered.connect(self.aiSettingsRequested.emit)
-        self.addAction(self.action_ai_settings)
         
         # Espaciador
         spacer2 = QWidget()
@@ -376,12 +337,8 @@ class EditorToolBar(QToolBar):
         self.action_fit_width.setEnabled(loaded)
         
         self.action_rotate.setEnabled(loaded)
-        self.action_ocr.setEnabled(loaded)
         self.action_compress.setEnabled(loaded)
         self.action_page_manager.setEnabled(loaded)
-        self.action_signature.setEnabled(loaded)
-        self.action_chat.setEnabled(loaded)
-        self.action_translate.setEnabled(loaded)
         
         self.action_prev_page.setEnabled(loaded)
         self.action_next_page.setEnabled(loaded)

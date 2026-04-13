@@ -887,13 +887,8 @@ class MainWindow(QMainWindow):
         
         self.toolbar.pageChanged.connect(self.go_to_page)
         self.toolbar.rotatePageRequested.connect(self._rotate_current_page)
-        self.toolbar.ocrRequested.connect(self._on_ocr_requested)
         self.toolbar.compressRequested.connect(self._on_compress_requested)
         self.toolbar.pageManagerRequested.connect(self._on_page_manager_requested)
-        self.toolbar.signatureRequested.connect(self._on_signature_requested)
-        self.toolbar.chatRequested.connect(self._on_chat_requested)
-        self.toolbar.translateRequested.connect(self._on_translate_requested)
-        self.toolbar.aiSettingsRequested.connect(self._on_ai_settings_requested)
         
         # Visor
         self.pdf_viewer.zoomChanged.connect(self.on_zoom_changed)
@@ -1136,6 +1131,11 @@ class MainWindow(QMainWindow):
         else:
             # Flujo normal
             if self.pdf_doc.save():
+                # Limpiar overlays confirmados y re-renderizar pixmap
+                if hasattr(self.pdf_viewer, 'clear_committed_overlays'):
+                    self.pdf_viewer.clear_committed_overlays()
+                self.pdf_viewer.render_page()
+                
                 self.update_title()
                 self.update_status()
                 self.update_undo_redo_state()
@@ -1566,55 +1566,6 @@ class MainWindow(QMainWindow):
         self.go_to_page(page_num)
         self._rotate_current_page(angle)
     
-    # ─── OCR ───
-    
-    def _on_ocr_requested(self):
-        """Abre el diálogo OCR si hay páginas escaneadas."""
-        if not self.pdf_doc or not self.pdf_doc.is_open():
-            return
-        
-        try:
-            from core.ocr.pdf_ocr_layer import detect_scanned_pages
-            from ui.ocr_dialog import OCRDialog
-        except ImportError as e:
-            msg = QMessageBox(self)
-            msg.setIcon(QMessageBox.Warning)
-            msg.setWindowTitle("OCR no disponible")
-            msg.setText(f"No se pudo cargar el módulo OCR:\n{e}")
-            msg.setStyleSheet(ThemeStyles.message_box())
-            msg.exec_()
-            return
-        
-        doc = self.pdf_doc.doc
-        scanned = detect_scanned_pages(doc)
-        
-        if not scanned:
-            msg = QMessageBox(self)
-            msg.setIcon(QMessageBox.Information)
-            msg.setWindowTitle("OCR")
-            msg.setText(
-                "No se detectaron páginas escaneadas en este documento.\n\n"
-                "El OCR solo es necesario para PDFs que contienen imágenes "
-                "sin texto seleccionable."
-            )
-            msg.setStyleSheet(ThemeStyles.message_box())
-            msg.exec_()
-            return
-        
-        dialog = OCRDialog(doc=doc, scanned_pages=scanned, parent=self)
-        dialog.ocr_completed.connect(self._on_ocr_completed)
-        dialog.exec_()
-    
-    def _on_ocr_completed(self, result):
-        """Maneja la finalización del OCR."""
-        if result and result.processed_pages > 0:
-            self.pdf_viewer.render_page()
-            self.on_document_modified()
-            self.status_label.setText(
-                f"OCR completado: {result.total_words} palabras en "
-                f"{result.processed_pages} páginas"
-            )
-    
     # ─── Compresión ───
     
     # ─── Gestión de páginas ───
@@ -1635,7 +1586,7 @@ class MainWindow(QMainWindow):
             return
 
         from ui.page_manager_dialog import PageManagerDialog
-        page_count = self.pdf_doc.page_count
+        page_count = self.pdf_doc.page_count()
         dialog = PageManagerDialog(file_path, page_count, parent=self)
         dialog.operation_completed.connect(self._on_page_operation_completed)
         dialog.exec_()
@@ -1644,35 +1595,6 @@ class MainWindow(QMainWindow):
         """Maneja la finalización de una operación de páginas."""
         self.status_label.setText(
             f"Operación completada: {os.path.basename(output_path)}"
-        )
-
-    # ─── Firma digital ───
-
-    def _on_signature_requested(self):
-        """Abre el diálogo de firma digital."""
-        if not self.pdf_doc or not self.pdf_doc.is_open():
-            return
-
-        file_path = self.pdf_doc.file_path
-        if not file_path or not os.path.isfile(file_path):
-            msg = QMessageBox(self)
-            msg.setIcon(QMessageBox.Warning)
-            msg.setWindowTitle("Firma digital")
-            msg.setText("Guarde el documento primero.")
-            msg.setStyleSheet(ThemeStyles.message_box())
-            msg.exec_()
-            return
-
-        from ui.signature_dialog import SignatureDialog
-        page_count = self.pdf_doc.page_count
-        dialog = SignatureDialog(file_path, page_count, parent=self)
-        dialog.signature_applied.connect(self._on_signature_applied)
-        dialog.exec_()
-
-    def _on_signature_applied(self, output_path: str):
-        """Maneja la aplicación de una firma digital."""
-        self.status_label.setText(
-            f"Firma aplicada: {os.path.basename(output_path)}"
         )
 
     def _on_compress_requested(self):
@@ -1699,70 +1621,6 @@ class MainWindow(QMainWindow):
         """Maneja la finalización de la compresión."""
         self.status_label.setText(f"PDF comprimido guardado: {os.path.basename(output_path)}")
 
-    # ─── Chat IA ───
-
-    def _get_ai_config(self):
-        """Obtiene la configuración de IA actual."""
-        from core.ai.ai_config import AIConfig
-        config_path = os.path.join(
-            os.path.expanduser("~"), ".pdf_editor_pro", "ai_config.json"
-        )
-        return AIConfig.load(config_path), config_path
-
-    def _on_chat_requested(self):
-        """Abre/muestra el panel de chat con IA."""
-        if not self.pdf_doc or not self.pdf_doc.is_open():
-            return
-
-        from ui.ai_chat_panel import AIChatPanel
-        from core.ai.ai_config import AIConfig
-        from core.ai.chat_engine import ChatEngine
-        from core.ai.document_indexer import create_document_index
-
-        config, _ = self._get_ai_config()
-
-        if not hasattr(self, '_chat_panel') or self._chat_panel is None:
-            self._chat_panel = AIChatPanel(self)
-            self._chat_panel.navigateToPage.connect(self.go_to_page)
-            self.addDockWidget(2, self._chat_panel)  # Qt.RightDockWidgetArea
-
-        engine = ChatEngine(config)
-        doc_index = create_document_index(
-            self.pdf_doc.doc,
-            file_path=self.pdf_doc.file_path or "",
-            chunk_size=config.chunk_size,
-            chunk_overlap=config.chunk_overlap,
-        )
-        engine.index_document(doc_index)
-        self._chat_panel.set_chat_engine(engine)
-        self._chat_panel.show()
-        self.status_label.setText("Chat IA activado")
-
-    def _on_translate_requested(self):
-        """Abre el diálogo de traducción."""
-        if not self.pdf_doc or not self.pdf_doc.is_open():
-            return
-
-        from core.ai.document_indexer import extract_page_texts
-        from ui.translation_dialog import TranslationDialog
-
-        config, _ = self._get_ai_config()
-        page_texts = extract_page_texts(self.pdf_doc.doc)
-
-        dialog = TranslationDialog(page_texts, config, parent=self)
-        dialog.exec_()
-
-    def _on_ai_settings_requested(self):
-        """Abre el diálogo de configuración de IA."""
-        from ui.ai_settings_dialog import AISettingsDialog
-
-        config, config_path = self._get_ai_config()
-        dialog = AISettingsDialog(config, parent=self)
-        if dialog.exec_():
-            new_config = dialog.get_config()
-            new_config.save(config_path)
-            self.status_label.setText("Configuración de IA guardada")
-    
     def _transform_page_overlays(self, page_num: int, angle: int, old_w: float, old_h: float):
         """Transforma las coordenadas de los overlays editables tras rotar la página."""
         import fitz

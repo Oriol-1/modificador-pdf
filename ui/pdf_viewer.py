@@ -916,6 +916,10 @@ class PDFPageView(QGraphicsView):
         if self.tool_mode == 'highlight':
             self.show_existing_highlights()
         
+        # Mostrar indicadores de texto editable si está en modo edición
+        if self.tool_mode == 'edit':
+            self.show_edit_hints()
+        
         # Restaurar textos editables para esta página
         self._restore_editable_texts_for_page()
     
@@ -986,6 +990,40 @@ class PDFPageView(QGraphicsView):
                 self.scene.addItem(hint)
         except Exception as e:
             print(f"Error mostrando hints: {e}")
+    
+    def show_edit_hints(self):
+        """Muestra indicadores visuales de textos editables en modo edición.
+        
+        Verde para texto editable normal, naranja tenue para texto OCR (solo lectura).
+        """
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+        
+        try:
+            blocks = self.pdf_doc.get_text_blocks(self.current_page)
+            is_scanned = self.pdf_doc.is_image_based_pdf()
+            
+            for block in blocks:
+                view_rect = self.pdf_to_view_rect(block.rect)
+                hint = QGraphicsRectItem(view_rect)
+                
+                font_name = getattr(block, 'font_name', '') or ''
+                is_ocr_block = (is_scanned and
+                                font_name.lower() in ('helvetica', 'helv'))
+                
+                if is_ocr_block:
+                    # Naranja tenue para texto OCR (no editable directamente)
+                    hint.setPen(QPen(QColor(255, 160, 0, 50), 1, Qt.DotLine))
+                    hint.setBrush(QBrush(QColor(255, 160, 0, 10)))
+                else:
+                    # Verde para texto editable normal
+                    hint.setPen(QPen(QColor(0, 180, 120, 80), 1.5, Qt.DotLine))
+                    hint.setBrush(QBrush(QColor(0, 180, 120, 15)))
+                
+                hint.setZValue(10)
+                self.scene.addItem(hint)
+        except Exception as e:
+            print(f"Error mostrando edit hints: {e}")
     
     def zoom_in(self):
         """Aumenta el zoom."""
@@ -1080,6 +1118,11 @@ class PDFPageView(QGraphicsView):
         # Manejar arrastre de texto editable
         if self.dragging_text and self.selected_text_item and self.drag_start_pos:
             delta = scene_pos - self.drag_start_pos
+            # Al primer movimiento real, habilitar renderizado Qt del texto
+            # porque su posición ya no coincide con el pixmap del PDF
+            if not self.text_was_moved:
+                self.selected_text_item.pending_write = True
+                self.selected_text_item.update()  # Forzar repintado
             # Mover el item usando setPos() en lugar de modificar el rect
             new_pos = self.selected_text_item.pos() + delta
             self.selected_text_item.setPos(new_pos)
@@ -1289,7 +1332,7 @@ class PDFPageView(QGraphicsView):
             QPointF en coordenadas de vista
         """
         return self.coord_converter.pdf_to_view_point(pdf_x, pdf_y)
-    
+
     def edit_selection(self, pdf_rect: fitz.Rect, blocks=None):
         """Edita texto en el área seleccionada.
         
@@ -1581,7 +1624,8 @@ class PDFPageView(QGraphicsView):
         Para PDFs de imagen, funciona igual que para PDFs editables:
         1. Primero busca textos overlay/editables existentes (añadidos por el usuario)
         2. Si no hay overlay, busca texto del PDF (si existe)
-        3. Si no hay nada, permite añadir texto nuevo
+        3. Si el texto detectado es capa OCR invisible, informa al usuario
+        4. Si no hay nada, permite añadir texto nuevo
         """
         if not self.pdf_doc:
             return
@@ -1758,42 +1802,37 @@ class PDFPageView(QGraphicsView):
                         self._update_text_data(text_item)
                     self.documentModified.emit()
                 else:
-                    # PDF normal: escribir directamente al PDF
-                    result = self.pdf_doc.add_text_to_page(
-                        self.current_page,
-                        rect,
+                    # PDF normal: crear como OVERLAY (capa visual independiente)
+                    # NO escribir al PDF hasta que se guarde (commit_overlay_texts).
+                    # Esto evita que al mover el texto nuevo se necesite borrar del PDF,
+                    # lo que puede destruir texto adyacente por el área de redacción.
+                    # Usar métricas de fitz para calcular el rect preciso del texto
+                    try:
+                        real_width = fitz.get_text_length(new_text, fontname="helv", fontsize=12)
+                        real_rect = fitz.Rect(
+                            rect.x0,
+                            rect.y0,
+                            rect.x0 + real_width + 4,  # +4 por offset de insert_point
+                            rect.y1
+                        )
+                    except Exception:
+                        real_rect = rect
+                    
+                    view_rect = self.pdf_to_view_rect(real_rect)
+                    text_item = self._add_editable_text(
+                        view_rect,
                         new_text,
                         font_size=12,
-                        color=(0, 0, 0)
+                        color=(0, 0, 0),
+                        pdf_rect=real_rect,
+                        is_from_pdf=False,
+                        skip_span_search=True
                     )
-                    if result:
-                        # FIX BUG 1: Recalcular el rect usando métricas de fitz
-                        # en lugar de las de Qt para que coincida con el texto real en el PDF
-                        try:
-                            real_width = fitz.get_text_length(new_text, fontname="helv", fontsize=12)
-                            real_rect = fitz.Rect(
-                                rect.x0,
-                                rect.y0,
-                                rect.x0 + real_width + 4,  # +4 por el offset x0+2 del insert_point
-                                rect.y1
-                            )
-                        except Exception:
-                            real_rect = rect
-                        
-                        # Registrar el texto como editable para poder moverlo
-                        # IMPORTANTE: is_from_pdf=True porque el texto YA está en el PDF
-                        view_rect = self.pdf_to_view_rect(real_rect)
-                        self._add_editable_text(
-                            view_rect,
-                            new_text,
-                            font_size=12,
-                            color=(0, 0, 0),
-                            pdf_rect=real_rect,
-                            is_from_pdf=True,  # El texto ya existe en el PDF
-                            skip_span_search=True  # FIX BUG 2: No buscar spans adyacentes
-                        )
-                        self.render_page()
-                        self.documentModified.emit()
+                    if text_item:
+                        text_item.is_overlay = True
+                        text_item.pending_write = True
+                        self._update_text_data(text_item)
+                    self.documentModified.emit()
     
     def handle_highlight_click(self, scene_pos: QPointF):
         """Maneja un click en modo highlight - permite eliminar resaltados con UN SOLO CLIC."""
@@ -3001,6 +3040,136 @@ class PDFPageView(QGraphicsView):
         
         self.documentModified.emit()
     
+    def _calculate_safe_erase_rect(self, base_rect, page_num: int, 
+                                    own_rect=None, fs: float = 12) -> 'fitz.Rect':
+        """Calcula un rectángulo de borrado expandido que no invade texto adyacente.
+        
+        Expande base_rect para compensar imprecisiones de métricas Qt vs fitz,
+        pero limita la expansión para no solapar con otros bloques de texto
+        en la página.
+        
+        Args:
+            base_rect: Rect original a borrar (coordenadas visuales PDF).
+            page_num: Número de página.
+            own_rect: Rect del propio texto a excluir del check de colisión.
+            fs: Tamaño de fuente del texto (para calcular expansión deseada).
+        
+        Returns:
+            fitz.Rect expandido de forma segura.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Expansión máxima deseada (la fórmula original, agresiva)
+        text_width = base_rect.width
+        desired_left = 2
+        desired_top = 2
+        desired_right = max(fs * 2, text_width * 0.15)
+        desired_bottom = 2
+        
+        try:
+            page = self.pdf_doc.get_page(page_num)
+            if not page:
+                # Sin acceso a la página, usar expansión mínima segura
+                return fitz.Rect(
+                    base_rect.x0 - desired_left,
+                    base_rect.y0 - desired_top,
+                    base_rect.x1 + min(desired_right, 4),
+                    base_rect.y1 + desired_bottom
+                )
+            
+            # Obtener todos los bloques de texto de la página
+            blocks = page.get_text("blocks")  # [(x0, y0, x1, y1, text, block_no, type), ...]
+            
+            # Trabajar con coordenadas del rect transformado a internas
+            # (los bloques de get_text ya están en coordenadas internas)
+            if page.rotation != 0:
+                internal_base = self.pdf_doc.transform_rect_for_page(
+                    page_num, base_rect, from_visual=True
+                )
+                internal_own = None
+                if own_rect:
+                    internal_own = self.pdf_doc.transform_rect_for_page(
+                        page_num, own_rect, from_visual=True
+                    )
+            else:
+                internal_base = base_rect
+                internal_own = own_rect
+            
+            # Calcular límites seguros por dirección
+            safe_right = desired_right
+            safe_left = desired_left
+            safe_top = desired_top
+            safe_bottom = desired_bottom
+            
+            for block in blocks:
+                if len(block) < 5:
+                    continue
+                bx0, by0, bx1, by1 = block[0], block[1], block[2], block[3]
+                block_rect = fitz.Rect(bx0, by0, bx1, by1)
+                
+                # Excluir el propio rect del texto que se mueve
+                if internal_own and block_rect.intersects(internal_own):
+                    continue
+                # Excluir bloques que coinciden con el rect base (el texto a borrar)
+                if block_rect.intersects(internal_base):
+                    # Verificar si es el mismo texto (solapamiento significativo)
+                    overlap = block_rect & internal_base
+                    overlap_area = max(0, overlap.width) * max(0, overlap.height)
+                    base_area = max(0, internal_base.width) * max(0, internal_base.height)
+                    if base_area > 0 and overlap_area / base_area > 0.5:
+                        continue  # Es el propio texto, ignorar
+                
+                # Verificar si el bloque está en la zona de expansión potencial
+                # Derecha: si el bloque empieza a la derecha del rect base
+                if bx0 > internal_base.x0 and by1 > internal_base.y0 and by0 < internal_base.y1:
+                    # Bloque a la derecha, mismo rango vertical
+                    gap = bx0 - internal_base.x1
+                    if 0 <= gap < desired_right:
+                        # Limitar expansión derecha para no tocar este bloque
+                        safe_right = min(safe_right, max(gap - 1, 0))
+                
+                # Izquierda: si el bloque termina a la izquierda del rect base
+                if bx1 < internal_base.x1 and by1 > internal_base.y0 and by0 < internal_base.y1:
+                    gap = internal_base.x0 - bx1
+                    if 0 <= gap < desired_left:
+                        safe_left = min(safe_left, max(gap - 1, 0))
+                
+                # Arriba
+                if by1 < internal_base.y1 and bx1 > internal_base.x0 and bx0 < internal_base.x1:
+                    gap = internal_base.y0 - by1
+                    if 0 <= gap < desired_top:
+                        safe_top = min(safe_top, max(gap - 1, 0))
+                
+                # Abajo
+                if by0 > internal_base.y0 and bx1 > internal_base.x0 and bx0 < internal_base.x1:
+                    gap = by0 - internal_base.y1
+                    if 0 <= gap < desired_bottom:
+                        safe_bottom = min(safe_bottom, max(gap - 1, 0))
+            
+            logger.debug(
+                f"Safe erase expansion: L={safe_left:.1f} T={safe_top:.1f} "
+                f"R={safe_right:.1f} B={safe_bottom:.1f} "
+                f"(desired R={desired_right:.1f})"
+            )
+            
+            return fitz.Rect(
+                base_rect.x0 - safe_left,
+                base_rect.y0 - safe_top,
+                base_rect.x1 + safe_right,
+                base_rect.y1 + safe_bottom
+            )
+            
+        except Exception as e:
+            logger.warning(f"Error calculando rect seguro de borrado: {e}")
+            # Fallback: expansión mínima segura (solo 2pt en cada dirección)
+            return fitz.Rect(
+                base_rect.x0 - 2,
+                base_rect.y0 - 2,
+                base_rect.x1 + 4,
+                base_rect.y1 + 2
+            )
+    
     def _update_text_in_pdf(self, text_item: EditableTextItem):
         """Actualiza la posición del texto en el PDF después de moverlo.
         
@@ -3032,6 +3201,42 @@ class PDFPageView(QGraphicsView):
         # CASO 1: Ya es un overlay - actualizar posición SIN RECALCULAR TAMAÑO
         if is_overlay:
             
+            # Si el overlay todavía tiene needs_erase=True, es un texto recién creado
+            # en un PDF normal que aún no se ha movido. Borrar su posición original
+            # de forma segura (con detección de colisiones) antes de continuar.
+            if needs_erase:
+                internal_pdf_rect = getattr(text_item, 'internal_pdf_rect', None)
+                original_pdf_rect = getattr(text_item, 'original_pdf_rect', None)
+                
+                if internal_pdf_rect:
+                    rect_to_erase = internal_pdf_rect
+                    already_internal = True
+                elif original_pdf_rect:
+                    rect_to_erase = original_pdf_rect
+                    already_internal = False
+                else:
+                    rect_to_erase = None
+                    already_internal = False
+                
+                if rect_to_erase:
+                    if not already_internal:
+                        fs = getattr(text_item, 'font_size', 12)
+                        rect_to_erase = self._calculate_safe_erase_rect(
+                            rect_to_erase, self.current_page,
+                            own_rect=original_pdf_rect, fs=fs
+                        )
+                    
+                    self.pdf_doc._save_snapshot()
+                    self.pdf_doc.erase_text_transparent(
+                        self.current_page,
+                        rect_to_erase,
+                        save_snapshot=False,
+                        already_internal=already_internal
+                    )
+                
+                text_item.needs_erase = False
+                text_item.internal_pdf_rect = None
+            
             # CRÍTICO: NO recalcular bounds durante movimiento
             # El tamaño ya está calculado y bloqueado - solo actualizar posición
             # text_item.adjust_rect_to_content()  # ELIMINADO - causa salto de tamaño
@@ -3050,7 +3255,17 @@ class PDFPageView(QGraphicsView):
             
             text_item.pending_write = True
             self._update_text_data(text_item)
-            # NO re-renderizar - el texto ya se mueve visualmente
+            
+            # Re-renderizar si se borró texto del PDF, sino solo mover visualmente
+            if needs_erase:
+                saved_data_index = getattr(text_item, 'data_index', None)
+                self.render_page()
+                if saved_data_index is not None:
+                    for item in self.editable_text_items:
+                        if getattr(item, 'data_index', None) == saved_data_index:
+                            self._select_text_item(item)
+                            break
+            
             self.documentModified.emit()
             return
         
@@ -3072,22 +3287,14 @@ class PDFPageView(QGraphicsView):
                 return
             
             # Ampliar el rect de borrado para cubrir texto real del PDF
-            # Las métricas Qt no coinciden exactamente con las de fitz,
-            # así que expandimos generosamente para evitar residuos
+            # Usa detección de colisiones para no invadir texto adyacente
             if not already_internal:
-                # Para coordenadas visuales: expandir basado en font_size Y ancho del texto
-                # FIX BUG 1: La expansión anterior (fs*0.5) era insuficiente para texto largo
-                # porque las métricas Qt subestiman el ancho real en fitz
                 fs = getattr(text_item, 'font_size', 12)
-                text_width = rect_to_erase.width
-                extra_right = max(fs * 2, text_width * 0.15)  # Al menos 2x fontsize o 15% del ancho
-                expanded_erase = fitz.Rect(
-                    rect_to_erase.x0 - 2,
-                    rect_to_erase.y0 - 2,
-                    rect_to_erase.x1 + extra_right,
-                    rect_to_erase.y1 + 2
+                original_pdf_rect = getattr(text_item, 'original_pdf_rect', None)
+                rect_to_erase = self._calculate_safe_erase_rect(
+                    rect_to_erase, self.current_page,
+                    own_rect=original_pdf_rect, fs=fs
                 )
-                rect_to_erase = expanded_erase
             
             # Borrar el texto ORIGINAL del PDF (solo una vez)
             self.pdf_doc._save_snapshot()
@@ -3145,16 +3352,13 @@ class PDFPageView(QGraphicsView):
         use_internal = internal_pdf_rect is not None
         
         if rect_to_erase and self.pdf_doc:
-            # Expandir el rect si no es interno (métricas pueden no coincidir)
+            # Expandir el rect con detección de colisiones para no invadir texto adyacente
             if not use_internal:
                 fs = getattr(text_item, 'font_size', 12)
-                text_width = rect_to_erase.width
-                extra_right = max(fs * 2, text_width * 0.15)
-                rect_to_erase = fitz.Rect(
-                    rect_to_erase.x0 - 2,
-                    rect_to_erase.y0 - 2,
-                    rect_to_erase.x1 + extra_right,
-                    rect_to_erase.y1 + 2
+                original_pdf_rect = getattr(text_item, 'original_pdf_rect', None)
+                rect_to_erase = self._calculate_safe_erase_rect(
+                    rect_to_erase, self.current_page,
+                    own_rect=original_pdf_rect, fs=fs
                 )
             
             self.pdf_doc._save_snapshot()
@@ -3574,6 +3778,21 @@ class PDFPageView(QGraphicsView):
                             print(f"    Advertencia: No se pudo cubrir posición original: {e}")
                         text_data['original_pdf_rect'] = None
                     
+                    # Limpiar texto OCR invisible subyacente antes de escribir
+                    # Evita superposiciones si render_mode=3 se corrompe tras apply_redactions
+                    try:
+                        page = self.pdf_doc.get_page(page_idx)
+                        if page:
+                            existing_text = page.get_text("text", clip=fitz.Rect(pdf_rect))
+                            if existing_text.strip():
+                                self.pdf_doc.erase_text_transparent(
+                                    page_idx, pdf_rect,
+                                    save_snapshot=False
+                                )
+                                print(f"    ✓ Texto existente bajo overlay limpiado")
+                    except Exception as e:
+                        print(f"    Advertencia al limpiar área: {e}")
+                    
                     # Verificar si tiene runs con estilos (SIEMPRE usar si disponibles)
                     text_runs = text_data.get('text_runs', [])
                     line_spacing = text_data.get('line_spacing', 0.0)
@@ -3653,6 +3872,26 @@ class PDFPageView(QGraphicsView):
                 if text_data.get('is_overlay') and text_data.get('pending_write'):
                     return True
         return False
+    
+    def clear_committed_overlays(self):
+        """Limpia datos de overlays que ya fueron escritos al PDF.
+        
+        Después de commit + save, los datos con is_overlay=False y
+        pending_write=False ya están en el PDF. Mantenerlos causa
+        duplicación visual al re-renderizar (pixmap + overlay fantasma).
+        """
+        for page_key in list(self.editable_texts_data.keys()):
+            page_texts = self.editable_texts_data[page_key]
+            # Eliminar entries que ya fueron confirmadas al PDF
+            self.editable_texts_data[page_key] = [
+                td for td in page_texts
+                if td.get('is_overlay') or td.get('pending_write')
+            ]
+            # Limpiar listas vacías
+            if not self.editable_texts_data[page_key]:
+                del self.editable_texts_data[page_key]
+        self.editable_text_items = []
+        self.selected_text_item = None
     
     def sync_all_text_items_to_data(self):
         """
