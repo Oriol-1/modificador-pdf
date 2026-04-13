@@ -29,7 +29,7 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 
 ; Salida del instalador
-OutputDir=..\dist\installer
+OutputDir=..\..\dist\installer
 OutputBaseFilename=ModificadorPDF_Setup_v{#MyAppVersion}
 
 ; Compresión
@@ -68,7 +68,7 @@ Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescrip
 
 [Files]
 ; Archivos del programa (desde la carpeta dist\ModificadorPDF)
-Source: "..\dist\ModificadorPDF\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\dist\ModificadorPDF\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 ; Icono en el menú inicio

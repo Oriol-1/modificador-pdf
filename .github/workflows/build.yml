@@ -38,10 +38,10 @@ jobs:
         pip install Pillow
     
     - name: Generar icono
-      run: python installer/create_icon.py
+      run: python scripts/installer/create_icon.py
     
     - name: Compilar con PyInstaller
-      run: pyinstaller --clean --noconfirm ModificadorPDF.spec
+      run: pyinstaller --clean --noconfirm scripts/build/ModificadorPDF.spec
     
     - name: Crear ZIP portátil
       run: |
@@ -60,10 +60,10 @@ jobs:
       run: |
         echo "=== Verificando archivos necesarios ==="
         Test-Path "dist\ModificadorPDF" 
-        Test-Path "installer\inno_setup.iss"
-        Test-Path "installer\app_icon.ico"
+        Test-Path "scripts\installer\inno_setup.iss"
+        Test-Path "scripts\installer\app_icon.ico"
         echo "=== Ejecutando Inno Setup ==="
-        & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /O"dist" "installer\inno_setup.iss"
+        & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /O"dist" "scripts\installer\inno_setup.iss"
         echo "=== Verificando resultado ==="
         Get-ChildItem -Path dist -Filter "*.exe" | Select-Object FullName, Length
       shell: powershell
@@ -107,25 +107,25 @@ jobs:
         pip install Pillow
     
     - name: Generar icono PNG
-      run: python installer/create_icon.py
+      run: python scripts/installer/create_icon.py
     
     - name: Crear icono ICNS para macOS
       run: |
-        mkdir -p installer/icon.iconset
-        sips -z 16 16     installer/app_icon_mac.png --out installer/icon.iconset/icon_16x16.png
-        sips -z 32 32     installer/app_icon_mac.png --out installer/icon.iconset/icon_16x16@2x.png
-        sips -z 32 32     installer/app_icon_mac.png --out installer/icon.iconset/icon_32x32.png
-        sips -z 64 64     installer/app_icon_mac.png --out installer/icon.iconset/icon_32x32@2x.png
-        sips -z 128 128   installer/app_icon_mac.png --out installer/icon.iconset/icon_128x128.png
-        sips -z 256 256   installer/app_icon_mac.png --out installer/icon.iconset/icon_128x128@2x.png
-        sips -z 256 256   installer/app_icon_mac.png --out installer/icon.iconset/icon_256x256.png
-        sips -z 512 512   installer/app_icon_mac.png --out installer/icon.iconset/icon_256x256@2x.png
-        sips -z 512 512   installer/app_icon_mac.png --out installer/icon.iconset/icon_512x512.png
-        sips -z 1024 1024 installer/app_icon_mac.png --out installer/icon.iconset/icon_512x512@2x.png
-        iconutil -c icns installer/icon.iconset -o installer/app_icon.icns
+        mkdir -p scripts/installer/icon.iconset
+        sips -z 16 16     scripts/installer/app_icon_mac.png --out scripts/installer/icon.iconset/icon_16x16.png
+        sips -z 32 32     scripts/installer/app_icon_mac.png --out scripts/installer/icon.iconset/icon_16x16@2x.png
+        sips -z 32 32     scripts/installer/app_icon_mac.png --out scripts/installer/icon.iconset/icon_32x32.png
+        sips -z 64 64     scripts/installer/app_icon_mac.png --out scripts/installer/icon.iconset/icon_32x32@2x.png
+        sips -z 128 128   scripts/installer/app_icon_mac.png --out scripts/installer/icon.iconset/icon_128x128.png
+        sips -z 256 256   scripts/installer/app_icon_mac.png --out scripts/installer/icon.iconset/icon_128x128@2x.png
+        sips -z 256 256   scripts/installer/app_icon_mac.png --out scripts/installer/icon.iconset/icon_256x256.png
+        sips -z 512 512   scripts/installer/app_icon_mac.png --out scripts/installer/icon.iconset/icon_256x256@2x.png
+        sips -z 512 512   scripts/installer/app_icon_mac.png --out scripts/installer/icon.iconset/icon_512x512.png
+        sips -z 1024 1024 scripts/installer/app_icon_mac.png --out scripts/installer/icon.iconset/icon_512x512@2x.png
+        iconutil -c icns scripts/installer/icon.iconset -o scripts/installer/app_icon.icns
     
     - name: Compilar con PyInstaller
-      run: pyinstaller --clean --noconfirm ModificadorPDF.spec
+      run: pyinstaller --clean --noconfirm scripts/build/ModificadorPDF.spec
     
     - name: Crear ZIP portátil macOS
       run: |
@@ -217,10 +217,10 @@ jobs:
         pip install Pillow
     
     - name: Generar icono
-      run: python installer/create_icon.py
+      run: python scripts/installer/create_icon.py
     
     - name: Compilar con PyInstaller
-      run: pyinstaller --clean --noconfirm ModificadorPDF.spec
+      run: pyinstaller --clean --noconfirm scripts/build/ModificadorPDF.spec
     
     - name: Crear versión portable (tar.gz)
       run: |
@@ -261,8 +261,8 @@ jobs:
         EOF
         
         # Copiar icono
-        if [ -f installer/app_icon.png ]; then
-          cp installer/app_icon.png deb_package/usr/share/icons/hicolor/256x256/apps/modificador-pdf.png
+        if [ -f scripts/installer/app_icon.png ]; then
+          cp scripts/installer/app_icon.png deb_package/usr/share/icons/hicolor/256x256/apps/modificador-pdf.png
         fi
         
         # Obtener tamaño instalado
@@ -322,9 +322,9 @@ jobs:
         cp AppDir/modificador-pdf.desktop AppDir/usr/share/applications/
         
         # Copiar icono
-        if [ -f installer/app_icon.png ]; then
-          cp installer/app_icon.png AppDir/modificador-pdf.png
-          cp installer/app_icon.png AppDir/usr/share/icons/hicolor/256x256/apps/modificador-pdf.png
+        if [ -f scripts/installer/app_icon.png ]; then
+          cp scripts/installer/app_icon.png AppDir/modificador-pdf.png
+          cp scripts/installer/app_icon.png AppDir/usr/share/icons/hicolor/256x256/apps/modificador-pdf.png
         else
           # Crear icono placeholder si no existe
           convert -size 256x256 xc:blue AppDir/modificador-pdf.png 2>/dev/null || touch AppDir/modificador-pdf.png
