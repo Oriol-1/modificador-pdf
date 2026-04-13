@@ -112,10 +112,11 @@ class MainWindow(QMainWindow):
         
         self.main_layout = QVBoxLayout(central_widget)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
         
         # Zona de arrastre (visible cuando no hay PDF)
         self.drop_zone = DropZoneWidget()
-        self.main_layout.addWidget(self.drop_zone)
+        self.main_layout.addWidget(self.drop_zone, 1)
         
         # Contenedor principal (oculto inicialmente)
         self.main_container = QWidget()
@@ -151,12 +152,12 @@ class MainWindow(QMainWindow):
         self.splitter.setSizes([180, 1020])
         
         container_layout.addWidget(self.splitter)
-        self.main_layout.addWidget(self.main_container)
+        self.main_layout.addWidget(self.main_container, 1)
         self.main_container.hide()
         
-        # Barra de herramientas
+        # Barra de herramientas (widget con FlowLayout, no QToolBar)
         self.toolbar = EditorToolBar()
-        self.addToolBar(self.toolbar)
+        self.main_layout.insertWidget(0, self.toolbar, 0)
         
         # Widget de estado del workspace (se agrega a la toolbar)
         self.workspace_status = WorkspaceStatusWidget(self.workspace_manager)
@@ -507,15 +508,14 @@ class MainWindow(QMainWindow):
         self._create_workgroup_from_pdfs(pdf_files, source="arrastre")
     
     def _create_workgroup_from_pdfs(self, pdf_files: list, source: str = "importación"):
-        from ui.workspace_manager import GroupVisualDialog
         from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QFrame
         
         pdf_count = len(pdf_files)
         
-        # Siempre mostrar diálogo de confirmación antes de crear grupo
+        # Diálogo de confirmación compacto
         confirm_dialog = QDialog(self)
         confirm_dialog.setWindowTitle("📁 Crear Grupo de Trabajo")
-        confirm_dialog.setMinimumWidth(600)
+        confirm_dialog.setMinimumWidth(500)
         confirm_dialog.setStyleSheet(f"""
             QDialog {{ background-color: {ThemeColor.BG_PRIMARY}; }}
             QLabel {{ color: {ThemeColor.TEXT_PRIMARY}; }}
@@ -540,14 +540,10 @@ class MainWindow(QMainWindow):
         title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {ThemeColor.ACCENT};")
         layout.addWidget(title)
         
-        # Lista de archivos seleccionados
+        # Lista de archivos
         files_frame = QFrame()
         files_frame.setStyleSheet(f"background: {ThemeColor.BG_TERTIARY}; border-radius: 8px; padding: 10px;")
         files_layout = QVBoxLayout(files_frame)
-        
-        files_title = QLabel("📄 Archivos seleccionados:")
-        files_title.setStyleSheet(f"font-weight: bold; color: {ThemeColor.WARNING};")
-        files_layout.addWidget(files_title)
         
         files_text = ""
         for i, f in enumerate(pdf_files[:8]):
@@ -561,57 +557,21 @@ class MainWindow(QMainWindow):
         
         layout.addWidget(files_frame)
         
-        # Explicación del proceso
-        explain_frame = QFrame()
-        explain_frame.setStyleSheet(f"background: #1a3a1a; border-radius: 8px; padding: 12px; border: 1px solid {ThemeColor.SUCCESS};")
-        explain_layout = QVBoxLayout(explain_frame)
-        
-        explain_title = QLabel("✨ ¿Qué pasará?")
-        explain_title.setStyleSheet(f"font-weight: bold; color: {ThemeColor.SUCCESS}; font-size: 14px;")
-        explain_layout.addWidget(explain_title)
-        
-        explain_text = QLabel(
-            "1. Se creará una <b>nueva carpeta de grupo</b> con fecha y hora\n"
-            "2. Tus PDFs se <b>copiarán</b> a la carpeta 'Origen'\n"
-            "3. Cuando guardes cambios, se organizarán automáticamente:\n"
-            "   • El modificado → carpeta 'Modificado - Sí'\n"
-            "   • El original → carpeta 'Modificado - No' (respaldo)"
-        )
-        explain_text.setWordWrap(True)
-        explain_text.setStyleSheet("color: #aaffaa; font-size: 12px;")
-        explain_layout.addWidget(explain_text)
-        
-        layout.addWidget(explain_frame)
-        
-        # Mostrar carpeta base actual o pedir una nueva
-        location_frame = QFrame()
-        location_frame.setStyleSheet(f"background: {ThemeColor.BG_TERTIARY}; border-radius: 8px; padding: 12px;")
-        location_layout = QVBoxLayout(location_frame)
-        
+        # Ubicación compacta (inline)
         if self.workspace_manager.base_path:
-            location_title = QLabel("📍 Ubicación actual:")
-            location_title.setStyleSheet(f"font-weight: bold; color: {ThemeColor.ACCENT};")
-            location_layout.addWidget(location_title)
+            location_layout = QHBoxLayout()
+            location_label = QLabel(f"📍 {self.workspace_manager.base_path}")
+            location_label.setStyleSheet(f"color: {ThemeColor.TEXT_PLACEHOLDER}; font-size: 11px;")
+            location_label.setWordWrap(True)
+            location_layout.addWidget(location_label, 1)
             
-            location_path = QLabel(self.workspace_manager.base_path)
-            location_path.setStyleSheet(f"color: {ThemeColor.TEXT_PLACEHOLDER}; font-size: 11px;")
-            location_path.setWordWrap(True)
-            location_layout.addWidget(location_path)
-            
-            btn_change = QPushButton("📂 Cambiar Ubicación")
+            btn_change = QPushButton("Cambiar")
             btn_change.setProperty("class", "secondary")
-            btn_change.setMaximumWidth(200)
+            btn_change.setMaximumWidth(100)
+            btn_change.setStyleSheet(f"background: #3d3d3d; color: white; padding: 6px 12px; border-radius: 4px; font-size: 11px;")
             location_layout.addWidget(btn_change)
-        else:
-            location_title = QLabel("⚠️ No hay ubicación configurada")
-            location_title.setStyleSheet(f"font-weight: bold; color: {ThemeColor.WARNING};")
-            location_layout.addWidget(location_title)
             
-            location_info = QLabel("Necesitas elegir dónde guardar los grupos de trabajo.")
-            location_info.setStyleSheet(f"color: {ThemeColor.TEXT_PLACEHOLDER};")
-            location_layout.addWidget(location_info)
-        
-        layout.addWidget(location_frame)
+            layout.addLayout(location_layout)
         
         # Botones
         buttons_layout = QHBoxLayout()
@@ -621,7 +581,7 @@ class MainWindow(QMainWindow):
         btn_cancel.setProperty("class", "secondary")
         buttons_layout.addWidget(btn_cancel)
         
-        btn_create = QPushButton("✅ Crear Grupo de Trabajo")
+        btn_create = QPushButton(f"✅ Crear Grupo ({pdf_count} PDFs)")
         btn_create.setProperty("class", "green")
         buttons_layout.addWidget(btn_create)
         
@@ -666,41 +626,13 @@ class MainWindow(QMainWindow):
             # Actualizar widget de estado
             self.workspace_status.update_status()
             
-            # Mostrar diálogo de confirmación con vista del grupo
-            msg = QMessageBox(self)
-            msg.setWindowTitle("✅ Grupo de Trabajo Creado")
-            msg.setIcon(QMessageBox.Information)
-            msg.setText(f"<h3>¡Grupo de trabajo creado exitosamente!</h3>")
-            
-            # Construir lista de archivos importados
-            files_list = "\n".join([f"• {os.path.basename(p)}" for p in pdf_files[:5]])
-            if pdf_count > 5:
-                files_list += f"\n... y {pdf_count - 5} más"
-            
-            msg.setInformativeText(
-                f"📁 <b>Carpeta:</b> {group.name}\n\n"
-                f"📄 <b>PDFs importados ({pdf_count}):</b>\n{files_list}\n\n"
-                f"📍 <b>Ubicación:</b> {group.path}\n\n"
-                f"<b>¿Qué deseas hacer ahora?</b>"
-            )
-            
-            btn_open = msg.addButton("📖 Abrir Primer PDF", QMessageBox.AcceptRole)
-            btn_view = msg.addButton("📂 Ver Carpetas del Grupo", QMessageBox.ActionRole)
-            btn_later = msg.addButton("⏰ Más Tarde", QMessageBox.RejectRole)
-            
-            msg.setDefaultButton(btn_open)
-            msg.exec_()
-            
-            if msg.clickedButton() == btn_view:
-                # Mostrar diálogo visual del grupo
-                dialog = GroupVisualDialog(self.workspace_manager, group, self)
-                dialog.pdfSelected.connect(self.load_pdf)
-                dialog.exec_()
-            elif msg.clickedButton() == btn_open:
-                # Abrir el primer PDF pendiente
-                pending = group.get_pending_pdfs()
-                if pending:
-                    self.load_pdf(pending[0])
+            # Abrir directamente el primer PDF pendiente
+            pending = group.get_pending_pdfs()
+            if pending:
+                self.load_pdf(pending[0])
+                self.status_label.setText(f"✅ Grupo creado con {pdf_count} PDFs — Editando el primero")
+            else:
+                self.status_label.setText(f"✅ Grupo creado con {pdf_count} PDFs")
         else:
             QMessageBox.critical(
                 self,
@@ -1229,12 +1161,11 @@ class MainWindow(QMainWindow):
             self.status_label.setText("Error al guardar")
     
     def _show_save_result_dialog(self, result: dict, stats: dict):
-        """Muestra un diálogo visual con el resultado del guardado."""
-        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QFrame, QPushButton
+        """Muestra un diálogo simple con el resultado del guardado."""
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton
         
         dialog = QDialog(self)
-        dialog.setWindowTitle("✅ Guardado Exitoso")
-        dialog.setMinimumWidth(550)
+        dialog.setMinimumWidth(400)
         dialog.setStyleSheet(f"""
             QDialog {{
                 background-color: {ThemeColor.BG_PRIMARY};
@@ -1266,144 +1197,54 @@ class MainWindow(QMainWindow):
         layout.setSpacing(15)
         layout.setContentsMargins(25, 25, 25, 25)
         
-        # Título con icono grande
-        title = QLabel("✅ PDF Procesado Correctamente")
-        title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {ThemeColor.SUCCESS};")
-        title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title)
+        pending = stats.get('pending', 0)
         
-        # === Diagrama visual del movimiento ===
-        flow_frame = QFrame()
-        flow_frame.setStyleSheet(f"""
-            QFrame {{
-                background-color: {ThemeColor.BG_TERTIARY};
-                border-radius: 10px;
-                padding: 15px;
-            }}
-        """)
-        flow_layout = QVBoxLayout(flow_frame)
-        
-        # Fila 1: Origen (tachado)
-        row1 = QHBoxLayout()
-        origin_icon = QLabel("📥")
-        origin_icon.setStyleSheet("font-size: 24px;")
-        row1.addWidget(origin_icon)
-        
-        origin_label = QLabel("ORIGEN")
-        origin_label.setStyleSheet(f"color: {ThemeColor.WARNING}; font-weight: bold; font-size: 14px;")
-        row1.addWidget(origin_label)
-        
-        origin_file = QLabel(f"<s>{os.path.basename(result['original'])}</s>")
-        origin_file.setStyleSheet(f"color: {ThemeColor.TEXT_PLACEHOLDER}; font-size: 12px;")
-        row1.addWidget(origin_file)
-        
-        row1.addStretch()
-        
-        removed_badge = QLabel("❌ Removido")
-        removed_badge.setStyleSheet(f"color: {ThemeColor.ERROR}; font-size: 11px;")
-        row1.addWidget(removed_badge)
-        
-        flow_layout.addLayout(row1)
-        
-        # Flecha
-        arrow = QLabel("          ⬇️ Al guardar se movió automáticamente")
-        arrow.setStyleSheet(f"color: {ThemeColor.TEXT_PLACEHOLDER}; font-size: 12px;")
-        flow_layout.addWidget(arrow)
-        
-        # Fila 2: Modificado - Sí
-        row2 = QHBoxLayout()
-        mod_icon = QLabel("✅")
-        mod_icon.setStyleSheet("font-size: 24px;")
-        row2.addWidget(mod_icon)
-        
-        mod_label = QLabel("MODIFICADO - SÍ")
-        mod_label.setStyleSheet(f"color: {ThemeColor.SUCCESS}; font-weight: bold; font-size: 14px;")
-        row2.addWidget(mod_label)
-        
-        mod_file = QLabel(os.path.basename(result['modified']))
-        mod_file.setStyleSheet(f"color: {ThemeColor.SUCCESS}; font-size: 12px;")
-        row2.addWidget(mod_file)
-        
-        row2.addStretch()
-        
-        new_badge = QLabel("✨ Nuevo")
-        new_badge.setStyleSheet(f"color: {ThemeColor.SUCCESS}; font-size: 11px; font-weight: bold;")
-        row2.addWidget(new_badge)
-        
-        flow_layout.addLayout(row2)
-        
-        # Fila 3: Modificado - No (original)
-        row3 = QHBoxLayout()
-        orig_icon = QLabel("📦")
-        orig_icon.setStyleSheet("font-size: 24px;")
-        row3.addWidget(orig_icon)
-        
-        orig_label = QLabel("MODIFICADO - NO")
-        orig_label.setStyleSheet(f"color: {ThemeColor.TEXT_DISABLED}; font-weight: bold; font-size: 14px;")
-        row3.addWidget(orig_label)
-        
-        orig_file = QLabel(os.path.basename(result['original']))
-        orig_file.setStyleSheet(f"color: {ThemeColor.TEXT_DISABLED}; font-size: 12px;")
-        row3.addWidget(orig_file)
-        
-        row3.addStretch()
-        
-        backup_badge = QLabel("🔒 Backup")
-        backup_badge.setStyleSheet(f"color: {ThemeColor.TEXT_DISABLED}; font-size: 11px;")
-        row3.addWidget(backup_badge)
-        
-        flow_layout.addLayout(row3)
-        
-        layout.addWidget(flow_frame)
-        
-        # === Estadísticas ===
-        stats_frame = QFrame()
-        stats_frame.setStyleSheet(f"""
-            QFrame {{
-                background-color: {ThemeColor.BG_SECONDARY};
-                border-radius: 8px;
-                padding: 10px;
-            }}
-        """)
-        stats_layout = QHBoxLayout(stats_frame)
-        
-        pending_label = QLabel(f"📥 Pendientes: {stats['pending']}")
-        pending_label.setStyleSheet(f"color: {ThemeColor.WARNING}; font-size: 13px;")
-        stats_layout.addWidget(pending_label)
-        
-        stats_layout.addStretch()
-        
-        modified_label = QLabel(f"✅ Modificados: {stats['modified']}")
-        modified_label.setStyleSheet(f"color: {ThemeColor.SUCCESS}; font-size: 13px;")
-        stats_layout.addWidget(modified_label)
-        
-        stats_layout.addStretch()
-        
-        archived_label = QLabel(f"📦 Archivados: {stats['archived']}")
-        archived_label.setStyleSheet("color: #9E9E9E; font-size: 13px;")
-        stats_layout.addWidget(archived_label)
-        
-        layout.addWidget(stats_frame)
-        
-        # === Botones ===
-        buttons_layout = QHBoxLayout()
-        
-        if stats['pending'] > 0:
-            btn_next = QPushButton(f"📂 Abrir siguiente ({stats['pending']} pendientes)")
+        if pending > 0:
+            # Rama A: Hay PDFs pendientes
+            dialog.setWindowTitle("✅ PDF Guardado")
+            
+            title = QLabel("✅ PDF guardado correctamente")
+            title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {ThemeColor.SUCCESS};")
+            title.setAlignment(Qt.AlignCenter)
+            layout.addWidget(title)
+            
+            pending_text = QLabel(f"⏳ {pending} PDF{'s' if pending > 1 else ''} pendiente{'s' if pending > 1 else ''} por editar")
+            pending_text.setStyleSheet(f"color: {ThemeColor.WARNING}; font-size: 14px;")
+            pending_text.setAlignment(Qt.AlignCenter)
+            layout.addWidget(pending_text)
+            
+            # Botones
+            buttons_layout = QHBoxLayout()
+            
+            btn_next = QPushButton(f"📂 Abrir siguiente")
             btn_next.clicked.connect(lambda: (dialog.accept(), self.open_next_pending()))
             buttons_layout.addWidget(btn_next)
-        
-        btn_view = QPushButton("📁 Ver carpetas")
-        btn_view.setProperty("class", "secondary")
-        btn_view.clicked.connect(lambda: (dialog.accept(), self.show_pending_pdfs()))
-        buttons_layout.addWidget(btn_view)
-        
-        btn_close = QPushButton("Cerrar")
-        btn_close.setProperty("class", "secondary")
-        btn_close.clicked.connect(dialog.accept)
-        buttons_layout.addWidget(btn_close)
-        
-        layout.addLayout(buttons_layout)
+            
+            btn_close = QPushButton("Cerrar")
+            btn_close.setProperty("class", "secondary")
+            btn_close.clicked.connect(dialog.accept)
+            buttons_layout.addWidget(btn_close)
+            
+            layout.addLayout(buttons_layout)
+        else:
+            # Rama B: Todos los PDFs procesados
+            dialog.setWindowTitle("🎉 ¡Completado!")
+            
+            title = QLabel("🎉 ¡Todos los PDFs han sido procesados!")
+            title.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {ThemeColor.SUCCESS};")
+            title.setAlignment(Qt.AlignCenter)
+            layout.addWidget(title)
+            
+            modified = stats.get('modified', 0)
+            done_text = QLabel(f"✅ {modified} PDF{'s' if modified > 1 else ''} modificado{'s' if modified > 1 else ''} correctamente")
+            done_text.setStyleSheet(f"color: {ThemeColor.TEXT_SECONDARY}; font-size: 14px;")
+            done_text.setAlignment(Qt.AlignCenter)
+            layout.addWidget(done_text)
+            
+            # Botón para abrir carpeta de resultados
+            btn_folder = QPushButton("📂 Abrir carpeta de resultados")
+            btn_folder.clicked.connect(lambda: (dialog.accept(), self._open_results_folder()))
+            layout.addWidget(btn_folder)
         
         dialog.exec_()
     
@@ -1416,6 +1257,12 @@ class MainWindow(QMainWindow):
                 if not self.check_save():
                     return
             self.load_pdf(pending[0])
+    
+    def _open_results_folder(self):
+        """Abre la carpeta de resultados (Modificado - Sí) en el explorador."""
+        folder = self.workspace_manager.get_modified_folder()
+        if folder and os.path.exists(folder):
+            os.startfile(folder)
     
     def save_file_as(self):
         """Guarda el archivo con un nuevo nombre."""
