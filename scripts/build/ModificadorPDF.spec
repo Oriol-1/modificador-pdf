@@ -27,7 +27,7 @@ else:
 # Verificar que existe el icono
 if icon_file and not os.path.exists(icon_file):
     icon_file = None
-    print(f"⚠ Icono no encontrado, se usará el predeterminado")
+    print("AVISO: Icono no encontrado, se usara el predeterminado")
 
 # Hidden imports necesarios para PyQt5 y PyMuPDF
 hidden_imports = [
@@ -46,13 +46,12 @@ a = Analysis(
     pathex=[project_root],
     binaries=[],
     datas=[
-        # Incluir iconos si existen
-        (os.path.join(icon_dir, 'app_icon.ico'), 'installer') if os.path.exists(os.path.join(icon_dir, 'app_icon.ico')) else (None, None),
-        (os.path.join(icon_dir, 'app_icon.png'), 'installer') if os.path.exists(os.path.join(icon_dir, 'app_icon.png')) else (None, None),
         # Incluir archivos de licencia
         (os.path.join(project_root, 'LICENSE.txt'), '.'),
         (os.path.join(project_root, 'LICENSE_EN.txt'), '.'),
-    ],
+    ]
+    + ([(os.path.join(icon_dir, 'app_icon.ico'), 'installer')] if os.path.exists(os.path.join(icon_dir, 'app_icon.ico')) else [])
+    + ([(os.path.join(icon_dir, 'app_icon.png'), 'installer')] if os.path.exists(os.path.join(icon_dir, 'app_icon.png')) else []),
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},
