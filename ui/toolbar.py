@@ -147,7 +147,9 @@ class EditorToolBar(QWidget):
     insertImage = pyqtSignal()
     saveFile = pyqtSignal()
     saveFileAs = pyqtSignal()
+    printFile = pyqtSignal()
     closeFile = pyqtSignal()
+    readOnlyToggled = pyqtSignal(bool)
 
     zoomIn = pyqtSignal()
     zoomOut = pyqtSignal()
@@ -230,6 +232,13 @@ class EditorToolBar(QWidget):
         self.action_save_as.setEnabled(False)
         self._flow.addWidget(_make_button(self.action_save_as, self))
 
+        self.action_print = QAction("🖨️ Imprimir", self)
+        self.action_print.setShortcut(QKeySequence.Print)
+        self.action_print.setToolTip("Imprimir el PDF actual (Ctrl+P)")
+        self.action_print.triggered.connect(self.printFile.emit)
+        self.action_print.setEnabled(False)
+        self._flow.addWidget(_make_button(self.action_print, self))
+
         self.action_close = QAction("❌ Cerrar PDF", self)
         self.action_close.setShortcut("Ctrl+W")
         self.action_close.setToolTip("Cerrar PDF actual para abrir otro (Ctrl+W)")
@@ -278,6 +287,16 @@ class EditorToolBar(QWidget):
         self.action_highlight.triggered.connect(lambda: self.set_tool('highlight'))
         self._flow.addWidget(_make_button(self.action_highlight, self))
         self.tool_actions['highlight'] = self.action_highlight
+
+        self._flow.addWidget(_ToolbarSeparator(self))
+
+        self.action_readonly = QAction("👁️ Solo lectura", self)
+        self.action_readonly.setToolTip("Activar modo solo lectura para revisar sin modificar")
+        self.action_readonly.setCheckable(True)
+        self.action_readonly.setEnabled(False)
+        self.action_readonly.toggled.connect(self.readOnlyToggled.emit)
+        self._flow.addWidget(_make_button(self.action_readonly, self))
+        self.tool_actions['readonly'] = self.action_readonly
 
         # Rotar (con submenú)
         self.action_rotate = QAction("🔄 Rotar", self)
@@ -453,12 +472,20 @@ class EditorToolBar(QWidget):
         """Actualiza el estado de las acciones según si hay documento cargado."""
         self.action_save.setEnabled(loaded)
         self.action_save_as.setEnabled(loaded)
+        self.action_print.setEnabled(loaded)
         self.action_close.setEnabled(loaded)
-        self.action_insert_pdf.setEnabled(loaded)
-        self.action_insert_image.setEnabled(loaded)
+        self.action_readonly.setEnabled(loaded)
+        if not loaded and self.action_readonly.isChecked():
+            self.action_readonly.setChecked(False)
 
-        for action in self.tool_actions.values():
-            action.setEnabled(loaded)
+        readonly = self.action_readonly.isChecked()
+        self.action_insert_pdf.setEnabled(loaded and not readonly)
+        self.action_insert_image.setEnabled(loaded and not readonly)
+
+        for name, action in self.tool_actions.items():
+            if name == 'readonly':
+                continue
+            action.setEnabled(loaded and not readonly)
 
         self.action_zoom_in.setEnabled(loaded)
         self.action_zoom_out.setEnabled(loaded)
@@ -475,5 +502,25 @@ class EditorToolBar(QWidget):
 
     def update_undo_redo(self, can_undo: bool, can_redo: bool):
         """Actualiza el estado de deshacer/rehacer."""
+        if self.action_readonly.isChecked():
+            self.action_undo.setEnabled(False)
+            self.action_redo.setEnabled(False)
+            return
         self.action_undo.setEnabled(can_undo)
         self.action_redo.setEnabled(can_redo)
+
+    def set_readonly_ui(self, enabled: bool):
+        """Deshabilita/rehabilita las acciones de edición según modo solo lectura."""
+        editable = not enabled
+        self.action_insert_pdf.setEnabled(editable)
+        self.action_insert_image.setEnabled(editable)
+        for name, action in self.tool_actions.items():
+            if name == 'readonly':
+                continue
+            action.setEnabled(editable)
+            if enabled:
+                action.setChecked(False)
+        if enabled:
+            self.current_tool = 'readonly'
+            self.action_undo.setEnabled(False)
+            self.action_redo.setEnabled(False)

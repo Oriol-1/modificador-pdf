@@ -806,7 +806,9 @@ class MainWindow(QMainWindow):
         self.toolbar.insertImage.connect(self._insert_image_dialog)
         self.toolbar.saveFile.connect(self.save_file)
         self.toolbar.saveFileAs.connect(self.save_file_as)
+        self.toolbar.printFile.connect(self.print_file)
         self.toolbar.closeFile.connect(self.close_file)
+        self.toolbar.readOnlyToggled.connect(self._on_readonly_toggled)
         
         self.toolbar.zoomIn.connect(self.pdf_viewer.zoom_in)
         self.toolbar.zoomOut.connect(self.pdf_viewer.zoom_out)
@@ -1322,7 +1324,67 @@ class MainWindow(QMainWindow):
                     "No se pudo guardar el archivo."
                 )
                 self.status_label.setText("Error al guardar")
-    
+
+    def _sync_overlays_to_doc(self):
+        """Vuelca overlays pendientes (texto e imágenes) al documento en memoria."""
+        if hasattr(self.pdf_viewer, 'sync_all_text_items_to_data'):
+            self.pdf_viewer.sync_all_text_items_to_data()
+        if hasattr(self.pdf_viewer, 'commit_overlay_texts'):
+            self.pdf_viewer.commit_overlay_texts()
+        if hasattr(self.pdf_viewer, 'commit_overlay_images'):
+            self.pdf_viewer.commit_overlay_images()
+
+    def _on_readonly_toggled(self, enabled: bool):
+        """Aplica el estado de modo solo lectura al visor y a la toolbar."""
+        self.toolbar.set_readonly_ui(enabled)
+        self.pdf_viewer.set_readonly(enabled)
+        if enabled:
+            self.status_label.setText("👁️ Modo solo lectura activado")
+        else:
+            self.status_label.setText("Edición habilitada")
+
+    def print_file(self):
+        """Imprime el PDF actual, sincronizando overlays primero."""
+        if not self.pdf_doc.is_open():
+            return
+
+        from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
+        from core.print_service import print_document
+
+        is_dirty = getattr(self.pdf_doc, 'modified', False)
+        if is_dirty:
+            box = QMessageBox(self)
+            box.setWindowTitle("Imprimir PDF")
+            box.setIcon(QMessageBox.Question)
+            box.setText("Hay cambios sin guardar. ¿Qué quieres hacer?")
+            btn_save = box.addButton("Guardar e imprimir", QMessageBox.AcceptRole)
+            btn_print = box.addButton("Imprimir sin guardar", QMessageBox.ActionRole)
+            btn_cancel = box.addButton("Cancelar", QMessageBox.RejectRole)
+            box.exec_()
+            clicked = box.clickedButton()
+            if clicked is btn_cancel:
+                return
+            if clicked is btn_save:
+                self.save_file()
+            else:
+                self._sync_overlays_to_doc()
+        else:
+            self._sync_overlays_to_doc()
+
+        printer = QPrinter(QPrinter.HighResolution)
+        printer.setDocName(os.path.basename(self.current_file or "documento.pdf"))
+        dialog = QPrintDialog(printer, self)
+        dialog.setWindowTitle("Imprimir PDF")
+        if dialog.exec_() != QPrintDialog.Accepted:
+            return
+
+        try:
+            print_document(self.pdf_doc, printer)
+            self.status_label.setText("✓ Documento enviado a la impresora")
+        except Exception as e:
+            QMessageBox.critical(self, "Error al imprimir", f"No se pudo imprimir el documento:\n{e}")
+            self.status_label.setText("Error al imprimir")
+
     def close_file(self):
         """Cierra el PDF actual para poder abrir otro."""
         if not self.pdf_doc.is_open():

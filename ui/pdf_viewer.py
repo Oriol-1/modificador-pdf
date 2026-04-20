@@ -243,6 +243,7 @@ class PDFPageView(QGraphicsView):
         
         # Modo de herramienta
         self.tool_mode = 'select'  # 'select', 'highlight', 'delete', 'edit'
+        self.is_readonly = False
         
         # Estado de selección
         self.is_selecting = False
@@ -955,7 +956,20 @@ class PDFPageView(QGraphicsView):
         
         # Restaurar imágenes editables para esta página
         self._restore_editable_images_for_page()
-    
+
+        if self.is_readonly:
+            self._apply_readonly_flags_to_scene()
+
+    def _apply_readonly_flags_to_scene(self):
+        """Aplica los flags de solo lectura (sin mover ni seleccionar) a todos los items."""
+        from PyQt5.QtWidgets import QGraphicsItem
+        flags_mask = QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable
+        for item in self.scene.items():
+            flags = item.flags()
+            if not hasattr(item, '_readonly_prev_flags'):
+                setattr(item, '_readonly_prev_flags', int(flags))
+            item.setFlags(flags & ~flags_mask)
+
     def show_existing_highlights(self):
         """Muestra indicadores visuales de los resaltados existentes que pueden eliminarse."""
         if not self.pdf_doc or not self.pdf_doc.is_open():
@@ -978,8 +992,31 @@ class PDFPageView(QGraphicsView):
         except Exception as e:
             print(f"Error mostrando resaltados: {e}")
 
+    def set_readonly(self, enabled: bool):
+        """Activa/desactiva el modo solo lectura: bloquea items e ignora edición."""
+        from PyQt5.QtWidgets import QGraphicsItem
+        self.is_readonly = enabled
+        flags_mask = QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable
+        for item in self.scene.items():
+            flags = item.flags()
+            if enabled:
+                setattr(item, '_readonly_prev_flags', int(flags))
+                item.setFlags(flags & ~flags_mask)
+            else:
+                prev = getattr(item, '_readonly_prev_flags', None)
+                if prev is not None:
+                    item.setFlags(QGraphicsItem.GraphicsItemFlags(prev))
+        self.clear_selection()
+        if enabled:
+            self.tool_mode = 'select'
+            self.setCursor(Qt.ArrowCursor)
+        if self.pdf_doc and self.pdf_doc.is_open():
+            self.render_page()
+
     def set_tool_mode(self, mode: str):
         """Establece el modo de herramienta actual."""
+        if self.is_readonly:
+            return
         self.tool_mode = mode
         
         if mode == 'select':
@@ -1099,6 +1136,8 @@ class PDFPageView(QGraphicsView):
     
     def mousePressEvent(self, event):
         """Maneja el evento de presionar el ratón."""
+        if self.is_readonly:
+            return super().mousePressEvent(event)
         if event.button() == Qt.LeftButton:
             scene_pos = self.mapToScene(event.pos())
             
@@ -1171,6 +1210,8 @@ class PDFPageView(QGraphicsView):
     
     def mouseMoveEvent(self, event):
         """Maneja el evento de mover el ratón."""
+        if self.is_readonly:
+            return super().mouseMoveEvent(event)
         scene_pos = self.mapToScene(event.pos())
         
         # Manejar redimensión de imagen editable (handle activo)
@@ -1312,6 +1353,8 @@ class PDFPageView(QGraphicsView):
     
     def mouseDoubleClickEvent(self, event):
         """Maneja el doble clic - editar texto seleccionado."""
+        if self.is_readonly:
+            return super().mouseDoubleClickEvent(event)
         if event.button() == Qt.LeftButton and self.tool_mode == 'edit':
             scene_pos = self.mapToScene(event.pos())
             clicked_text = self._find_text_at_position(scene_pos)
