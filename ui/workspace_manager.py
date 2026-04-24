@@ -239,22 +239,33 @@ class WorkspaceManager:
             # Crear grupo
             new_group = WorkGroup(group_path)
             
-            # Importar PDFs manteniendo el orden
-            for idx, pdf_path in enumerate(pdf_paths):
+            # Importar PDFs preservando el nombre original tal cual.
+            # No se añade prefijo numérico: el nombre debe coincidir exactamente
+            # en Origen, Modificado - Sí y Modificado - No.
+            for pdf_path in pdf_paths:
                 if os.path.exists(pdf_path) and pdf_path.lower().endswith('.pdf'):
                     filename = os.path.basename(pdf_path)
-                    # Prefijo numérico para mantener orden de importación
-                    prefix = f"{idx+1:03d}_"
-                    dest_path = os.path.join(new_group.origin_folder, prefix + filename)
-                    
-                    # Evitar duplicados
+                    dest_path = os.path.join(new_group.origin_folder, filename)
+
+                    # Solo en caso de colisión real (dos PDFs distintos con el
+                    # mismo nombre en el mismo lote), añadir un sufijo discreto
+                    # estilo Windows " (n)" y avisar por consola.
                     if os.path.exists(dest_path):
-                        base, ext = os.path.splitext(prefix + filename)
-                        c = 1
-                        while os.path.exists(dest_path):
-                            dest_path = os.path.join(new_group.origin_folder, f"{base}_{c}{ext}")
+                        base, ext = os.path.splitext(filename)
+                        c = 2
+                        while True:
+                            candidate = os.path.join(
+                                new_group.origin_folder, f"{base} ({c}){ext}"
+                            )
+                            if not os.path.exists(candidate):
+                                dest_path = candidate
+                                break
                             c += 1
-                    
+                        print(
+                            f"⚠️ Conflicto de nombre al importar '{filename}'. "
+                            f"Se ha guardado como '{os.path.basename(dest_path)}'."
+                        )
+
                     shutil.copy2(pdf_path, dest_path)
             
             # Agregar a la lista y establecer como actual

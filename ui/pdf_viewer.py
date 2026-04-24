@@ -3590,27 +3590,64 @@ class PDFPageView(QGraphicsView):
             is_empty: True si se está eliminando porque el texto está vacío
             skip_render: Si True, no re-renderiza la página (útil para eliminación múltiple)
         """
-        # IMPORTANTE: Si el item viene del PDF y necesita borrado, borrar el texto original PRIMERO
+        # IMPORTANTE: Si el módulo tiene cualquier huella en el PDF, borrarla
+        # ANTES de retirar el item visual. De lo contrario, el contenido
+        # subyacente vuelve a aparecer al re-renderizar o al hacer clic en
+        # esa zona (find_text_at_point recupera el texto).
         needs_erase = getattr(text_item, 'needs_erase', False)
         original_pdf_rect = getattr(text_item, 'original_pdf_rect', None)
         internal_pdf_rect = getattr(text_item, 'internal_pdf_rect', None)
         is_overlay = getattr(text_item, 'is_overlay', False)
-        
-        # Si es un texto del PDF que no ha sido movido (needs_erase=True), borrar del PDF
-        if needs_erase and not is_overlay:
-            rect_to_erase = internal_pdf_rect or original_pdf_rect
-            if rect_to_erase:
+        pending_write = getattr(text_item, 'pending_write', False)
+        item_pdf_rect = getattr(text_item, 'pdf_rect', None)
+
+        # Determinar si el módulo tiene contenido escrito en el PDF que haya
+        # que purgar. Casos cubiertos:
+        #   1. Texto original del PDF aún sin tocar (needs_erase=True).
+        #   2. Overlay ya commitido en una sesión previa (pending_write=False
+        #      con pdf_rect/internal_pdf_rect válidos).
+        #   3. Texto que fue movido y conserva original_pdf_rect (huella
+        #      anterior que sigue dibujada en el PDF).
+        # Excluido: overlay nuevo creado en esta sesión y todavía no escrito
+        # (is_overlay=True y pending_write=True y sin original_pdf_rect),
+        # porque el PDF aún no tiene nada en esa zona.
+        is_fresh_uncommitted_overlay = (
+            is_overlay and pending_write and not original_pdf_rect
+        )
+        should_erase_pdf = (
+            (needs_erase or original_pdf_rect or
+             (is_overlay and not pending_write))
+            and not is_fresh_uncommitted_overlay
+        )
+
+        if should_erase_pdf and self.pdf_doc:
+            # Reunir todos los rects que potencialmente contienen huella en
+            # el PDF y borrarlos todos. erase_text_transparent es idempotente
+            # sobre áreas ya vacías, así que es seguro.
+            rects_to_erase = []
+            if internal_pdf_rect:
+                rects_to_erase.append((internal_pdf_rect, True))
+            if original_pdf_rect and original_pdf_rect != internal_pdf_rect:
+                rects_to_erase.append((original_pdf_rect, False))
+            if (item_pdf_rect and item_pdf_rect != internal_pdf_rect
+                    and item_pdf_rect != original_pdf_rect):
+                rects_to_erase.append((item_pdf_rect, False))
+
+            if rects_to_erase:
                 try:
-                    if self.pdf_doc:
-                        self.pdf_doc._save_snapshot()
-                        self.pdf_doc.erase_text_transparent(
-                            self.current_page,
-                            rect_to_erase,
-                            save_snapshot=False,
-                            already_internal=bool(internal_pdf_rect)
-                        )
+                    self.pdf_doc._save_snapshot()
+                    for rect, already_internal in rects_to_erase:
+                        try:
+                            self.pdf_doc.erase_text_transparent(
+                                self.current_page,
+                                rect,
+                                save_snapshot=False,
+                                already_internal=already_internal,
+                            )
+                        except Exception as e:
+                            print(f"  Error al borrar huella en PDF: {e}")
                 except Exception as e:
-                    print(f"  Error al borrar texto original: {e}")
+                    print(f"  Error preparando borrado de texto: {e}")
         
         # Eliminar de la lista de items gráficos
         if text_item in self.editable_text_items:

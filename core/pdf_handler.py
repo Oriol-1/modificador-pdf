@@ -943,8 +943,12 @@ class PDFDocument:
                     return True
                 except Exception as e:
                     print(f"Redacción falló: {e}, usando shape como fallback")
-            
-            # Para PDFs de imagen o como fallback: usar shape
+
+            # Para PDFs de imagen: cubrir visualmente con shape blanco PRIMERO
+            # (la imagen subyacente sigue mostrando el texto), y luego redactar
+            # la capa de texto OCR para que find_text_at_point no la encuentre.
+            # Importante: el shape se dibuja antes que la redacción porque
+            # apply_redactions() invalida el objeto page.
             try:
                 shape = page.new_shape()
                 shape.draw_rect(transformed_rect)
@@ -952,11 +956,28 @@ class PDFDocument:
                 shape.commit()
                 self.modified = True
                 print(f"Área cubierta con shape: {transformed_rect}")
-                return True
             except Exception as e:
                 print(f"Shape falló: {e}")
-            
-            return False
+                return False
+
+            # En PDFs de imagen, además limpiar la capa OCR subyacente para que
+            # find_text_at_point no devuelva el texto "borrado" y no reaparezca
+            # al hacer clic. Si falla, el visual ya está cubierto.
+            if use_redaction and is_image_pdf:
+                try:
+                    page.add_redact_annot(transformed_rect, fill=None)
+                    page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+                    self._refresh_document()
+                    print(
+                        f"Capa OCR eliminada en PDF de imagen: {transformed_rect}"
+                    )
+                except Exception as e:
+                    print(
+                        f"Redacción de capa OCR falló (no crítico): {e}"
+                    )
+
+            return True
+
         except Exception as e:
             print(f"Error al borrar área: {e}")
             return False

@@ -206,7 +206,7 @@ class TestWorkspaceManager:
         assert "pdf" in parts[-1].lower()
     
     def test_file_ordering_prefix(self):
-        """Test: Los archivos tienen prefijo de orden."""
+        """Test: Los archivos preservan su nombre original sin prefijos."""
         self.manager.set_base_path(self.temp_dir)
         
         # Crear PDFs de prueba
@@ -220,11 +220,14 @@ class TestWorkspaceManager:
         group = self.manager.create_new_group(pdfs)
         pending = group.get_pending_pdfs()
         
-        # Verificar que tienen prefijos 001_, 002_, 003_
-        for i, pdf_path in enumerate(sorted(pending)):
-            filename = os.path.basename(pdf_path)
-            expected_prefix = f"{i+1:03d}_"
-            assert filename.startswith(expected_prefix), f"Archivo {filename} debería empezar con {expected_prefix}"
+        # Verificar que el nombre original se mantiene tal cual,
+        # sin prefijo "001_", "002_", etc.
+        names = sorted(os.path.basename(p) for p in pending)
+        assert names == ["archivo_0.pdf", "archivo_1.pdf", "archivo_2.pdf"]
+        for name in names:
+            assert not name[:4].rstrip("_").isdigit() or "_" not in name[:4], (
+                f"El archivo '{name}' no debe llevar prefijo numérico"
+            )
     
     def test_is_file_in_origin(self):
         """Test: Detectar archivo en carpeta Origen."""
