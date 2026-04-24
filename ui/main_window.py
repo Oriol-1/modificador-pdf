@@ -1550,22 +1550,29 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"PDF comprimido guardado: {os.path.basename(output_path)}")
 
     def _transform_page_overlays(self, page_num: int, angle: int, old_w: float, old_h: float):
-        """Transforma las coordenadas de los overlays editables tras rotar la página."""
+        """Transforma las coordenadas de los overlays editables tras rotar la página.
+        
+        Además de rotar los rects, acumula el ángulo aplicado al overlay en el
+        campo 'rotation', para que al renderizar el QGraphicsItem se pueda
+        aplicar la rotación visual correspondiente y mantener la caja editable
+        alineada con el contenido rotado de la página.
+        """
         import fitz
         
         page_key = self.pdf_viewer._page_key(page_num)
         page_texts = self.pdf_viewer.editable_texts_data.get(page_key, [])
+        page_images = self.pdf_viewer.editable_images_data.get(page_key, [])
         
-        if not page_texts:
-            return
-        
-        for text_data in page_texts:
-            # Transformar los 3 campos de coordenadas
-            for rect_key in ('pdf_rect', 'internal_pdf_rect', 'original_pdf_rect'):
-                rect = text_data.get(rect_key)
-                if rect is None:
-                    continue
-                text_data[rect_key] = self._rotate_rect(rect, angle, old_w, old_h)
+        for collection in (page_texts, page_images):
+            for data in collection:
+                # Transformar todos los rects relevantes
+                for rect_key in ('pdf_rect', 'internal_pdf_rect', 'original_pdf_rect'):
+                    rect = data.get(rect_key)
+                    if rect is None:
+                        continue
+                    data[rect_key] = self._rotate_rect(rect, angle, old_w, old_h)
+                # Acumular rotación visual del overlay (módulo 360)
+                data['rotation'] = (int(data.get('rotation', 0)) + int(angle)) % 360
     
     @staticmethod
     def _rotate_rect(rect, angle: int, old_w: float, old_h: float):

@@ -3425,12 +3425,20 @@ class PDFPageView(QGraphicsView):
             # Obtener el rect actual (sin recalcular)
             adjusted_rect = text_item.rect()
             
-            # Usar la posición actual de la escena (donde se movió) y el tamaño ajustado
+            # Para overlays rotados (90/270), la bbox visual tiene
+            # dimensiones intercambiadas respecto al rect natural del item.
+            rot = int(getattr(text_item, 'pdf_rotation', 0)) % 360
+            if rot in (90, 270):
+                w_pdf = adjusted_rect.height() / self.zoom_level
+                h_pdf = adjusted_rect.width() / self.zoom_level
+            else:
+                w_pdf = adjusted_rect.width() / self.zoom_level
+                h_pdf = adjusted_rect.height() / self.zoom_level
             updated_pdf_rect = fitz.Rect(
                 new_pdf_rect.x0,
                 new_pdf_rect.y0,
-                new_pdf_rect.x0 + (adjusted_rect.width() / self.zoom_level),
-                new_pdf_rect.y0 + (adjusted_rect.height() / self.zoom_level)
+                new_pdf_rect.x0 + w_pdf,
+                new_pdf_rect.y0 + h_pdf
             )
             text_item.pdf_rect = updated_pdf_rect
             
@@ -3490,11 +3498,18 @@ class PDFPageView(QGraphicsView):
             adjusted_rect = text_item.rect()
             
             # Usar la posición nueva y el tamaño ajustado al contenido
+            rot = int(getattr(text_item, 'pdf_rotation', 0)) % 360
+            if rot in (90, 270):
+                w_pdf = adjusted_rect.height() / self.zoom_level
+                h_pdf = adjusted_rect.width() / self.zoom_level
+            else:
+                w_pdf = adjusted_rect.width() / self.zoom_level
+                h_pdf = adjusted_rect.height() / self.zoom_level
             updated_pdf_rect = fitz.Rect(
                 new_pdf_rect.x0,
                 new_pdf_rect.y0,
-                new_pdf_rect.x0 + (adjusted_rect.width() / self.zoom_level),
-                new_pdf_rect.y0 + (adjusted_rect.height() / self.zoom_level)
+                new_pdf_rect.x0 + w_pdf,
+                new_pdf_rect.y0 + h_pdf
             )
             
             text_item.is_overlay = True
@@ -3551,11 +3566,18 @@ class PDFPageView(QGraphicsView):
             )
         
         adjusted_rect = text_item.rect()
+        rot = int(getattr(text_item, 'pdf_rotation', 0)) % 360
+        if rot in (90, 270):
+            w_pdf = adjusted_rect.height() / self.zoom_level
+            h_pdf = adjusted_rect.width() / self.zoom_level
+        else:
+            w_pdf = adjusted_rect.width() / self.zoom_level
+            h_pdf = adjusted_rect.height() / self.zoom_level
         updated_pdf_rect = fitz.Rect(
             new_pdf_rect.x0,
             new_pdf_rect.y0,
-            new_pdf_rect.x0 + (adjusted_rect.width() / self.zoom_level),
-            new_pdf_rect.y0 + (adjusted_rect.height() / self.zoom_level)
+            new_pdf_rect.x0 + w_pdf,
+            new_pdf_rect.y0 + h_pdf
         )
         
         text_item.is_overlay = True
@@ -3881,11 +3903,24 @@ class PDFPageView(QGraphicsView):
                 saved_view_rect = text_data.get('view_rect')
                 view_rect = saved_view_rect if saved_view_rect else QRectF(0, 0, 100, 20)
             
+            # Rotación acumulada del overlay relativa a su orientación de creación.
+            # Se incrementa en _transform_page_overlays cuando el usuario rota la página.
+            # 0/90/180/270 — controla setRotation() del QGraphicsItem.
+            rotation = int(text_data.get('rotation', 0)) % 360
+            
             # CRÍTICO: Extraer posición y crear rect normalizado (0, 0, w, h)
-            # La posición se establece con setPos(), no en el rect
-            pos_x = view_rect.x()
-            pos_y = view_rect.y()
-            normalized_rect = QRectF(0, 0, view_rect.width(), view_rect.height())
+            # La posición se establece con setPos(), no en el rect.
+            # Para overlays rotados (90/270), las dimensiones del view_rect
+            # representan la bbox rotada; el contenido del item se dibuja en
+            # orientación natural (sin rotar) y luego se aplica setRotation().
+            if rotation in (90, 270):
+                # bbox rotada: ancho=alto_natural, alto=ancho_natural
+                unrot_w = view_rect.height()
+                unrot_h = view_rect.width()
+            else:
+                unrot_w = view_rect.width()
+                unrot_h = view_rect.height()
+            normalized_rect = QRectF(0, 0, unrot_w, unrot_h)
             
             text_item = EditableTextItem(
                 normalized_rect,  # Rect normalizado sin posición
@@ -3898,9 +3933,6 @@ class PDFPageView(QGraphicsView):
                 zoom_level=self.zoom_level,  # Pasar zoom para escalar al dibujar
                 line_spacing=text_data.get('line_spacing', 0.0)  # Interlineado del PDF
             )
-            
-            # CRÍTICO: Establecer la posición del item
-            text_item.setPos(pos_x, pos_y)
             
             text_item.pdf_rect = text_data.get('pdf_rect')
             # Restaurar también los nuevos campos
@@ -3915,11 +3947,29 @@ class PDFPageView(QGraphicsView):
             text_item.has_mixed_styles = text_data.get('has_mixed_styles', False)
             # Guardar tamaño original para poder escalar al editar
             text_item._original_font_size = font_size
+            # Recordar rotación visual aplicada al overlay
+            text_item.pdf_rotation = rotation
             
             # Ajustar caja al contenido (tamaño correcto con zoom actual)
             # Tanto overlays como textos del PDF usan adjust_rect_to_content
             # porque la posición ya se recalculó desde pdf_rect con el zoom actual
             text_item.adjust_rect_to_content()
+            
+            # Aplicar rotación visual y posicionar de modo que la bbox rotada
+            # del item coincida con view_rect (la zona en el pixmap que el
+            # texto debe ocupar tras la rotación de la página).
+            content_rect = text_item.rect()
+            cw = content_rect.width()
+            ch = content_rect.height()
+            if rotation:
+                # Pivote en el centro del contenido para rotar in-place
+                text_item.setTransformOriginPoint(cw / 2.0, ch / 2.0)
+                text_item.setRotation(rotation)
+            # Posicionar el origen del item de modo que su centro (rotado o no)
+            # caiga sobre el centro de la bbox visual deseada (view_rect).
+            target_cx = view_rect.x() + view_rect.width() / 2.0
+            target_cy = view_rect.y() + view_rect.height() / 2.0
+            text_item.setPos(target_cx - cw / 2.0, target_cy - ch / 2.0)
             
             if is_overlay:
                 text_item._bounds_finalized = True
@@ -3960,7 +4010,15 @@ class PDFPageView(QGraphicsView):
             
             pos_x = view_rect.x()
             pos_y = view_rect.y()
-            normalized_rect = QRectF(0, 0, view_rect.width(), view_rect.height())
+            # Rotación visual acumulada del overlay
+            rotation = int(img_data.get('rotation', 0)) % 360
+            if rotation in (90, 270):
+                unrot_w = view_rect.height()
+                unrot_h = view_rect.width()
+            else:
+                unrot_w = view_rect.width()
+                unrot_h = view_rect.height()
+            normalized_rect = QRectF(0, 0, unrot_w, unrot_h)
             
             item = EditableImageItem(
                 rect=normalized_rect,
@@ -3972,7 +4030,14 @@ class PDFPageView(QGraphicsView):
                 overlay_mode=img_data.get('overlay_mode', True),
                 zoom_level=self.zoom_level,
             )
-            item.setPos(pos_x, pos_y)
+            if rotation:
+                item.setTransformOriginPoint(unrot_w / 2.0, unrot_h / 2.0)
+                item.setRotation(rotation)
+            # Posicionar para que la bbox rotada coincida con view_rect
+            target_cx = view_rect.x() + view_rect.width() / 2.0
+            target_cy = view_rect.y() + view_rect.height() / 2.0
+            item.setPos(target_cx - unrot_w / 2.0, target_cy - unrot_h / 2.0)
+            item.pdf_rotation = rotation
             item.module_id = img_data.get('module_id', item.module_id)
             item.is_overlay = img_data.get('is_overlay', True)
             item.pending_write = img_data.get('pending_write', True)
