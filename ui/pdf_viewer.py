@@ -239,7 +239,15 @@ class PDFPageView(QGraphicsView):
         # Umbral en píxeles de escena para considerar que hubo movimiento real.
         # Evita que un clic con leve temblor del ratón se interprete como mover.
         self.MOVE_THRESHOLD_PX = 3.0
-        
+        # Pendiente de materializar texto NATIVO del PDF como overlay arrastrable.
+        # Se rellena en mousePressEvent cuando el usuario hace press sobre texto
+        # nativo (no overlay) en modo edit. Si supera MOVE_THRESHOLD_PX en el
+        # mouseMove, se materializa un EditableTextItem con runs+line_spacing
+        # preservados y comienza el drag normal. Si no supera el umbral, se
+        # descarta en mouseRelease y el clic cae al editor unificado normal.
+        # Estructura: {'block': TextBlock, 'scene_pos': QPointF}.
+        self._pending_native_drag = None
+
         # Imágenes editables añadidas por el usuario (por página, clave = UUID)
         # Estructura: {page_uuid: [dict con datos de la imagen, ...]}
         self.editable_images_data = {}
@@ -1193,6 +1201,33 @@ class PDFPageView(QGraphicsView):
                     event.accept()
                     return
                 
+                # No hay overlay aquí: comprobar si hay texto NATIVO del PDF
+                # bajo el cursor para preparar drag-to-materialize.
+                # Esto permite mover textos originales del PDF como módulos.
+                # No se materializa hasta que el usuario supere el umbral en
+                # mouseMoveEvent: así un clic puro sigue abriendo el editor.
+                if self.pdf_doc and self.pdf_doc.is_open():
+                    try:
+                        pdf_x = scene_pos.x() / self.zoom_level
+                        pdf_y = scene_pos.y() / self.zoom_level
+                        native_block = self.pdf_doc.find_text_at_point(
+                            self.current_page, (pdf_x, pdf_y)
+                        )
+                    except Exception:
+                        native_block = None
+                    if native_block and getattr(native_block, 'text', '') and native_block.text.strip():
+                        self._pending_native_drag = {
+                            'block': native_block,
+                            'scene_pos': QPointF(scene_pos),
+                        }
+                        self.drag_start_pos = scene_pos
+                        self._text_drag_start_item_pos = QPointF(scene_pos)
+                        # No activamos dragging_text todavía: lo haremos en
+                        # mouseMoveEvent al superar el umbral. Si no se supera,
+                        # mouseReleaseEvent delegará en handle_edit_click.
+                        event.accept()
+                        return
+                
                 # NO convertir texto del PDF aquí - dejar que handle_edit_click
                 # lo maneje en mouseReleaseEvent para abrir editor directamente
                 
@@ -1269,6 +1304,42 @@ class PDFPageView(QGraphicsView):
                     self.text_was_moved = True
             event.accept()
             return
+
+        # Drag pendiente sobre texto NATIVO del PDF: si el cursor se ha movido
+        # más allá del umbral, materializamos el texto nativo como overlay
+        # arrastrable y entramos en modo drag normal. La primera confirmación
+        # de movimiento (mouseRelease) disparará _update_text_in_pdf CASO 2,
+        # que borra el texto original del PDF y promueve el overlay.
+        if self._pending_native_drag and self.drag_start_pos:
+            initial = self._text_drag_start_item_pos
+            travelled = (scene_pos - initial).manhattanLength() if initial else 0.0
+            if travelled >= self.MOVE_THRESHOLD_PX:
+                pending = self._pending_native_drag
+                self._pending_native_drag = None
+                item = self._materialize_pdf_text_as_overlay(pending['block'])
+                if item is not None:
+                    # Mover el item desde su posición original al destino actual.
+                    delta = scene_pos - pending['scene_pos']
+                    candidate = item.pos() + delta
+                    new_pos = self._clamp_text_pos_to_page(item, candidate)
+                    item.setPos(new_pos)
+                    item.pending_write = True
+                    item.update()
+                    # Activar drag normal sobre el overlay recién creado.
+                    self._select_text_item(item)
+                    self._deselect_image_item()
+                    self.dragging_text = True
+                    self.drag_start_pos = scene_pos
+                    # Posición inicial del item ya desplazada: cualquier movimiento
+                    # adicional contará desde aquí; text_was_moved=True para que
+                    # mouseRelease dispare el commit (CASO 2).
+                    self._text_drag_start_item_pos = QPointF(item.pos())
+                    self.text_was_moved = True
+                    self.drag_original_rect = QRectF(item.rect())
+                    event.accept()
+                    return
+            event.accept()
+            return
         
         if self.is_selecting and self.selection_start:
             # Actualizar rectángulo de selección
@@ -1334,6 +1405,20 @@ class PDFPageView(QGraphicsView):
                 # Limpiar marcador de inicio de drag para que un siguiente clic
                 # no use un valor obsoleto.
                 self._text_drag_start_item_pos = None
+                event.accept()
+                super().mouseReleaseEvent(event)
+                return
+
+            # Press sobre texto NATIVO del PDF sin haber superado el umbral:
+            # no se materializó overlay. Tratar como click puro y delegar en
+            # handle_edit_click (editor unificado), igual que el flujo previo.
+            if self._pending_native_drag is not None:
+                pending_pos = self._pending_native_drag.get('scene_pos')
+                self._pending_native_drag = None
+                self.drag_start_pos = None
+                self._text_drag_start_item_pos = None
+                if pending_pos is not None:
+                    self.handle_edit_click(pending_pos)
                 event.accept()
                 super().mouseReleaseEvent(event)
                 return
@@ -3867,6 +3952,58 @@ class PDFPageView(QGraphicsView):
         elif new_scene_rect.bottom() > page_h_view - margin:
             clamp_y -= (new_scene_rect.bottom() - (page_h_view - margin))
         return QPointF(clamp_x, clamp_y)
+
+    def _materialize_pdf_text_as_overlay(self, block) -> 'EditableTextItem':
+        """Convierte un bloque de texto NATIVO del PDF en EditableTextItem overlay.
+
+        Permite que los textos originales del PDF (no creados desde el editor)
+        se conviertan en módulos arrastrables al inicio de un drag, preservando:
+
+        - Texto exacto del bloque.
+        - Tipografía (font_name, is_bold) por span (vía text_runs autodetectados).
+        - Tamaño de fuente por span.
+        - Color por span.
+        - Interlineado original (line_spacing) calculado a partir de las líneas.
+        - Bbox original (pdf_rect, original_pdf_rect).
+
+        El item se crea con ``is_overlay=False`` y ``needs_erase=True``: el
+        primer commit de movimiento entra en ``_update_text_in_pdf`` CASO 2
+        (ruta probada y testeada) que borra el texto original del PDF y
+        promueve el overlay a definitivo.
+
+        Args:
+            block: Resultado de ``pdf_doc.find_text_at_point`` con atributos
+                ``text``, ``rect``, ``font_size``, ``font_name``, ``color``,
+                ``is_bold``.
+
+        Returns:
+            El ``EditableTextItem`` creado, o ``None`` si no se pudo materializar.
+        """
+        if block is None or not getattr(block, 'text', '') or not block.text.strip():
+            return None
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return None
+        try:
+            view_rect = self.pdf_to_view_rect(block.rect)
+        except Exception:
+            return None
+        font_size = getattr(block, 'font_size', None) or 12.0
+        font_name = getattr(block, 'font_name', None) or 'helv'
+        color = getattr(block, 'color', None) or (0, 0, 0)
+        is_bold = bool(getattr(block, 'is_bold', False))
+        # is_from_pdf=True hace que _add_editable_text autodetecte text_runs y
+        # line_spacing a partir de los spans nativos en pdf_rect.
+        text_item = self._add_editable_text(
+            view_rect,
+            block.text,
+            font_size=font_size,
+            color=color,
+            pdf_rect=block.rect,
+            is_from_pdf=True,
+            font_name=font_name,
+            is_bold=is_bold,
+        )
+        return text_item
 
     def _update_text_data(self, text_item: EditableTextItem, move_only: bool = False):
         """Actualiza los datos guardados del texto usando el índice directo.
