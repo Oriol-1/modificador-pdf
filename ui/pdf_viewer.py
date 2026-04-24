@@ -232,6 +232,13 @@ class PDFPageView(QGraphicsView):
         self.drag_start_pos = None  # Posición inicial del arrastre
         self.drag_original_rect = None  # Rectángulo original antes de mover
         self.text_was_moved = False  # Si el texto realmente se movió
+        # Posición inicial del item al iniciar el arrastre (para umbral mínimo).
+        # Permite distinguir clic vs. movimiento real y descartar microdrags
+        # accidentales que disparían reescritura innecesaria del PDF.
+        self._text_drag_start_item_pos = None
+        # Umbral en píxeles de escena para considerar que hubo movimiento real.
+        # Evita que un clic con leve temblor del ratón se interprete como mover.
+        self.MOVE_THRESHOLD_PX = 3.0
         
         # Imágenes editables añadidas por el usuario (por página, clave = UUID)
         # Estructura: {page_uuid: [dict con datos de la imagen, ...]}
@@ -1179,6 +1186,10 @@ class PDFPageView(QGraphicsView):
                     self.drag_start_pos = scene_pos
                     self.drag_original_rect = QRectF(clicked_text.rect())
                     self.text_was_moved = False
+                    # Guardar posición inicial del item para umbral de drag.
+                    # MOVE puro: solo confirmaremos movimiento si el item se desplaza
+                    # más de MOVE_THRESHOLD_PX desde aquí.
+                    self._text_drag_start_item_pos = QPointF(clicked_text.pos())
                     event.accept()
                     return
                 
@@ -1236,16 +1247,26 @@ class PDFPageView(QGraphicsView):
         # Manejar arrastre de texto editable
         if self.dragging_text and self.selected_text_item and self.drag_start_pos:
             delta = scene_pos - self.drag_start_pos
-            # Al primer movimiento real, habilitar renderizado Qt del texto
-            # porque su posición ya no coincide con el pixmap del PDF
-            if not self.text_was_moved:
-                self.selected_text_item.pending_write = True
-                self.selected_text_item.update()  # Forzar repintado
-            # Mover el item usando setPos() en lugar de modificar el rect
-            new_pos = self.selected_text_item.pos() + delta
+            # Calcular nueva posición y clampar a los límites de la página.
+            # MOVE puro: la traslación nunca debe sacar el overlay fuera del MediaBox,
+            # ya que eso lo haría inalcanzable y se perdería al guardar.
+            candidate_pos = self.selected_text_item.pos() + delta
+            new_pos = self._clamp_text_pos_to_page(self.selected_text_item, candidate_pos)
             self.selected_text_item.setPos(new_pos)
             self.drag_start_pos = scene_pos
-            self.text_was_moved = True  # Marcar que hubo movimiento real
+            # Umbral mínimo de drag: solo confirmar movimiento si el item se ha
+            # desplazado más de MOVE_THRESHOLD_PX desde el inicio del arrastre.
+            # Evita que un clic con micro-temblor se interprete como mover y
+            # dispare reescritura del PDF.
+            initial_pos = self._text_drag_start_item_pos
+            if initial_pos is not None:
+                travelled = (new_pos - initial_pos).manhattanLength()
+                if travelled >= self.MOVE_THRESHOLD_PX and not self.text_was_moved:
+                    # Primer cruce de umbral: marcar pending_write y forzar
+                    # repintado Qt del texto (su posición ya no coincide con el pixmap).
+                    self.selected_text_item.pending_write = True
+                    self.selected_text_item.update()
+                    self.text_was_moved = True
             event.accept()
             return
         
@@ -1310,6 +1331,9 @@ class PDFPageView(QGraphicsView):
                     # Clic sin movimiento en overlay existente - abrir editor
                     self._edit_text_content(self.selected_text_item)
                 self.drag_original_rect = None
+                # Limpiar marcador de inicio de drag para que un siguiente clic
+                # no use un valor obsoleto.
+                self._text_drag_start_item_pos = None
                 event.accept()
                 super().mouseReleaseEvent(event)
                 return
@@ -1412,7 +1436,50 @@ class PDFPageView(QGraphicsView):
                 self._delete_selected_text()
                 event.accept()
                 return
-        
+
+        # Esc: cancelar drag de texto en curso restaurando posición inicial.
+        # MOVE puro: solo posición, no se reescribe el PDF.
+        if event.key() == Qt.Key_Escape:
+            if (self.dragging_text and self.selected_text_item
+                    and self._text_drag_start_item_pos is not None):
+                self.selected_text_item.setPos(self._text_drag_start_item_pos)
+                self.selected_text_item.pending_write = False
+                self.selected_text_item.update()
+                self.dragging_text = False
+                self.drag_start_pos = None
+                self.drag_original_rect = None
+                self.text_was_moved = False
+                self._text_drag_start_item_pos = None
+                event.accept()
+                return
+
+        # Flechas: nudge del texto seleccionado en modo edición.
+        # 1 px por defecto, 10 px con Shift. Solo traslación; aplica clamp y
+        # commit vía _update_text_in_pdf (idéntico path que el drag de ratón).
+        if event.key() in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
+            if (self.tool_mode == 'edit' and self.selected_text_item
+                    and not self.dragging_text):
+                step = 10.0 if (event.modifiers() & Qt.ShiftModifier) else 1.0
+                dx = dy = 0.0
+                if event.key() == Qt.Key_Left:
+                    dx = -step
+                elif event.key() == Qt.Key_Right:
+                    dx = step
+                elif event.key() == Qt.Key_Up:
+                    dy = -step
+                elif event.key() == Qt.Key_Down:
+                    dy = step
+                candidate = self.selected_text_item.pos() + QPointF(dx, dy)
+                new_pos = self._clamp_text_pos_to_page(
+                    self.selected_text_item, candidate)
+                if new_pos != self.selected_text_item.pos():
+                    self.selected_text_item.setPos(new_pos)
+                    self.selected_text_item.pending_write = True
+                    self.selected_text_item.update()
+                    self._update_text_in_pdf(self.selected_text_item)
+                event.accept()
+                return
+
         super().keyPressEvent(event)
     
     def process_selection(self, rect: QRectF):
@@ -3443,7 +3510,7 @@ class PDFPageView(QGraphicsView):
             text_item.pdf_rect = updated_pdf_rect
             
             text_item.pending_write = True
-            self._update_text_data(text_item)
+            self._update_text_data(text_item, move_only=True)
             
             # Re-renderizar si se borró texto del PDF, sino solo mover visualmente
             if needs_erase:
@@ -3519,7 +3586,7 @@ class PDFPageView(QGraphicsView):
             text_item.internal_pdf_rect = None
             
             # Guardar datos ANTES de render_page (que destruye items)
-            self._update_text_data(text_item)
+            self._update_text_data(text_item, move_only=True)
             
             # Guardar la posición y data_index para restaurar después del render
             saved_data_index = getattr(text_item, 'data_index', None)
@@ -3586,7 +3653,7 @@ class PDFPageView(QGraphicsView):
         text_item.internal_pdf_rect = None
         
         saved_data_index = getattr(text_item, 'data_index', None)
-        self._update_text_data(text_item)
+        self._update_text_data(text_item, move_only=True)
         
         # Re-renderizar para mostrar el PDF sin el texto en la posición anterior
         if rect_to_erase:
@@ -3747,8 +3814,72 @@ class PDFPageView(QGraphicsView):
         if msg.exec_() == QMessageBox.Yes:
             self._delete_text_item(text_item, is_empty=False)
 
-    def _update_text_data(self, text_item: EditableTextItem):
-        """Actualiza los datos guardados del texto usando el índice directo."""
+    def _clamp_text_pos_to_page(self, text_item: 'EditableTextItem', candidate_pos: QPointF) -> QPointF:
+        """Limita la posición candidata para que la bbox del item quede dentro de la página.
+
+        MOVE puro: el desplazamiento nunca debe sacar el overlay fuera del MediaBox
+        de la página actual. Si la posición propuesta lo sacaría, se recorta a un
+        margen de seguridad pero NO se cambia el tamaño del item.
+
+        Args:
+            text_item: Overlay editable que se está arrastrando.
+            candidate_pos: Posición candidata en coordenadas de escena.
+
+        Returns:
+            Posición clampada (puede ser igual a la candidata si ya está dentro).
+        """
+        if not self.pdf_doc:
+            return candidate_pos
+        try:
+            page = self.pdf_doc.get_page(self.current_page)
+            if page is None:
+                return candidate_pos
+            page_w_view = page.rect.width * self.zoom_level
+            page_h_view = page.rect.height * self.zoom_level
+        except Exception:
+            return candidate_pos
+
+        # bounding rect en coords locales del item; mappingToScene incluye rotación.
+        local_rect = text_item.boundingRect()
+        # sceneBoundingRect actual con la posición candidata: simulamos
+        # aplicando la traslación delta directamente sobre la bbox actual.
+        current_scene_rect = text_item.sceneBoundingRect()
+        delta_x = candidate_pos.x() - text_item.pos().x()
+        delta_y = candidate_pos.y() - text_item.pos().y()
+        new_scene_rect = QRectF(
+            current_scene_rect.x() + delta_x,
+            current_scene_rect.y() + delta_y,
+            current_scene_rect.width(),
+            current_scene_rect.height(),
+        )
+
+        # Margen de seguridad mínimo (1 px de vista) para que la caja no quede
+        # exactamente pegada al borde y siga siendo seleccionable.
+        margin = 1.0
+        clamp_x = candidate_pos.x()
+        clamp_y = candidate_pos.y()
+        if new_scene_rect.left() < margin:
+            clamp_x += (margin - new_scene_rect.left())
+        elif new_scene_rect.right() > page_w_view - margin:
+            clamp_x -= (new_scene_rect.right() - (page_w_view - margin))
+        if new_scene_rect.top() < margin:
+            clamp_y += (margin - new_scene_rect.top())
+        elif new_scene_rect.bottom() > page_h_view - margin:
+            clamp_y -= (new_scene_rect.bottom() - (page_h_view - margin))
+        return QPointF(clamp_x, clamp_y)
+
+    def _update_text_data(self, text_item: EditableTextItem, move_only: bool = False):
+        """Actualiza los datos guardados del texto usando el índice directo.
+
+        Args:
+            text_item: Item gráfico cuyos datos sincronizar.
+            move_only: Si True, considera la operación como traslación pura
+                (MOVE) y NO recalcula tamaño de caja vía QFontMetrics. Solo
+                actualiza ``pdf_rect`` y ``view_rect`` derivados de la nueva
+                posición, preservando exactamente el resto de campos
+                (text, font_size, font_name, color, is_bold, text_runs,
+                line_spacing, has_mixed_styles).
+        """
         page_data = self.editable_texts_data.get(self._current_page_key(), [])
         
         # Usar data_index si está disponible (método más confiable)
@@ -3758,8 +3889,11 @@ class PDFPageView(QGraphicsView):
         scene_rect = text_item.sceneBoundingRect()
         
         # Para overlays: calcular tamaño basado en QFontMetrics para evitar recortes
+        # MOVE puro (move_only=True): se omite este recalc para garantizar que
+        # mover NO altere las dimensiones del bloque. La caja queda exactamente
+        # con el tamaño que tenía antes del arrastre.
         is_overlay = getattr(text_item, 'is_overlay', False)
-        if is_overlay and text_item.text:
+        if (not move_only) and is_overlay and text_item.text:
             font = QFont("Helvetica", int(text_item.font_size))
             if getattr(text_item, 'is_bold', False):
                 font.setBold(True)
