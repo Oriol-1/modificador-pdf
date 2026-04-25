@@ -237,7 +237,7 @@ jobs:
         if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
           DEB_VERSION="${GITHUB_REF#refs/tags/v}"
         else
-          DEB_VERSION="2.1.4"
+          DEB_VERSION="2.1.5"
         fi
         echo "Usando versión: $DEB_VERSION"
         echo "DEB_VERSION=$DEB_VERSION" >> $GITHUB_ENV

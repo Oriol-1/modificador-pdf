@@ -120,8 +120,8 @@ if is_mac:
             'CFBundleDisplayName': 'Modificador de PDF',
             'CFBundleGetInfoString': 'Herramienta para organizar y clasificar PDFs',
             'CFBundleIdentifier': 'com.modificadorpdf.app',
-            'CFBundleVersion': '2.1.4',
-            'CFBundleShortVersionString': '2.1.4',
+            'CFBundleVersion': '2.1.5',
+            'CFBundleShortVersionString': '2.1.5',
             'NSHighResolutionCapable': True,
             'NSRequiresAquaSystemAppearance': False,  # Soporte modo oscuro
             'LSMinimumSystemVersion': '10.13.0',
