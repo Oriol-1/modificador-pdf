@@ -793,6 +793,7 @@ class MainWindow(QMainWindow):
         self.toolbar.fitWidth.connect(self.pdf_viewer.fit_width)
         
         self.toolbar.toolSelected.connect(self.pdf_viewer.set_tool_mode)
+        self.toolbar.toolSelected.connect(self._on_tool_selected)
         
         self.toolbar.undoAction.connect(self.undo)
         self.toolbar.redoAction.connect(self.redo)
@@ -959,12 +960,19 @@ class MainWindow(QMainWindow):
             self.toolbar.set_page_count(self.pdf_doc.page_count())
             self.toolbar.set_current_page(0)
             
-            # Activar herramienta de edición por defecto
-            self.toolbar.set_tool('edit')
-            self.pdf_viewer.set_tool_mode('edit')
+            # Resolver el grupo del archivo (esto puede actualizar current_group
+            # como efecto colateral, por eso se llama ANTES de elegir la herramienta).
+            in_workspace = self.workspace_manager.is_file_in_origin(file_path)
+            group = self.workspace_manager.current_group if in_workspace else None
+            
+            # Determinar herramienta inicial: usar la última recordada en el grupo
+            # (si existe), o 'edit' por defecto en grupo nuevo / apertura individual.
+            initial_tool = group.last_tool if (group and group.last_tool) else 'edit'
+            self.toolbar.set_tool(initial_tool)
+            self.pdf_viewer.set_tool_mode(initial_tool)
             
             # Verificar si está en workspace
-            if self.workspace_manager.is_file_in_origin(file_path):
+            if in_workspace:
                 self.status_label.setText(f"📁 [Workspace] {os.path.basename(file_path)} - Al guardar se moverá automáticamente")
             # Verificar si el PDF tiene texto real o es imagen
             elif not self.pdf_doc.has_real_text():
@@ -1319,6 +1327,20 @@ class MainWindow(QMainWindow):
             self.status_label.setText("👁️ Modo solo lectura activado")
         else:
             self.status_label.setText("Edición habilitada")
+
+    def _on_tool_selected(self, tool: str):
+        """Memoriza la herramienta elegida en el grupo de trabajo actual.
+
+        Permite que al cambiar de PDF dentro del mismo grupo se reactive
+        automáticamente la última herramienta utilizada. El modo
+        'readonly' no se memoriza: es un toggle de revisión, no una
+        herramienta de edición.
+        """
+        if tool == 'readonly':
+            return
+        group = self.workspace_manager.current_group
+        if group is not None:
+            group.last_tool = tool
 
     def print_file(self):
         """Imprime el PDF actual, sincronizando overlays primero."""
