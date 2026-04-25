@@ -43,7 +43,11 @@ class WorkGroup:
         self.path = group_path
         self.created_at = created_at or datetime.now().isoformat()
         self.name = os.path.basename(group_path)
-        
+        # Memoria temporal de la última herramienta usada en este grupo.
+        # No se persiste en el JSON de configuración: sólo vive durante
+        # la sesión actual. Se reinicia al cerrar/reiniciar el workspace.
+        self.last_tool: Optional[str] = None
+
     @property
     def origin_folder(self) -> str:
         return os.path.join(self.path, self.FOLDER_ORIGIN)
@@ -499,7 +503,9 @@ class WorkspaceManager:
         return self.set_base_path(workspace_path)
     
     def clear_workspace(self):
-        """Desactiva el workspace actual."""
+        """Desactiva el workspace actual y limpia la memoria de herramienta de todos los grupos."""
+        for group in self.work_groups:
+            group.last_tool = None
         self.current_group = None
         self._save_config()
 
