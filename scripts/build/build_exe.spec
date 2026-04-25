@@ -23,7 +23,6 @@ a = Analysis(
         'PyQt5.QtGui',
         'PyQt5.QtWidgets',
         'fitz',
-        'fitz.fitz',
     ],
     hookspath=[],
     hooksconfig={},

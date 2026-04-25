@@ -19,9 +19,10 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-# Directorio del script
+# Posicionarse en la raíz del proyecto (2 niveles arriba de scripts/build/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
 
 # Verificar que existe la compilación
 if [ ! -d "dist/ModificadorPDF" ] && [ ! -d "dist/PDF_Editor_Pro" ]; then
@@ -40,7 +41,7 @@ elif [ -d "dist/PDF_Editor_Pro" ]; then
 fi
 
 # Nombre del portable
-VERSION="2.1.0"
+VERSION="2.1.4"
 PORTABLE_NAME="PDF_Editor_Pro_${VERSION}_Linux_Portable"
 PORTABLE_DIR="dist/${PORTABLE_NAME}"
 

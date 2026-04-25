@@ -11,8 +11,12 @@ echo "║     macOS Application Builder                          ║"
 echo "╚════════════════════════════════════════════════════════╝"
 echo ""
 
-# Ir al directorio del script
-cd "$(dirname "$0")"
+# Posicionarse en la raíz del proyecto (2 niveles arriba de scripts/build/)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
+
+VERSION="2.1.4"
 
 # Verificar Python
 echo "[1/6] Verificando Python..."
@@ -44,30 +48,30 @@ echo "      ✓ Dependencias instaladas"
 # Generar icono
 echo ""
 echo "[4/6] Generando icono de la aplicación..."
-mkdir -p installer
-python3 installer/create_icon.py
+mkdir -p scripts/installer
+python3 scripts/installer/create_icon.py
 
 # Convertir PNG a ICNS si es posible
-if [ -f "installer/app_icon_mac.png" ]; then
+if [ -f "scripts/installer/app_icon_mac.png" ]; then
     echo "      Convirtiendo a formato ICNS..."
-    mkdir -p installer/icon.iconset
+    mkdir -p scripts/installer/icon.iconset
     
     # Generar diferentes tamaños
-    sips -z 16 16     installer/app_icon_mac.png --out installer/icon.iconset/icon_16x16.png > /dev/null 2>&1
-    sips -z 32 32     installer/app_icon_mac.png --out installer/icon.iconset/icon_16x16@2x.png > /dev/null 2>&1
-    sips -z 32 32     installer/app_icon_mac.png --out installer/icon.iconset/icon_32x32.png > /dev/null 2>&1
-    sips -z 64 64     installer/app_icon_mac.png --out installer/icon.iconset/icon_32x32@2x.png > /dev/null 2>&1
-    sips -z 128 128   installer/app_icon_mac.png --out installer/icon.iconset/icon_128x128.png > /dev/null 2>&1
-    sips -z 256 256   installer/app_icon_mac.png --out installer/icon.iconset/icon_128x128@2x.png > /dev/null 2>&1
-    sips -z 256 256   installer/app_icon_mac.png --out installer/icon.iconset/icon_256x256.png > /dev/null 2>&1
-    sips -z 512 512   installer/app_icon_mac.png --out installer/icon.iconset/icon_256x256@2x.png > /dev/null 2>&1
-    sips -z 512 512   installer/app_icon_mac.png --out installer/icon.iconset/icon_512x512.png > /dev/null 2>&1
-    sips -z 1024 1024 installer/app_icon_mac.png --out installer/icon.iconset/icon_512x512@2x.png > /dev/null 2>&1
+    sips -z 16 16     scripts/installer/app_icon_mac.png --out scripts/installer/icon.iconset/icon_16x16.png > /dev/null 2>&1
+    sips -z 32 32     scripts/installer/app_icon_mac.png --out scripts/installer/icon.iconset/icon_16x16@2x.png > /dev/null 2>&1
+    sips -z 32 32     scripts/installer/app_icon_mac.png --out scripts/installer/icon.iconset/icon_32x32.png > /dev/null 2>&1
+    sips -z 64 64     scripts/installer/app_icon_mac.png --out scripts/installer/icon.iconset/icon_32x32@2x.png > /dev/null 2>&1
+    sips -z 128 128   scripts/installer/app_icon_mac.png --out scripts/installer/icon.iconset/icon_128x128.png > /dev/null 2>&1
+    sips -z 256 256   scripts/installer/app_icon_mac.png --out scripts/installer/icon.iconset/icon_128x128@2x.png > /dev/null 2>&1
+    sips -z 256 256   scripts/installer/app_icon_mac.png --out scripts/installer/icon.iconset/icon_256x256.png > /dev/null 2>&1
+    sips -z 512 512   scripts/installer/app_icon_mac.png --out scripts/installer/icon.iconset/icon_256x256@2x.png > /dev/null 2>&1
+    sips -z 512 512   scripts/installer/app_icon_mac.png --out scripts/installer/icon.iconset/icon_512x512.png > /dev/null 2>&1
+    sips -z 1024 1024 scripts/installer/app_icon_mac.png --out scripts/installer/icon.iconset/icon_512x512@2x.png > /dev/null 2>&1
     
     # Crear ICNS
-    iconutil -c icns installer/icon.iconset -o installer/app_icon.icns 2>/dev/null
+    iconutil -c icns scripts/installer/icon.iconset -o scripts/installer/app_icon.icns 2>/dev/null
     
-    if [ -f "installer/app_icon.icns" ]; then
+    if [ -f "scripts/installer/app_icon.icns" ]; then
         echo "      ✓ ICNS generado"
     else
         echo "      ! No se pudo crear ICNS (continuando sin icono personalizado)"
@@ -87,7 +91,7 @@ echo ""
 echo "[6/6] Compilando aplicación..."
 echo "      Esto puede tardar varios minutos..."
 echo ""
-pyinstaller --clean --noconfirm ModificadorPDF.spec
+pyinstaller --clean --noconfirm scripts/build/ModificadorPDF.spec
 
 if [ $? -ne 0 ]; then
     echo ""
@@ -127,13 +131,13 @@ if [ -d "dist/Modificador de PDF.app" ]; then
         hdiutil create -volname "Modificador de PDF" \
                        -srcfolder dist/dmg_temp \
                        -ov -format UDZO \
-                       "dist/ModificadorPDF_v1.0.0.dmg"
+                       "dist/ModificadorPDF_v${VERSION}.dmg"
         
         rm -rf dist/dmg_temp
         
-        if [ -f "dist/ModificadorPDF_v1.0.0.dmg" ]; then
+        if [ -f "dist/ModificadorPDF_v${VERSION}.dmg" ]; then
             echo ""
-            echo "✓ DMG creado: dist/ModificadorPDF_v1.0.0.dmg"
+            echo "✓ DMG creado: dist/ModificadorPDF_v${VERSION}.dmg"
         fi
     fi
 else

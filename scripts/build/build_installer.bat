@@ -12,7 +12,7 @@ echo ║     Windows 10/11 Installer Builder                    ║
 echo ╚════════════════════════════════════════════════════════╝
 echo.
 
-cd /d "%~dp0"
+cd /d "%~dp0..\.."
 
 REM Verificar Python
 echo [1/6] Verificando Python...
@@ -27,8 +27,8 @@ echo       ✓ Python encontrado
 REM Activar entorno virtual
 echo.
 echo [2/6] Configurando entorno virtual...
-if exist "..\..\.venv\Scripts\activate.bat" (
-    call "..\..\.venv\Scripts\activate.bat"
+if exist ".venv\Scripts\activate.bat" (
+    call ".venv\Scripts\activate.bat"
     echo       ✓ Entorno virtual activado
 ) else if exist "venv\Scripts\activate.bat" (
     call "venv\Scripts\activate.bat"
@@ -48,8 +48,8 @@ echo       ✓ Dependencias instaladas
 REM Generar icono
 echo.
 echo [4/6] Generando icono de la aplicación...
-if not exist "installer" mkdir installer
-python installer\create_icon.py
+if not exist "scripts\installer" mkdir scripts\installer
+python scripts\installer\create_icon.py
 if errorlevel 1 (
     echo       ! No se pudo generar el icono, continuando...
 ) else (
@@ -68,7 +68,7 @@ echo.
 echo [6/6] Compilando ejecutable...
 echo       Esto puede tardar varios minutos...
 echo.
-pyinstaller --clean --noconfirm ModificadorPDF.spec
+pyinstaller --clean --noconfirm scripts\build\ModificadorPDF.spec
 
 if errorlevel 1 (
     echo.
@@ -90,7 +90,7 @@ echo ─────────────────────────
 echo SIGUIENTE PASO - Crear instalador:
 echo.
 echo 1. Descarga Inno Setup: https://jrsoftware.org/isinfo.php
-echo 2. Abre: installer\inno_setup.iss
+echo 2. Abre: scripts\installer\inno_setup.iss
 echo 3. Compila con Ctrl+F9
 echo.
 echo El instalador se guardará en: dist\installer\
@@ -106,7 +106,7 @@ if not errorlevel 1 (
         echo.
         echo Creando instalador...
         if not exist "dist\installer" mkdir "dist\installer"
-        iscc "installer\inno_setup.iss"
+        iscc "scripts\installer\inno_setup.iss"
         if not errorlevel 1 (
             echo.
             echo ✓ Instalador creado en: dist\installer\

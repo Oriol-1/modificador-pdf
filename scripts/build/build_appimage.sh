@@ -19,13 +19,14 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-# Directorio del script
+# Posicionarse en la raíz del proyecto (2 niveles arriba de scripts/build/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
 
 # Variables
 APP_NAME="PDF_Editor_Pro"
-VERSION="2.1.0"
+VERSION="2.1.4"
 
 # Verificar que existe la compilación
 if [ ! -d "dist/ModificadorPDF" ] && [ ! -d "dist/PDF_Editor_Pro" ]; then
@@ -62,9 +63,9 @@ cp LICENSE_EN.txt "$APPDIR/usr/share/doc/pdf-editor-pro/" 2>/dev/null || true
 
 # Crear icono (placeholder - puedes reemplazar con tu propio icono)
 echo -e "[3/5] Creando icono..."
-if [ -f "installer/app_icon.png" ]; then
-    cp installer/app_icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/pdf-editor-pro.png"
-    cp installer/app_icon.png "$APPDIR/pdf-editor-pro.png"
+if [ -f "scripts/installer/app_icon.png" ]; then
+    cp scripts/installer/app_icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/pdf-editor-pro.png"
+    cp scripts/installer/app_icon.png "$APPDIR/pdf-editor-pro.png"
 else
     # Crear icono básico con ImageMagick si está disponible
     if command -v convert &> /dev/null; then

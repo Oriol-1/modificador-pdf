@@ -19,9 +19,10 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # Sin color
 
-# Ir al directorio del script
+# Posicionarse en la raíz del proyecto (2 niveles arriba de scripts/build/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
 
 # Verificar Python
 echo -e "[1/7] Verificando Python..."
@@ -79,9 +80,9 @@ python3 -c "import fitz; import PyQt5; print('      ✓ PyMuPDF y PyQt5 OK')" ||
 # Generar icono si no existe
 echo ""
 echo -e "[6/7] Preparando recursos..."
-mkdir -p installer
-if [ -f "installer/create_icon.py" ]; then
-    python3 installer/create_icon.py 2>/dev/null || true
+mkdir -p scripts/installer
+if [ -f "scripts/installer/create_icon.py" ]; then
+    python3 scripts/installer/create_icon.py 2>/dev/null || true
 fi
 echo -e "      ${GREEN}✓ Recursos preparados${NC}"
 
@@ -91,8 +92,8 @@ echo -e "[7/7] Compilando ejecutable..."
 echo ""
 
 # Usar spec file si existe, sino crear uno básico
-if [ -f "ModificadorPDF.spec" ]; then
-    pyinstaller --clean ModificadorPDF.spec
+if [ -f "scripts/build/ModificadorPDF.spec" ]; then
+    pyinstaller --clean --noconfirm scripts/build/ModificadorPDF.spec
 else
     pyinstaller --clean \
         --name="PDF_Editor_Pro" \
@@ -131,5 +132,5 @@ deactivate 2>/dev/null || true
 echo "¿Deseas crear también la versión portable? (s/n)"
 read -r response
 if [[ "$response" =~ ^[Ss]$ ]]; then
-    bash build_portable_linux.sh
+    bash "$SCRIPT_DIR/build_portable_linux.sh"
 fi

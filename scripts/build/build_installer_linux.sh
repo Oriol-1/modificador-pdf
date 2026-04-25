@@ -19,13 +19,14 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-# Directorio del script
+# Posicionarse en la raíz del proyecto (2 niveles arriba de scripts/build/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
 
 # Variables
 APP_NAME="pdf-editor-pro"
-VERSION="2.1.0"
+VERSION="2.1.4"
 MAINTAINER="Oriol Alonso Esplugas <alonsoesplugas@gmail.com>"
 DESCRIPTION="Editor de PDF profesional con capacidades de edición de texto"
 ARCH="amd64"

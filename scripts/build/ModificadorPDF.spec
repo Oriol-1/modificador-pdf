@@ -37,7 +37,6 @@ hidden_imports = [
     'PyQt5.QtWidgets',
     'PyQt5.sip',
     'fitz',
-    'fitz.fitz',
 ]
 
 # Análisis del código
@@ -121,8 +120,8 @@ if is_mac:
             'CFBundleDisplayName': 'Modificador de PDF',
             'CFBundleGetInfoString': 'Herramienta para organizar y clasificar PDFs',
             'CFBundleIdentifier': 'com.modificadorpdf.app',
-            'CFBundleVersion': '2.1.0',
-            'CFBundleShortVersionString': '2.1.0',
+            'CFBundleVersion': '2.1.4',
+            'CFBundleShortVersionString': '2.1.4',
             'NSHighResolutionCapable': True,
             'NSRequiresAquaSystemAppearance': False,  # Soporte modo oscuro
             'LSMinimumSystemVersion': '10.13.0',

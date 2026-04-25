@@ -233,6 +233,15 @@ jobs:
     
     - name: Crear paquete DEB
       run: |
+        # Determinar versión: tag git o fallback
+        if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+          DEB_VERSION="${GITHUB_REF#refs/tags/v}"
+        else
+          DEB_VERSION="2.1.4"
+        fi
+        echo "Usando versión: $DEB_VERSION"
+        echo "DEB_VERSION=$DEB_VERSION" >> $GITHUB_ENV
+
         # Crear estructura de directorios para el .deb
         mkdir -p deb_package/DEBIAN
         mkdir -p deb_package/usr/local/bin
@@ -275,7 +284,7 @@ jobs:
         # Crear archivo de control
         cat > deb_package/DEBIAN/control << EOF
         Package: modificador-pdf
-        Version: 2.1.0
+        Version: ${DEB_VERSION}
         Section: utils
         Priority: optional
         Architecture: amd64
