@@ -5,6 +5,19 @@ Mantiene la tipografía original y preserva formularios y estructura del documen
 
 import sys
 import os
+
+# Reconfigurar stdout/stderr a UTF-8 con errors='replace' para que ningún
+# print con caracteres no codificables en la consola Windows (cp1252) pueda
+# tumbar la app — históricamente caracteres como ✓, ⚠, 📁 dentro de logs de
+# debug provocaban UnicodeEncodeError abortando flujos críticos como guardar.
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt
 from ui.main_window import MainWindow

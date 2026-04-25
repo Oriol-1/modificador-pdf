@@ -34,6 +34,11 @@ class PDFDocument:
         self._undo_snapshots: List[tuple] = []  # Lista de estados anteriores
         self._redo_snapshots: List[tuple] = []  # Lista de estados para rehacer
         self._original_doc_bytes: Optional[bytes] = None
+        # Snapshot perezoso del PDF para MOVE puro: capturado antes del primer
+        # borrado de un span nativo movido, sirve como fuente intacta para
+        # show_pdf_page al hacer commit. Preserva glifos, fuentes y kerning
+        # exactamente. Se limpia tras cada commit y al abrir/guardar.
+        self._move_source_bytes: Optional[bytes] = None
         self._last_error: str = ""
         self._max_undo_levels = 20  # Máximo de niveles de deshacer
         # Callback para obtener/restaurar estado de overlays del viewer
@@ -59,6 +64,7 @@ class PDFDocument:
             self._undo_snapshots.clear()
             self._redo_snapshots.clear()
             self._original_doc_bytes = None
+            self._move_source_bytes = None
             self._last_error = ""
             
             # Intentar abrir el documento
@@ -167,6 +173,7 @@ class PDFDocument:
         self._undo_snapshots.clear()
         self._redo_snapshots.clear()
         self._original_doc_bytes = None
+        self._move_source_bytes = None
         self.page_map = PageIdentityMap()
     
     def is_open(self) -> bool:
@@ -301,36 +308,139 @@ class PDFDocument:
             visual_blocks = self.get_text_blocks(page_num, visual_coords=False)
             internal_blocks = visual_blocks
         
-        # Buscar en los bloques visuales
+        # MOVE seguro: cuando el punto cae dentro de varios spans solapados
+        # (kerning, justificado, líneas pegadas), elegir el span MÁS PEQUEÑO,
+        # que es siempre el más específico y nunca un agregado vecino.
+        contained = []
         for i, block in enumerate(visual_blocks):
             if block.rect.contains(pt):
-                # Añadir las coordenadas internas al bloque encontrado
-                if i < len(internal_blocks):
-                    block.internal_rect = internal_blocks[i].rect
-                else:
-                    block.internal_rect = block.rect
-                return block
-        
-        # Si no encontramos con contains, intentar con una búsqueda más tolerante
-        # (útil para textos pequeños o bordes)
-        tolerance = 2  # Reducido de 5 para evitar capturar texto adyacente
+                area = max(0.0, block.rect.width) * max(0.0, block.rect.height)
+                contained.append((area, i, block))
+        if contained:
+            contained.sort(key=lambda t: t[0])
+            _, i, block = contained[0]
+            if i < len(internal_blocks):
+                block.internal_rect = internal_blocks[i].rect
+            else:
+                block.internal_rect = block.rect
+            return block
+
+        # Fallback: span más cercano por distancia euclídea al centro,
+        # acotado a una distancia razonable (1pt) para no capturar
+        # nunca un span vecino. Sustituye al antiguo expand-by-2pt que
+        # podía agarrar el texto adyacente cuando dos líneas estaban pegadas.
+        best = None
+        best_dist = 1.0  # umbral máximo
         for i, block in enumerate(visual_blocks):
-            expanded_rect = fitz.Rect(
-                block.rect.x0 - tolerance,
-                block.rect.y0 - tolerance,
-                block.rect.x1 + tolerance,
-                block.rect.y1 + tolerance
-            )
-            if expanded_rect.contains(pt):
-                # Añadir las coordenadas internas al bloque encontrado
-                if i < len(internal_blocks):
-                    block.internal_rect = internal_blocks[i].rect
-                else:
-                    block.internal_rect = block.rect
-                return block
-        
+            r = block.rect
+            dx = max(r.x0 - pt.x, 0.0, pt.x - r.x1)
+            dy = max(r.y0 - pt.y, 0.0, pt.y - r.y1)
+            dist = (dx * dx + dy * dy) ** 0.5
+            if dist < best_dist:
+                best_dist = dist
+                best = (i, block)
+        if best is not None:
+            i, block = best
+            if i < len(internal_blocks):
+                block.internal_rect = internal_blocks[i].rect
+            else:
+                block.internal_rect = block.rect
+            return block
+
         return None
     
+    def find_text_cluster_at_point(
+        self,
+        page_num: int,
+        point: Tuple[float, float],
+        gap_factor: float = 0.6,
+    ) -> Optional[Tuple[fitz.Rect, str]]:
+        """Devuelve el rect interno y el texto del CLÚSTER contiguo de palabras
+        alrededor del punto clicado.
+
+        Un clúster es una secuencia de palabras de la misma línea cuyos huecos
+        horizontales son menores a ``gap_factor * font_size``. Esto evita que
+        el MOVE arrastre textos visualmente separados que comparten span en
+        PyMuPDF (espacios anchos internos) o cuyos bboxes se solapan.
+
+        Args:
+            page_num: Página.
+            point: Punto en coordenadas internas (mediabox) del PDF.
+            gap_factor: Hueco máximo permitido para considerar dos palabras
+                contiguas, expresado como fracción del alto de palabra.
+
+        Returns:
+            (rect_interno, texto_clúster) o None si el punto no cae en una
+            palabra detectable.
+        """
+        page = self.get_page(page_num)
+        if page is None:
+            return None
+        pt = fitz.Point(point)
+
+        try:
+            # PyMuPDF: cada tupla es (x0, y0, x1, y1, "word", block_no, line_no, word_no)
+            words = page.get_text("words")
+        except Exception:
+            return None
+        if not words:
+            return None
+
+        # Buscar la palabra que contiene el punto
+        target = None
+        for w in words:
+            wr = fitz.Rect(w[0], w[1], w[2], w[3])
+            if wr.contains(pt):
+                target = w
+                break
+        if target is None:
+            return None
+
+        bn, ln = target[5], target[6]
+        line_words = sorted(
+            [w for w in words if w[5] == bn and w[6] == ln],
+            key=lambda w: w[0],
+        )
+        if not line_words:
+            return None
+
+        # Localizar índice del target en la línea
+        idx = -1
+        for i, w in enumerate(line_words):
+            if w is target or (w[7] == target[7] and w[0] == target[0]):
+                idx = i
+                break
+        if idx < 0:
+            return None
+
+        # Umbral basado en alto de palabra (proxy del tamaño de fuente)
+        height = max(1.0, target[3] - target[1])
+        gap_threshold = gap_factor * height
+
+        # Expandir hacia la izquierda mientras los huecos sean estrechos
+        start = idx
+        while start > 0:
+            gap = line_words[start][0] - line_words[start - 1][2]
+            if gap > gap_threshold:
+                break
+            start -= 1
+
+        # Expandir hacia la derecha
+        end = idx
+        while end < len(line_words) - 1:
+            gap = line_words[end + 1][0] - line_words[end][2]
+            if gap > gap_threshold:
+                break
+            end += 1
+
+        cluster = line_words[start:end + 1]
+        x0 = min(w[0] for w in cluster)
+        y0 = min(w[1] for w in cluster)
+        x1 = max(w[2] for w in cluster)
+        y1 = max(w[3] for w in cluster)
+        text = " ".join(w[4] for w in cluster)
+        return fitz.Rect(x0, y0, x1, y1), text
+
     def find_text_in_rect(self, page_num: int, rect: fitz.Rect) -> List[TextBlock]:
         """Encuentra todos los bloques de texto que intersectan con un rectángulo."""
         blocks = self.get_text_blocks(page_num)
@@ -1324,14 +1434,18 @@ class PDFDocument:
         """
         if not self.doc:
             return False
-        
+
         save_path = file_path or self.file_path
         if not save_path:
             return False
-        
+
         try:
-            # Obtener bytes del documento actual
-            pdf_bytes = self.doc.tobytes(garbage=0, deflate=True, clean=False)
+            # garbage=4: elimina objetos huérfanos y agrupa duplicados.
+            # Necesario tras el flujo de MOVE puro (show_pdf_page) para
+            # evitar que queden Form XObjects no referenciados o fuentes
+            # duplicadas que generen contenido fantasma en visualizadores
+            # externos.
+            pdf_bytes = self.doc.tobytes(garbage=4, deflate=True, clean=True)
             
             if save_path == self.file_path:
                 # Cerrar el documento primero para liberar el archivo
@@ -1733,10 +1847,134 @@ class PDFDocument:
             # Añadir texto SIN guardar snapshot adicional
             return self.add_text_to_page(page_num, rect, new_text, font_size, color, save_snapshot=False)
 
+    def _ensure_move_source_snapshot(self) -> None:
+        """Captura una copia intacta del documento para usar como fuente en
+        operaciones de MOVE puro (show_pdf_page). Idempotente.
+
+        El snapshot se toma una sola vez por sesión de edición; al hacer commit
+        de los movimientos se descarta para que la siguiente tanda parta del
+        estado guardado más reciente.
+        """
+        if self._move_source_bytes is None and self.doc is not None:
+            try:
+                self._move_source_bytes = self.doc.tobytes()
+            except Exception as e:
+                print(f"_ensure_move_source_snapshot: no se pudo snapshotear: {e}")
+                self._move_source_bytes = None
+
+    def clear_move_source_snapshot(self) -> None:
+        """Descarta el snapshot pristine usado por move_text_region."""
+        self._move_source_bytes = None
+
+    def move_text_region(
+        self,
+        page_num: int,
+        src_rect_internal: fitz.Rect,
+        dest_top_left_internal: Tuple[float, float],
+        save_snapshot: bool = True,
+    ) -> bool:
+        """MOVE puro: clona la región (rect) de la página desde el snapshot
+        pristine y la coloca en la nueva posición preservando exactamente
+        glifos, fuente embebida, kerning, color, render-mode, etc.
+
+        El método NO reescribe ni reinterpreta el texto: usa
+        ``Page.show_pdf_page(clip=...)`` que extrae la región como Form
+        XObject y la dibuja en el destino con escala 1:1. Es la única forma
+        de garantizar resultado visualmente idéntico al original.
+
+        Args:
+            page_num: Página destino (mismo doc).
+            src_rect_internal: Rect en coords internas (mediabox) del span
+                original a clonar. Debe corresponder al snapshot pristine.
+            dest_top_left_internal: (x, y) en coords internas, esquina
+                superior izquierda donde colocar el bloque clonado.
+            save_snapshot: Si True, guarda snapshot de undo antes de modificar.
+
+        Returns:
+            True si la operación se completó.
+        """
+        if self.doc is None:
+            return False
+        page = self.get_page(page_num)
+        if page is None:
+            return False
+
+        self._ensure_move_source_snapshot()
+        if not self._move_source_bytes:
+            return False
+
+        if save_snapshot:
+            self._save_snapshot()
+
+        src_doc = None
+        try:
+            src_doc = fitz.open("pdf", self._move_source_bytes)
+            if page_num < 0 or page_num >= src_doc.page_count:
+                return False
+            src_rect = fitz.Rect(src_rect_internal)
+            if src_rect.is_empty or src_rect.is_infinite:
+                return False
+            dx = float(dest_top_left_internal[0])
+            dy = float(dest_top_left_internal[1])
+            dest_rect = fitz.Rect(
+                dx, dy,
+                dx + src_rect.width,
+                dy + src_rect.height,
+            )
+
+            # CRÍTICO: limpiar TODO lo que está fuera del span en la página
+            # fuente ANTES de clonarla. Sin esto, el Form XObject creado por
+            # show_pdf_page contiene la página completa — aunque visualmente
+            # se vea solo la región del clip, get_text() y las herramientas
+            # de edición pueden detectar el resto del contenido como "texto
+            # fantasma con texto invisible". Redactar el complemento del
+            # span garantiza que el XObject solo contenga los glifos del
+            # bloque movido.
+            src_page = src_doc[page_num]
+            page_w = src_page.rect.width
+            page_h = src_page.rect.height
+            # Cuatro bandas que cubren todo lo que está fuera del span:
+            outside_rects = [
+                fitz.Rect(0, 0, page_w, src_rect.y0),                # arriba
+                fitz.Rect(0, src_rect.y1, page_w, page_h),           # abajo
+                fitz.Rect(0, src_rect.y0, src_rect.x0, src_rect.y1), # izq
+                fitz.Rect(src_rect.x1, src_rect.y0, page_w, src_rect.y1),  # der
+            ]
+            for r in outside_rects:
+                if not r.is_empty and r.width > 0 and r.height > 0:
+                    src_page.add_redact_annot(r)
+            try:
+                src_page.apply_redactions()
+            except Exception as e:
+                print(f"move_text_region: apply_redactions falló: {e}")
+
+            # keep_proportion=True + mismas dimensiones que src ⇒ escala 1:1.
+            page.show_pdf_page(
+                dest_rect,
+                src_doc,
+                page_num,
+                clip=src_rect,
+                keep_proportion=True,
+                overlay=True,
+            )
+            self.modified = True
+            return True
+        except Exception as e:
+            print(f"move_text_region ERROR: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+        finally:
+            if src_doc is not None:
+                try:
+                    src_doc.close()
+                except Exception:
+                    pass
+
     def add_text_runs_to_page(
-        self, 
-        page_num: int, 
-        base_rect: fitz.Rect, 
+        self,
+        page_num: int,
+        base_rect: fitz.Rect,
         runs: List[Dict[str, Any]],
         line_spacing: float = None,
         save_snapshot: bool = True

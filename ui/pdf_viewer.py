@@ -1215,6 +1215,58 @@ class PDFPageView(QGraphicsView):
                         )
                     except Exception:
                         native_block = None
+
+                    # MOVE seguro: refinar el rect del span al CLÚSTER contiguo
+                    # de palabras alrededor del clic. Evita arrastrar texto
+                    # vecino cuando dos bloques visualmente separados comparten
+                    # span de PyMuPDF o sus bboxes se solapan. Si la página
+                    # tiene rotación, el cluster se calcula en coords internas
+                    # con el punto interno equivalente.
+                    if native_block is not None:
+                        try:
+                            page_obj = self.pdf_doc.get_page(self.current_page)
+                            rotation = page_obj.rotation if page_obj else 0
+                            if rotation:
+                                internal_pt_rect = self.pdf_doc.transform_rect_for_page(
+                                    self.current_page,
+                                    fitz.Rect(pdf_x, pdf_y, pdf_x, pdf_y),
+                                    from_visual=True,
+                                )
+                                internal_pt = (internal_pt_rect.x0, internal_pt_rect.y0)
+                            else:
+                                internal_pt = (pdf_x, pdf_y)
+                            cluster = self.pdf_doc.find_text_cluster_at_point(
+                                self.current_page, internal_pt
+                            )
+                        except Exception:
+                            cluster = None
+                        # Validar shape: tupla (rect, str). Tests mockeados
+                        # pueden devolver MagicMock; en ese caso ignoramos.
+                        if (
+                            isinstance(cluster, tuple)
+                            and len(cluster) == 2
+                            and isinstance(cluster[0], fitz.Rect)
+                            and isinstance(cluster[1], str)
+                        ):
+                            cluster_rect_internal, cluster_text = cluster
+                            # Sustituir el rect del span por el del clúster
+                            # tanto en visual como en interno.
+                            try:
+                                if rotation:
+                                    visual_rect = self.pdf_doc.transform_rect_for_page(
+                                        self.current_page,
+                                        cluster_rect_internal,
+                                        from_visual=False,
+                                    )
+                                else:
+                                    visual_rect = fitz.Rect(cluster_rect_internal)
+                                native_block.rect = visual_rect
+                                native_block.internal_rect = fitz.Rect(cluster_rect_internal)
+                                if cluster_text and cluster_text.strip():
+                                    native_block.text = cluster_text
+                            except Exception:
+                                pass
+
                     if native_block and getattr(native_block, 'text', '') and native_block.text.strip():
                         self._pending_native_drag = {
                             'block': native_block,
@@ -2920,6 +2972,12 @@ class PDFPageView(QGraphicsView):
         
         text_item.pdf_rect = text_data['pdf_rect']
         text_item.original_pdf_rect = text_data.get('original_pdf_rect')
+        # MOVE seguro: preservar el rect interno exacto del span original
+        # y su identidad (page/block/line/span). Esto permite que un eventual
+        # render_page entre la materialización y el commit no pierda la
+        # referencia precisa para borrar sin invadir spans vecinos.
+        text_item.internal_pdf_rect = text_data.get('internal_pdf_rect')
+        text_item.source_span_id = text_data.get('source_span_id')
         text_item.needs_erase = text_data.get('needs_erase', False)
         text_item.is_overlay = text_data.get('is_overlay', False)
         text_item.pending_write = text_data.get('pending_write', False)
@@ -4003,6 +4061,57 @@ class PDFPageView(QGraphicsView):
             font_name=font_name,
             is_bold=is_bold,
         )
+        if text_item is None:
+            return None
+
+        # MOVE seguro: anclar al span exacto del PDF (block_no/line_no/span_no
+        # + internal_rect) para que el borrado del original use ese bbox
+        # exacto y nunca expanda hacia spans vecinos. internal_rect viene
+        # ya en coordenadas internas; al pasar already_internal=True a
+        # erase_text_transparent evitamos cualquier transformación adicional.
+        # internal_rect debe ser un fitz.Rect/tupla real; en tests mockeados
+        # puede ser un MagicMock — en ese caso lo descartamos.
+        raw_internal = getattr(block, 'internal_rect', None)
+        try:
+            internal_rect = fitz.Rect(raw_internal) if raw_internal is not None else None
+        except Exception:
+            internal_rect = None
+        if internal_rect is not None:
+            text_item.internal_pdf_rect = internal_rect
+        # Identidad estable del span original (sirve para evitar fusiones
+        # entre overlays solapados al guardar y para auditoría).
+        text_item.source_span_id = (
+            getattr(block, 'page_num', self.current_page),
+            getattr(block, 'block_no', -1),
+            getattr(block, 'line_no', -1),
+            getattr(block, 'span_no', -1),
+        )
+
+        # Propagar a los datos persistidos del item.
+        page_data = self.editable_texts_data.get(self._current_page_key(), [])
+        if page_data:
+            if internal_rect is not None:
+                page_data[-1]['internal_pdf_rect'] = internal_rect
+            page_data[-1]['source_span_id'] = text_item.source_span_id
+
+            # MOVE puro: marcar este overlay como candidato a clonado por
+            # show_pdf_page en commit. Se guarda el rect interno exacto del
+            # span original y la página fuente. Si el usuario edita el texto
+            # más adelante, commit_overlay_texts detectará el cambio (texto
+            # actual != original_text) y caerá al re-render normal.
+            if internal_rect is not None:
+                page_data[-1]['move_only'] = True
+                page_data[-1]['source_rect_internal'] = internal_rect
+                page_data[-1]['source_page_idx'] = self.current_page
+                page_data[-1]['original_text'] = block.text
+
+                # Tomar snapshot pristine inmediatamente, antes de cualquier
+                # erase. Garantiza que show_pdf_page tenga acceso al span
+                # original aunque el flujo CASO 2 borre el texto del PDF
+                # actual durante el primer movimiento.
+                if self.pdf_doc:
+                    self.pdf_doc._ensure_move_source_snapshot()
+
         return text_item
 
     def _update_text_data(self, text_item: EditableTextItem, move_only: bool = False):
@@ -4505,7 +4614,61 @@ class PDFPageView(QGraphicsView):
                         print(f"    ERROR: No hay pdf_rect")
                         error_count += 1
                         continue
-                    
+
+                    # ============================================================
+                    # MOVE PURO: si este overlay viene de un span nativo y el
+                    # usuario NO ha editado su contenido, lo trasladamos clonando
+                    # la región original con show_pdf_page. Preserva fuente,
+                    # tamaño, kerning, color y saltos de línea de forma
+                    # visualmente idéntica al original.
+                    # ============================================================
+                    is_pure_move = (
+                        text_data.get('move_only') is True
+                        and text_data.get('source_rect_internal') is not None
+                        and text_data.get('source_page_idx') is not None
+                        and text_data.get('text') == text_data.get('original_text')
+                    )
+                    if is_pure_move:
+                        try:
+                            src_rect_int = text_data['source_rect_internal']
+                            src_page_idx = text_data['source_page_idx']
+
+                            # Convertir destino a coords internas si la página
+                            # tiene rotación; show_pdf_page trabaja en internas.
+                            dest_internal = pdf_rect
+                            try:
+                                page_obj = self.pdf_doc.get_page(page_idx)
+                                if page_obj is not None and page_obj.rotation != 0:
+                                    dest_internal = self.pdf_doc.transform_rect_for_page(
+                                        page_idx, fitz.Rect(pdf_rect), from_visual=True
+                                    )
+                            except Exception:
+                                dest_internal = pdf_rect
+
+                            ok = self.pdf_doc.move_text_region(
+                                src_page_idx,
+                                src_rect_int,
+                                (float(dest_internal.x0), float(dest_internal.y0)),
+                                save_snapshot=False,
+                            )
+                            if ok:
+                                # Ya no es overlay; los glifos están en el doc.
+                                text_data['is_overlay'] = False
+                                text_data['pending_write'] = False
+                                text_data['needs_erase'] = False
+                                text_data['move_only'] = False
+                                text_data['original_pdf_rect'] = None
+                                text_data['internal_pdf_rect'] = fitz.Rect(pdf_rect)
+                                success_count += 1
+                                print(f"    [OK] MOVE puro completado (clonado preservando glifos) en {dest_internal}")
+                                continue
+                            else:
+                                print(f"    Aviso: MOVE puro falló, recayendo al reescrito clásico")
+                                # Fall-through al flujo normal (re-render)
+                        except Exception as e:
+                            print(f"    Excepción en MOVE puro: {e}, recayendo al reescrito clásico")
+                            # Fall-through al flujo normal
+
                     # Si el texto fue movido desde otra posición, cubrir la posición original
                     original_rect = text_data.get('original_pdf_rect')
                     if original_rect:
@@ -4515,7 +4678,7 @@ class PDFPageView(QGraphicsView):
                                 original_rect,
                                 save_snapshot=False
                             )
-                            print(f"    ✓ Posición original cubierta")
+                            print(f"    [OK] Posicion original cubierta")
                         except Exception as e:
                             print(f"    Advertencia: No se pudo cubrir posición original: {e}")
                         text_data['original_pdf_rect'] = None
@@ -4531,7 +4694,7 @@ class PDFPageView(QGraphicsView):
                                     page_idx, pdf_rect,
                                     save_snapshot=False
                                 )
-                                print(f"    ✓ Texto existente bajo overlay limpiado")
+                                print(f"    [OK] Texto existente bajo overlay limpiado")
                     except Exception as e:
                         print(f"    Advertencia al limpiar área: {e}")
                     
@@ -4582,7 +4745,7 @@ class PDFPageView(QGraphicsView):
                         # NO una estimación por caracteres que puede ser imprecisa
                         text_data['internal_pdf_rect'] = fitz.Rect(pdf_rect)
                         success_count += 1
-                        print(f"    ✓ Texto escrito al PDF en {pdf_rect} (rect real)")
+                        print(f"    [OK] Texto escrito al PDF en {pdf_rect} (rect real)")
                     else:
                         print(f"    ERROR al escribir texto al PDF")
                         error_count += 1
@@ -4601,11 +4764,19 @@ class PDFPageView(QGraphicsView):
                     item.needs_erase = data.get('needs_erase', False)
                     item.internal_pdf_rect = data.get('internal_pdf_rect')
         
+        # Descartar el snapshot pristine: la siguiente tanda de movimientos
+        # tomará uno nuevo a partir del estado recién comiteado.
+        try:
+            if self.pdf_doc:
+                self.pdf_doc.clear_move_source_snapshot()
+        except Exception:
+            pass
+
         print(f"\n=== RESULTADO COMMIT ===")
         print(f"Total procesados: {total_processed}")
         print(f"Exitosos: {success_count}")
         print(f"Errores: {error_count}")
-        
+
         return error_count == 0
     
     def commit_overlay_images(self) -> bool:
