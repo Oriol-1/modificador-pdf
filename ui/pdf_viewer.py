@@ -1274,6 +1274,16 @@ class PDFPageView(QGraphicsView):
                         }
                         self.drag_start_pos = scene_pos
                         self._text_drag_start_item_pos = QPointF(scene_pos)
+                        # OPTIMIZACION: lanzar la captura del snapshot en un
+                        # hilo de fondo desde YA. doc.tobytes() puede tardar
+                        # 100-1000ms y bloqueaba el primer movimiento; ahora
+                        # corre en paralelo al drag y se espera (si hace falta)
+                        # solo en mouseRelease.
+                        try:
+                            if self.pdf_doc:
+                                self.pdf_doc.start_move_source_snapshot_async()
+                        except Exception:
+                            pass
                         # No activamos dragging_text todavía: lo haremos en
                         # mouseMoveEvent al superar el umbral. Si no se supera,
                         # mouseReleaseEvent delegará en handle_edit_click.
@@ -3755,13 +3765,29 @@ class PDFPageView(QGraphicsView):
                     own_rect=original_pdf_rect, fs=fs
                 )
             
-            # Borrar el texto ORIGINAL del PDF (solo una vez)
-            self.pdf_doc._save_snapshot()
+            # Antes de modificar el doc, esperamos a que la captura
+            # asíncrona del snapshot pristine termine. Si está en marcha,
+            # se garantiza que el snapshot represente el estado pre-erase.
+            try:
+                self.pdf_doc.wait_move_source_snapshot()
+            except Exception:
+                pass
+
+            # OPTIMIZACION: reutilizar el snapshot pristine ya capturado
+            # como base del undo, evitando un segundo doc.tobytes() (~50-500ms)
+            move_bytes = getattr(self.pdf_doc, '_move_source_bytes', None)
+            self.pdf_doc._save_snapshot(pdf_bytes=move_bytes)
+
+            # Borrar el texto ORIGINAL del PDF (solo una vez).
+            # refresh=False: nos saltamos el _refresh_document (~50-500ms);
+            # render_page() inmediatamente despues ya re-renderiza el pixmap
+            # desde el doc modificado y muestra la redaccion correctamente.
             self.pdf_doc.erase_text_transparent(
                 self.current_page,
                 rect_to_erase,
                 save_snapshot=False,
-                already_internal=already_internal
+                already_internal=already_internal,
+                refresh=False,
             )
             
             # Obtener el rect actual (sin recalcular)
@@ -4165,12 +4191,12 @@ class PDFPageView(QGraphicsView):
                 page_data[-1]['source_page_idx'] = self.current_page
                 page_data[-1]['original_text'] = block.text
 
-                # Tomar snapshot pristine inmediatamente, antes de cualquier
-                # erase. Garantiza que show_pdf_page tenga acceso al span
-                # original aunque el flujo CASO 2 borre el texto del PDF
-                # actual durante el primer movimiento.
+                # Snapshot pristine: si aun no se ha lanzado (p.ej. el drag
+                # vino por una ruta distinta a mousePress) lo arrancamos en
+                # background. La espera para garantizar que captura el
+                # estado pre-erase ocurre en _update_text_in_pdf CASO 2.
                 if self.pdf_doc:
-                    self.pdf_doc._ensure_move_source_snapshot()
+                    self.pdf_doc.start_move_source_snapshot_async()
 
         return text_item
 
@@ -4749,7 +4775,8 @@ class PDFPageView(QGraphicsView):
                             self.pdf_doc.erase_text_transparent(
                                 page_idx,
                                 original_rect,
-                                save_snapshot=False
+                                save_snapshot=False,
+                                refresh=False,
                             )
                             print(f"    [OK] Posicion original cubierta")
                         except Exception as e:
@@ -4771,6 +4798,7 @@ class PDFPageView(QGraphicsView):
                                 fitz.Rect(src_rect_int),
                                 save_snapshot=False,
                                 already_internal=True,
+                                refresh=False,
                             )
                             print(f"    [OK] Glifos nativos originales limpiados (move+formato)")
                         except Exception as e:
@@ -4788,7 +4816,8 @@ class PDFPageView(QGraphicsView):
                             if existing_text.strip():
                                 self.pdf_doc.erase_text_transparent(
                                     page_idx, pdf_rect,
-                                    save_snapshot=False
+                                    save_snapshot=False,
+                                    refresh=False,
                                 )
                                 print(f"    [OK] Texto existente bajo overlay limpiado")
                     except Exception as e:

@@ -1051,25 +1051,21 @@ class MainWindow(QMainWindow):
         
         self.status_label.setText("Guardando...")
         QApplication.processEvents()
-        
+
         # CRÍTICO: Sincronizar todos los textos editables con los datos antes de comprometerse
         print("\n=== INICIANDO GUARDADO ===")
         if hasattr(self.pdf_viewer, 'sync_all_text_items_to_data'):
             self.pdf_viewer.sync_all_text_items_to_data()
-        
-        # IMPORTANTE: Escribir textos overlay pendientes al PDF antes de guardar
+
         if hasattr(self.pdf_viewer, 'commit_overlay_texts'):
             commit_result = self.pdf_viewer.commit_overlay_texts()
-            print(f"commit_overlay_texts resultado: {commit_result}")
             if not commit_result:
-                print("⚠️ ADVERTENCIA: commit_overlay_texts retornó False")
-        
-        # IMPORTANTE: Escribir imágenes overlay pendientes al PDF antes de guardar
+                print("ADVERTENCIA: commit_overlay_texts retornó False")
+
         if hasattr(self.pdf_viewer, 'commit_overlay_images'):
             img_result = self.pdf_viewer.commit_overlay_images()
-            print(f"commit_overlay_images resultado: {img_result}")
             if not img_result:
-                print("⚠️ ADVERTENCIA: commit_overlay_images retornó False")
+                print("ADVERTENCIA: commit_overlay_images retornó False")
         
         # Verificar si el archivo está en el workspace
         is_from_workspace = (self.original_file_path and 
@@ -1080,8 +1076,8 @@ class MainWindow(QMainWindow):
             self._save_with_workspace_flow()
         else:
             # Flujo normal
-            if self.pdf_doc.save():
-                # Limpiar overlays confirmados y re-renderizar pixmap
+            save_ok = self.pdf_doc.save()
+            if save_ok:
                 if hasattr(self.pdf_viewer, 'clear_committed_overlays'):
                     self.pdf_viewer.clear_committed_overlays()
                 self.pdf_viewer.render_page()
@@ -1112,33 +1108,34 @@ class MainWindow(QMainWindow):
     def _save_with_workspace_flow(self):
         """Guarda el archivo usando el flujo de workspace."""
         try:
-            # Obtener el contenido modificado del PDF
-            modified_content = self.pdf_doc.doc.tobytes()
-            
+            # Obtener el contenido modificado del PDF (mismos parametros que
+            # save() para coherencia y rendimiento: garbage=1+clean=False).
+            modified_content = self.pdf_doc.doc.tobytes(garbage=1, deflate=True, clean=False)
+
             # Guardar la ruta original antes de procesar
             original_src = self.original_file_path
-            
+
             # Procesar con el workspace manager (guarda el modificado y calcula destino del original)
             result = self.workspace_manager.process_saved_pdf(
                 original_src,
                 modified_content
             )
-            
+
             if result and result['modified']:
                 # 1. Cerrar el documento actual para liberar el archivo
                 self.pdf_doc.close()
-                
+
                 # 2. Ahora que el archivo está liberado, mover el original
                 if result.get('original_src') and result.get('original_dest'):
                     self.workspace_manager.move_original_to_archive(
                         result['original_src'],
                         result['original_dest']
                     )
-                
+
                 # 3. Actualizar variables de estado
                 self.original_file_path = None
                 self.current_file = result['modified']
-                
+
                 # 4. Reabrir el archivo modificado
                 self.pdf_doc.open(result['modified'])
                 self.pdf_viewer.set_pdf_document(self.pdf_doc)
@@ -1297,31 +1294,24 @@ class MainWindow(QMainWindow):
         if file_path:
             if not file_path.lower().endswith('.pdf'):
                 file_path += '.pdf'
-            
+
             self.status_label.setText("Guardando...")
             QApplication.processEvents()
-            
-            # CRÍTICO: Sincronizar todos los textos editables con los datos antes de comprometerse
+
             if hasattr(self.pdf_viewer, 'sync_all_text_items_to_data'):
                 self.pdf_viewer.sync_all_text_items_to_data()
-            
-            # IMPORTANTE: Escribir textos overlay pendientes al PDF antes de guardar
             if hasattr(self.pdf_viewer, 'commit_overlay_texts'):
                 self.pdf_viewer.commit_overlay_texts()
-            
-            # IMPORTANTE: Escribir imágenes overlay pendientes al PDF antes de guardar
             if hasattr(self.pdf_viewer, 'commit_overlay_images'):
                 self.pdf_viewer.commit_overlay_images()
-            
+
             if self.pdf_doc.save_as(file_path):
                 self.current_file = file_path
-                
-                # Limpiar overlays confirmados y re-renderizar para mostrar
-                # el texto desde el PDF en lugar de desde los overlays
+
                 if hasattr(self.pdf_viewer, 'clear_committed_overlays'):
                     self.pdf_viewer.clear_committed_overlays()
                 self.pdf_viewer.render_page()
-                
+
                 self.update_title()
                 self.update_status()
                 self.status_label.setText(f"Guardado como: {os.path.basename(file_path)}")
