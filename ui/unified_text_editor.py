@@ -98,49 +98,101 @@ class SpanEditWidget(QFrame):
         self._size_spin.valueChanged.connect(self._on_format_changed)
         fmt_row.addWidget(self._size_spin)
         
-        # Boton Negrita: visualmente claro (encendido/apagado), Ctrl+B,
-        # tooltip explicito. Aplica/quita negrita SOLO a la seleccion. Si
-        # no hay seleccion, conmuta toda la linea (comportamiento legacy).
+        # Boton NEGRITA: muy visible, con icono "B" en serif negrita real
+        # y etiqueta "Negrita" al lado para que su funcion sea inequivoca.
+        # Estados muy contrastados: gris apagado vs azul brillante.
+        # Aplica/quita negrita SOLO a la seleccion. Sin seleccion conmuta
+        # toda la linea (comportamiento legacy).
         self._bold_btn = QToolButton()
-        self._bold_btn.setText("B")
+        self._bold_btn.setText("B  Negrita")
         self._bold_btn.setCheckable(True)
         self._bold_btn.setChecked(self.span.is_bold)
-        self._bold_btn.setFixedSize(30, 26)
+        self._bold_btn.setMinimumHeight(32)
+        self._bold_btn.setMinimumWidth(96)
+        self._bold_btn.setCursor(Qt.PointingHandCursor)
         self._bold_btn.setToolTip(
             "Negrita (Ctrl+B)\n"
-            "• Selecciona texto y pulsa B para poner/quitar negrita solo a esa parte\n"
+            "• Selecciona texto y pulsa Negrita para aplicar/quitar solo en esa parte\n"
             "• Sin seleccion: aplica/quita negrita a toda la linea"
         )
+        # Fuente del propio boton: la "B" se ve realmente en negrita serif
+        # y el texto "Negrita" en sans normal, dejando la accion claramente
+        # legible aunque el icono sea solo texto.
+        _bold_font = QFont("Georgia", 13)
+        _bold_font.setBold(True)
+        self._bold_btn.setFont(_bold_font)
         self._bold_btn.setStyleSheet(
             """
             QToolButton {
-                font-weight: bold; font-size: 13px; color: #ddd;
-                background: #2a2a2a; border: 2px solid #555; border-radius: 4px;
+                color: #e0e0e0;
+                background: #2a2a2a;
+                border: 2px solid #555;
+                border-radius: 6px;
+                padding: 2px 12px 2px 10px;
+                text-align: center;
             }
-            QToolButton:hover { background: #3a3a3a; border-color: #888; color: white; }
+            QToolButton:hover {
+                background: #3a3a3a;
+                border-color: #888;
+                color: white;
+            }
             QToolButton:checked {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                     stop:0 #1a8cff, stop:1 #0066cc);
                 border: 2px solid #00aaff;
                 color: white;
             }
-            QToolButton:checked:hover { border-color: #66ccff; }
+            QToolButton:checked:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #3399ff, stop:1 #1a8cff);
+                border-color: #66ccff;
+            }
             """
         )
         # Click manual (no toggled, lo gestionamos para diferenciar
         # selection-toggle vs whole-line-toggle).
         self._bold_btn.clicked.connect(self._on_bold_clicked)
         fmt_row.addWidget(self._bold_btn)
-        
+
+        # Boton ITALICA con estilo coherente al de negrita.
         self._italic_btn = QToolButton()
-        self._italic_btn.setText("I")
+        self._italic_btn.setText("I  Cursiva")
         self._italic_btn.setCheckable(True)
         self._italic_btn.setChecked(self.span.is_italic)
-        self._italic_btn.setFixedSize(22, 22)
+        self._italic_btn.setMinimumHeight(32)
+        self._italic_btn.setMinimumWidth(96)
+        self._italic_btn.setCursor(Qt.PointingHandCursor)
+        self._italic_btn.setToolTip("Cursiva — aplica al span entero")
+        _italic_font = QFont("Georgia", 13)
+        _italic_font.setItalic(True)
+        self._italic_btn.setFont(_italic_font)
         self._italic_btn.setStyleSheet(
-            "QToolButton { font-style: italic; font-size: 11px; color: #ccc; "
-            "background: #1e1e1e; border: 1px solid #555; border-radius: 3px; }"
-            "QToolButton:checked { background: #0078d4; color: white; }"
+            """
+            QToolButton {
+                color: #e0e0e0;
+                background: #2a2a2a;
+                border: 2px solid #555;
+                border-radius: 6px;
+                padding: 2px 12px 2px 10px;
+                text-align: center;
+            }
+            QToolButton:hover {
+                background: #3a3a3a;
+                border-color: #888;
+                color: white;
+            }
+            QToolButton:checked {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #1a8cff, stop:1 #0066cc);
+                border: 2px solid #00aaff;
+                color: white;
+            }
+            QToolButton:checked:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #3399ff, stop:1 #1a8cff);
+                border-color: #66ccff;
+            }
+            """
         )
         self._italic_btn.toggled.connect(self._on_format_changed)
         fmt_row.addWidget(self._italic_btn)
