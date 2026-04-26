@@ -944,9 +944,13 @@ class PDFDocument:
     
     def erase_text_transparent(self, page_num: int, rect: fitz.Rect, save_snapshot: bool = True, already_internal: bool = False) -> bool:
         """
-        Elimina texto de un área sin dejar marca visible (transparente).
-        Útil para mover texto en PDFs con texto editable sin dejar rectángulos blancos.
-        
+        Elimina ÚNICAMENTE los glifos de texto en un área, sin pintar nada
+        encima. Preserva imagen, color, degradado, tabla, marca de agua y
+        cualquier gráfico vectorial que estuviera debajo del texto.
+
+        Diseñada para el flujo MOVER: el texto se trata como capa independiente
+        sobre el contenido original; al moverlo, el fondo debe quedar intacto.
+
         Args:
             page_num: Número de página
             rect: Área del texto a eliminar
@@ -954,18 +958,18 @@ class PDFDocument:
             already_internal: Si True, las coordenadas ya están en formato interno del PDF
                               (no se aplica transformación). Usar cuando rect viene de
                               find_text_at_point con internal_rect.
-        
+
         Returns:
             True si se eliminó correctamente
         """
         page = self.get_page(page_num)
         if not page:
             return False
-        
+
         try:
             if save_snapshot:
                 self._save_snapshot()
-            
+
             # Transformar coordenadas si hay rotación Y si no son ya internas
             if already_internal:
                 transformed_rect = rect
@@ -974,21 +978,23 @@ class PDFDocument:
                 transformed_rect = self.transform_rect_for_page(page_num, rect, from_visual=True)
                 print(f"erase_text_transparent - Rect visual: {rect}")
                 print(f"erase_text_transparent - Rect transformado: {transformed_rect}")
-            
+
             # Expandir ligeramente para compensar imprecisiones de coordenadas
             # Esto evita que queden restos de texto al borde del rect
             # Expansión ampliada para cubrir imprecisión de coordenadas OCR tras escalado DPI
             expanded_rect = transformed_rect + (-2, -1, 2, 1)
             print(f"erase_text_transparent - Usando rect expandido: {expanded_rect}")
-            
+
             # Verificar qué texto hay en esa área antes de borrar
             text_in_area = page.get_text("text", clip=expanded_rect)
             print(f"erase_text_transparent - Texto en área ANTES de borrar: '{text_in_area.strip()}'")
-            
-            # Usar redacción CON relleno blanco para cubrir cualquier residuo
-            # fill=(1,1,1) pinta blanco sobre el área, asegurando limpieza total
-            redact = page.add_redact_annot(expanded_rect, fill=(1, 1, 1))
-            page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+
+            # NO destructivo: fill=False no pinta nada (no hay cuadro blanco).
+            # Preservamos imágenes y line-art para que el fondo (foto, color,
+            # degradado, tabla, marca de agua, gráficos vectoriales) siga
+            # intacto. Solo se eliminan los operadores de texto (glifos).
+            page.add_redact_annot(expanded_rect, fill=False)
+            self._apply_redactions_preserve_background(page)
             
             # Verificar qué texto hay después de borrar
             text_after = page.get_text("text", clip=expanded_rect)
@@ -1866,6 +1872,24 @@ class PDFDocument:
         """Descarta el snapshot pristine usado por move_text_region."""
         self._move_source_bytes = None
 
+    @staticmethod
+    def _apply_redactions_preserve_background(page) -> None:
+        """Aplica redacciones eliminando ÚNICAMENTE el texto, preservando
+        imágenes y gráficos vectoriales (line-art) que estuvieran debajo.
+
+        Se usa para el flujo MOVER, donde el contenido del PDF debajo del
+        texto (fotos, colores, degradados, tablas, marcas de agua) debe
+        permanecer intacto tras retirar los glifos.
+        """
+        kwargs = {"images": fitz.PDF_REDACT_IMAGE_NONE}
+        if hasattr(fitz, "PDF_REDACT_LINE_ART_NONE"):
+            kwargs["graphics"] = fitz.PDF_REDACT_LINE_ART_NONE
+        try:
+            page.apply_redactions(**kwargs)
+        except TypeError:
+            # PyMuPDF antiguo sin parámetro graphics
+            page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+
     def move_text_region(
         self,
         page_num: int,
@@ -1942,9 +1966,12 @@ class PDFDocument:
             ]
             for r in outside_rects:
                 if not r.is_empty and r.width > 0 and r.height > 0:
-                    src_page.add_redact_annot(r)
+                    # fill=False: no pintar blanco al limpiar el complemento
+                    # del span en el clon (evita slabs blancas en el XObject
+                    # si por cualquier razón se renderizara fuera del clip).
+                    src_page.add_redact_annot(r, fill=False)
             try:
-                src_page.apply_redactions()
+                self._apply_redactions_preserve_background(src_page)
             except Exception as e:
                 print(f"move_text_region: apply_redactions falló: {e}")
 
@@ -1957,6 +1984,17 @@ class PDFDocument:
                 keep_proportion=True,
                 overlay=True,
             )
+
+            # Eliminar el texto original de la página real SIN tocar el fondo.
+            # Esto convierte la operación en un MOVE real (no copia): los
+            # glifos desaparecen del origen, pero la imagen/color/degradado/
+            # tabla/gráfico que hubiera debajo permanece intacto.
+            try:
+                page.add_redact_annot(src_rect, fill=False)
+                self._apply_redactions_preserve_background(page)
+            except Exception as e:
+                print(f"move_text_region: limpieza no destructiva del origen falló: {e}")
+
             self.modified = True
             return True
         except Exception as e:
