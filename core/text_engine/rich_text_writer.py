@@ -91,7 +91,21 @@ class RichTextWriter:
         
         try:
             overflow = self._page.insert_htmlbox(rect, html_content)
-            has_overflow = overflow is not None and overflow > 0
+            # PyMuPDF >= 1.23 devuelve (spare_height, scale): spare<0 = overflow.
+            # Versiones antiguas devolvían un entero/float (overflow chars > 0).
+            has_overflow = False
+            if overflow is not None:
+                if isinstance(overflow, tuple):
+                    if overflow:
+                        try:
+                            has_overflow = float(overflow[0]) < 0.0
+                        except (TypeError, ValueError):
+                            has_overflow = False
+                else:
+                    try:
+                        has_overflow = float(overflow) > 0.0
+                    except (TypeError, ValueError):
+                        has_overflow = False
             return WriteResult(
                 success=True,
                 overflow=has_overflow,

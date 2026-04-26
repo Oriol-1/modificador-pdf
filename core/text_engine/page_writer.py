@@ -249,7 +249,14 @@ class PageWriter:
                         rect = fitz.Rect(px - 0.5, py - h, px + w + 0.5, py + 0.5)
                     else:
                         rect = None
-                    rtw.write_spans([span], rect=rect)
+                    result = rtw.write_spans([span], rect=rect)
+                    # Si RichTextWriter falla (p.ej. excepción interna en
+                    # insert_htmlbox), reescribir con TextWriter estándar
+                    # para no perder el span (el caso típico es la negrita
+                    # en una palabra al mover+editar). El font con is_bold
+                    # se resuelve en _write_spans_textwriter.
+                    if not result.success:
+                        self._write_spans_textwriter([span])
             
             # Spans sin formato → TextWriter estándar
             if std_spans:

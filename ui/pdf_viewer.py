@@ -3149,28 +3149,34 @@ class PDFPageView(QGraphicsView):
         current_text = text_item.text
         current_font_size = text_item.font_size
         current_is_bold = getattr(text_item, 'is_bold', False)
-        
+        current_runs = getattr(text_item, 'text_runs', None)
+
         dialog = TextEditDialog(
             text=current_text,
             font_size=current_font_size,
             is_bold=current_is_bold,
             title='Editar texto',
-            parent=self
+            parent=self,
+            text_runs=current_runs,
         )
-        
+
         if dialog.exec_() == QDialog.Accepted:
             values = dialog.get_values()
             new_text = values['text'].strip()
             new_font_size = values['font_size']
             new_is_bold = values['is_bold']
-            
+            new_runs = values.get('text_runs') or None
+
             # Si el spinner devuelve el mismo valor redondeado que le pasamos,
             # el usuario NO cambió el tamaño → preservar el original exacto
             # para evitar degradación progresiva por redondeo
             if round(current_font_size) == new_font_size:
                 new_font_size = current_font_size
-            
-            self._apply_text_edit(text_item, new_text, new_font_size, new_is_bold)
+
+            self._apply_text_edit(
+                text_item, new_text, new_font_size, new_is_bold,
+                edited_runs=new_runs,
+            )
     
     def _remove_text_data_for_item(self, text_item: EditableTextItem):
         """Elimina los datos guardados de un text_item del overlay system."""
@@ -3190,14 +3196,15 @@ class PDFPageView(QGraphicsView):
             self.editable_text_items.remove(text_item)
     
     def _apply_text_edit(
-        self, 
-        text_item: EditableTextItem, 
-        new_text: str, 
-        new_font_size: float, 
+        self,
+        text_item: EditableTextItem,
+        new_text: str,
+        new_font_size: float,
         new_is_bold: bool,
         was_truncated: bool = False,
         warnings: list = None,
-        text_actually_changed: bool = None
+        text_actually_changed: bool = None,
+        edited_runs: list = None,
     ):
         """Aplica los cambios de edición al texto.
         
@@ -3233,7 +3240,16 @@ class PDFPageView(QGraphicsView):
         print(f"  size_changed = {size_changed} (new={new_font_size}, current={text_item.font_size})")
         print(f"  bold_changed = {bold_changed}")
         
-        if not (text_changed or size_changed or bold_changed):
+        # Detectar si los runs (negrita por fragmento) cambiaron aunque el
+        # texto/tamano/bold global no hayan cambiado.
+        runs_changed = False
+        if edited_runs:
+            existing_runs = getattr(text_item, 'text_runs', None) or []
+            def _norm(rs):
+                return [(r.get('text', ''), bool(r.get('is_bold', False))) for r in rs if r.get('text')]
+            runs_changed = _norm(edited_runs) != _norm(existing_runs)
+
+        if not (text_changed or size_changed or bold_changed or runs_changed):
             print("  NO HAY CAMBIOS - retornando")
             return
         
@@ -3261,10 +3277,32 @@ class PDFPageView(QGraphicsView):
         # Obtener line_spacing original
         original_line_spacing = getattr(text_item, 'line_spacing', 0.0)
         
-        # CRÍTICO: Si el TEXTO cambió, crear un NUEVO text_run con el nuevo texto
-        # pero PRESERVANDO los estilos originales (tipografía, tamaño, color, etc.)
+        # CRÍTICO: Si el TEXTO cambió, crear los text_runs nuevos.
+        # - Si el editor devolvió `edited_runs` (con negritas por fragmento),
+        #   los usamos preservando los estilos originales por run.
+        # - Si no, fallback al comportamiento clásico: un único run.
         text_runs = getattr(text_item, 'text_runs', None)
-        if text_changed:
+        used_edited_runs = False
+        if text_changed and edited_runs:
+            print(f"  TEXTO CAMBIÓ - usando {len(edited_runs)} runs editados (negrita por seleccion)")
+            built = []
+            for r in edited_runs:
+                built.append({
+                    'text': r.get('text', ''),
+                    'font_name': original_font_name,
+                    'font_size': new_font_size,
+                    'is_bold': bool(r.get('is_bold', False)),
+                    'is_italic': False,
+                    'color': color_hex,
+                    'needs_newline': bool(r.get('needs_newline', False)),
+                })
+            text_item.text_runs = built
+            text_item.has_mixed_styles = any(r['is_bold'] for r in built) and not all(r['is_bold'] for r in built)
+            text_item.line_spacing = original_line_spacing
+            text_runs = built
+            text_item._text = new_text
+            used_edited_runs = True
+        elif text_changed:
             print(f"  TEXTO CAMBIÓ - creando nuevo text_run con estilos originales")
             # Crear nuevo run con los estilos originales (o los nuevos si se cambiaron)
             new_run = {
@@ -3282,6 +3320,28 @@ class PDFPageView(QGraphicsView):
             print(f"    Nuevo run creado: font={original_font_name}, size={new_font_size}, bold={new_is_bold}")
             # SOLO actualizar _text cuando el usuario REALMENTE cambió el texto
             text_item._text = new_text
+        elif edited_runs and not text_changed:
+            # El texto NO cambió pero el usuario aplicó negrita por selección.
+            # Reconstruimos los runs preservando los estilos originales.
+            existing = text_runs or []
+            base_size = existing[0].get('font_size', new_font_size) if existing else new_font_size
+            built = []
+            for r in edited_runs:
+                built.append({
+                    'text': r.get('text', ''),
+                    'font_name': original_font_name,
+                    'font_size': base_size,
+                    'is_bold': bool(r.get('is_bold', False)),
+                    'is_italic': False,
+                    'color': color_hex,
+                    'needs_newline': bool(r.get('needs_newline', False)),
+                })
+            text_item.text_runs = built
+            text_item.has_mixed_styles = any(r['is_bold'] for r in built) and not all(r['is_bold'] for r in built)
+            text_item.line_spacing = original_line_spacing
+            text_runs = built
+            used_edited_runs = True
+            print(f"  Negrita por seleccion aplicada sobre texto existente ({len(built)} runs)")
         
         # Actualizar propiedades del item
         text_item.font_size = new_font_size
@@ -3289,7 +3349,7 @@ class PDFPageView(QGraphicsView):
         
         # Si cambió el tamaño de fuente (pero NO el texto), actualizar los text_runs
         # para que conserven sus proporciones relativas
-        if text_runs and size_changed:
+        if text_runs and size_changed and not used_edited_runs:
             # Calcular el factor de escala usando el tamaño ORIGINAL antes del cambio
             if original_font_size and original_font_size > 0:
                 scale_factor = new_font_size / original_font_size
@@ -3309,8 +3369,8 @@ class PDFPageView(QGraphicsView):
             
             # Guardar el nuevo tamaño como referencia para futuros cambios
             text_item._original_font_size = new_font_size
-        elif text_runs and bold_changed:
-            # Solo cambió bold, actualizar todos los runs
+        elif text_runs and bold_changed and not used_edited_runs:
+            # Solo cambió bold global, actualizar todos los runs
             for run in text_runs:
                 run['is_bold'] = new_is_bold
         elif not text_runs and (size_changed or bold_changed) and not text_changed:
@@ -4622,11 +4682,24 @@ class PDFPageView(QGraphicsView):
                     # tamaño, kerning, color y saltos de línea de forma
                     # visualmente idéntica al original.
                     # ============================================================
+                    # CRÍTICO: si el usuario aplicó negrita por selección u
+                    # otro cambio de formato, NUNCA usar MOVE puro: clonaria
+                    # los glifos originales sin las negritas, perdiendolas.
+                    # Detectamos formato por la presencia de runs con bold
+                    # mixto o has_mixed_styles=True. En ese caso vamos al
+                    # flujo normal (erase + add_text_runs_to_page).
+                    _runs = text_data.get('text_runs') or []
+                    has_format_changes = (
+                        bool(text_data.get('has_mixed_styles'))
+                        or any(r.get('is_bold') for r in _runs)
+                        or any(r.get('is_italic') for r in _runs)
+                    )
                     is_pure_move = (
                         text_data.get('move_only') is True
                         and text_data.get('source_rect_internal') is not None
                         and text_data.get('source_page_idx') is not None
                         and text_data.get('text') == text_data.get('original_text')
+                        and not has_format_changes
                     )
                     if is_pure_move:
                         try:
@@ -4682,6 +4755,29 @@ class PDFPageView(QGraphicsView):
                         except Exception as e:
                             print(f"    Advertencia: No se pudo cubrir posición original: {e}")
                         text_data['original_pdf_rect'] = None
+
+                    # CASO move_only NATIVO + cambio de formato: el texto venía
+                    # de un span NATIVO del PDF (move_only=True) y abandonamos
+                    # el pure_move por aplicar negrita/itálica. Hay que borrar
+                    # los glifos NATIVOS originales (en source_rect_internal)
+                    # sin tocar el fondo, antes de escribir los runs editados.
+                    if (text_data.get('move_only')
+                            and text_data.get('source_rect_internal') is not None):
+                        try:
+                            src_rect_int = text_data['source_rect_internal']
+                            src_page_idx = text_data.get('source_page_idx', page_idx)
+                            self.pdf_doc.erase_text_transparent(
+                                src_page_idx,
+                                fitz.Rect(src_rect_int),
+                                save_snapshot=False,
+                                already_internal=True,
+                            )
+                            print(f"    [OK] Glifos nativos originales limpiados (move+formato)")
+                        except Exception as e:
+                            print(f"    Advertencia: no se pudo limpiar origen nativo: {e}")
+                        # Marcamos como ya consumido para no repetir en futuros saves
+                        text_data['move_only'] = False
+                        text_data['source_rect_internal'] = None
                     
                     # Limpiar texto OCR invisible subyacente antes de escribir
                     # Evita superposiciones si render_mode=3 se corrompe tras apply_redactions
