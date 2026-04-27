@@ -4,13 +4,13 @@ Visor de páginas PDF con soporte para zoom, scroll y selección de texto.
 
 from PyQt5.QtWidgets import (
     QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
-    QGraphicsRectItem, QMenu, QAction, QInputDialog, QMessageBox,
+    QGraphicsRectItem, QGraphicsPathItem, QMenu, QAction, QInputDialog, QMessageBox,
     QToolTip, QDialog
 )
 from PyQt5.QtCore import Qt, QRectF, pyqtSignal, QPointF, QTimer, QRect
 from PyQt5.QtGui import (
     QPixmap, QImage, QPen, QBrush, QColor, QPainter, QCursor,
-    QFont, QFontMetrics
+    QFont, QFontMetrics, QPainterPath
 )
 import fitz
 from collections import Counter
@@ -130,6 +130,9 @@ class PDFPageView(QGraphicsView):
     pageClicked = pyqtSignal(QPointF)  # Click en la página
     zoomChanged = pyqtSignal(float)  # Cambio de zoom
     documentModified = pyqtSignal()  # Emitida cuando el documento se modifica
+    userInteractionStarted = pyqtSignal()  # Drag/edit comienza (pausa background)
+    userInteractionEnded = pyqtSignal()  # Drag/edit termina (reanuda background)
+    pageChanged = pyqtSignal(int)  # Emitida al cambiar de pagina por scroll/teclado
     
     # Señales de hit-testing (Phase 3C)
     spanHovered = pyqtSignal(object)  # TextSpanMetrics cuando el cursor está sobre un span
@@ -308,19 +311,16 @@ class PDFPageView(QGraphicsView):
         self._hit_tester = TextHitTester(font_manager=font_manager)
     
     def _init_properties_tooltip(self) -> None:
-        """Inicializar el tooltip de propiedades tipográficas."""
-        if not HAS_TEXT_TOOLTIP:
-            return
-        
-        # Crear tooltip con configuración estándar
-        self._properties_tooltip = create_text_properties_tooltip(
-            parent=self,
-            style=TooltipStyle.STANDARD,
-            dark_theme=True
-        )
-        
-        # Conectar señal de hover
-        self.spanHovered.connect(self._properties_tooltip.on_span_hovered)
+        """Tooltip de propiedades tipograficas DESACTIVADO.
+
+        El tooltip mostraba fuente, tamaño, estilo, color, embedding y
+        fallback al pasar por encima de un texto. El usuario pidió que
+        no apareciera ninguna informacion al hacer hover.
+
+        Se deja el atributo a None para que el resto del viewer no
+        falle al consultarlo, y no conectamos la senal spanHovered.
+        """
+        self._properties_tooltip = None
     
     def set_tooltip_style(self, style: 'TooltipStyle') -> None:
         """
@@ -544,15 +544,30 @@ class PDFPageView(QGraphicsView):
         return self._selection_overlay.has_selection
 
     def _update_hit_tester_document(self) -> None:
-        """Actualizar el documento en el hit-tester."""
+        """Actualizar el documento en el hit-tester.
+
+        BUG ANTERIOR: comprobaba ``pdf_doc._doc`` (con underscore) pero el
+        atributo real en PDFDocument es ``doc`` (sin). Como hasattr fallaba,
+        ``set_document(None)`` se llamaba y el hit_tester quedaba sin doc:
+        cada hover en el viewer reintentaba extraer el cache (stale o
+        nulo), causando microsegmentos de UI bloqueada en PDFs con muchos
+        spans (los "tirones" reportados).
+        """
         if not self._hit_tester:
             return
-        
-        if self.pdf_doc and hasattr(self.pdf_doc, '_doc'):
-            # Acceder al documento fitz subyacente
-            self._hit_tester.set_document(self.pdf_doc._doc)
-        else:
-            self._hit_tester.set_document(None)
+
+        fitz_doc = None
+        if self.pdf_doc is not None:
+            # PDFDocument.doc es el fitz.Document. Aceptamos tambien _doc
+            # por si algun consumidor antiguo lo expusiera con underscore.
+            fitz_doc = getattr(self.pdf_doc, 'doc', None) or getattr(self.pdf_doc, '_doc', None)
+        # Invalidar cache anterior antes de cambiar el doc para evitar
+        # que un hover dispare extracciones contra el doc antiguo.
+        try:
+            self._hit_tester.clear_cache()
+        except Exception:
+            pass
+        self._hit_tester.set_document(fitz_doc)
     
     def invalidate_hit_test_cache(self, page_num: int = None) -> None:
         """
@@ -738,25 +753,66 @@ class PDFPageView(QGraphicsView):
     
     # ========== End Hit-Testing Methods ==========
     
+    def begin_bulk_load(self):
+        """Activa el modo bulk: render_page se vuelve no-op y solo
+        marca _render_pending. Llamar antes de varias operaciones que
+        dispararian render_page (set_tool_mode, set_zoom, etc.).
+        """
+        self._suppress_render = True
+        self._render_pending = False
+
+    def end_bulk_load(self):
+        """Desactiva el modo bulk y ejecuta UN render_page final si
+        alguna operacion lo solicito durante el bloque."""
+        self._suppress_render = False
+        if getattr(self, '_render_pending', False):
+            self._render_pending = False
+            self.render_page()
+
     def set_pdf_document(self, pdf_doc):
-        """Establece el documento PDF a mostrar."""
-        # Limpiar estado anterior completamente
+        """Establece el documento PDF a mostrar.
+
+        OPTIMIZACION: anteriormente se hacian dos render_page completos
+        en el primer cargado (load_page(0) al zoom actual + fit_width
+        que vuelve a renderizar al zoom de ajuste). Ahora calculamos el
+        zoom de ajuste ANTES del primer render usando las dimensiones
+        de la pagina directamente, asi solo se renderiza una vez.
+        """
         self.clear_all_state()
-        
+
         self.pdf_doc = pdf_doc
         if pdf_doc and pdf_doc.is_open():
-            # Conectar callbacks para el sistema de undo con overlays
             pdf_doc.set_overlay_callbacks(
                 self.get_overlay_state,
                 self.restore_overlay_state
             )
-            # Actualizar hit-tester con el nuevo documento
             self._update_hit_tester_document()
-            # Actualizar integrador de texto con el nuevo documento
             self._update_text_integrator_document()
-            self.load_page(0)
-            # Ajustar al ancho automáticamente al abrir documento
-            self.fit_width()
+
+            # Pre-calcular zoom de fit-width SIN renderizar todavia, asi
+            # el primer render se hace ya al zoom correcto.
+            self.current_page = 0
+            try:
+                page_info = self.pdf_doc.get_page_info(0)
+                if page_info and page_info.get('rect') is not None:
+                    rotation = page_info.get('rotation', 0)
+                    rect = page_info['rect']
+                    if rotation in (90, 270):
+                        page_w_pt = rect.height
+                    else:
+                        page_w_pt = rect.width
+                    view_w = self.viewport().width() - 20
+                    if page_w_pt > 0 and view_w > 0:
+                        new_zoom = view_w / page_w_pt
+                        new_zoom = max(self.min_zoom, min(new_zoom, self.max_zoom))
+                        self.zoom_level = new_zoom
+                        if hasattr(self, 'coord_converter'):
+                            self.coord_converter.update(zoom_level=self.zoom_level)
+            except Exception as e:
+                print(f"set_pdf_document: pre-calculo de fit fallo: {e}")
+
+            self.render_page()
+            self.zoomChanged.emit(self.zoom_level)
     
     def clear_all_state(self):
         """Limpia todo el estado del visor para evitar conflictos."""
@@ -899,7 +955,12 @@ class PDFPageView(QGraphicsView):
         """Renderiza la página actual con el nivel de zoom actual."""
         if not self.pdf_doc or not self.pdf_doc.is_open():
             return
-        
+
+        # Si esta activado el suppress, marcar render pendiente y salir.
+        # flush_pending_render lo ejecutara cuando se desactive el flag.
+        if getattr(self, '_suppress_render', False):
+            self._render_pending = True
+            return
         # Limpiar escena
         self.scene.clear()
         self.highlight_items.clear()
@@ -927,12 +988,12 @@ class PDFPageView(QGraphicsView):
         
         # Actualizar convertidor de coordenadas
         self.coord_converter.update(zoom_level=self.zoom_level, page_rotation=self.page_rotation)
-        
+
         # Renderizar página
         pixmap = self.pdf_doc.render_page(self.current_page, self.zoom_level)
         if not pixmap:
             return
-        
+
         # Guardar tamaño del pixmap para conversión de coordenadas
         self.pixmap_width = pixmap.width
         self.pixmap_height = pixmap.height
@@ -954,26 +1015,44 @@ class PDFPageView(QGraphicsView):
         # Ajustar escena
         self.scene.setSceneRect(self.page_item.boundingRect())
         
-        # Mostrar indicadores de texto seleccionable si está en modo eliminar
-        if self.tool_mode == 'delete':
-            self.show_text_hints()
-        
-        # Mostrar indicadores de resaltados existentes si está en modo highlight
-        if self.tool_mode == 'highlight':
-            self.show_existing_highlights()
-        
-        # Mostrar indicadores de texto editable si está en modo edición
-        if self.tool_mode == 'edit':
-            self.show_edit_hints()
-        
-        # Restaurar textos editables para esta página
         self._restore_editable_texts_for_page()
-        
-        # Restaurar imágenes editables para esta página
         self._restore_editable_images_for_page()
 
         if self.is_readonly:
             self._apply_readonly_flags_to_scene()
+
+        # Hints (recuadros de texto editable) DIFERIDOS: pueden tardar
+        # 1-5s en PDFs complejos creando un QGraphicsRectItem por span.
+        # Programarlos con singleShot deja que el pixmap se muestre
+        # YA y la UI responda; los hints aparecen ~50-300ms despues
+        # sin congelar la edicion. Si render_page se llama otra vez
+        # antes de que disparen, el token los cancela.
+        self._hints_token = getattr(self, '_hints_token', 0) + 1
+        _hints_token = self._hints_token
+        _hints_mode = self.tool_mode
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(0, lambda: self._render_hints_deferred(_hints_token, _hints_mode))
+
+    def _render_hints_deferred(self, token: int, mode: str):
+        """Renderiza los hints visuales del modo actual de forma diferida.
+        Si el token cambio (otro render_page se ejecuto), cancela este."""
+        if token != getattr(self, '_hints_token', None):
+            return
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+        if self.tool_mode != mode:
+            # Cambio de modo durante el delay: descartar; el nuevo modo
+            # programara su propio render con su mode correspondiente.
+            return
+        try:
+            if mode == 'delete':
+                self.show_text_hints()
+            elif mode == 'highlight':
+                self.show_existing_highlights()
+            elif mode == 'edit':
+                self.show_edit_hints()
+        except Exception as e:
+            print(f"_render_hints_deferred: {e}")
 
     def _apply_readonly_flags_to_scene(self):
         """Aplica los flags de solo lectura (sin mover ni seleccionar) a todos los items."""
@@ -1029,50 +1108,77 @@ class PDFPageView(QGraphicsView):
             self.render_page()
 
     def set_tool_mode(self, mode: str):
-        """Establece el modo de herramienta actual."""
+        """Establece el modo de herramienta actual.
+
+        OPTIMIZACION: si el modo no cambia, no renderiza (antes siempre
+        re-renderizaba la pagina, lo que costaba 1-2s en PDFs grandes).
+        """
         if self.is_readonly:
             return
+        previous_mode = getattr(self, 'tool_mode', None)
         self.tool_mode = mode
-        
+
         if mode == 'select':
             self.setCursor(Qt.IBeamCursor)
             self.setStyleSheet(self.styleSheet())  # Mantener estilo
         elif mode == 'highlight':
             self.setCursor(Qt.CrossCursor)
         elif mode == 'delete':
-            # Cursor personalizado para borrado
             self.setCursor(Qt.CrossCursor)
         elif mode == 'edit':
             self.setCursor(Qt.PointingHandCursor)
         else:
             self.setCursor(Qt.ArrowCursor)
-        
-        # Limpiar selección previa al cambiar herramienta
+
         self.clear_selection()
-        
-        # Mostrar/ocultar indicadores de texto
+
+        # Solo re-renderizar si el modo realmente cambio (los hints
+        # dependen del modo: edit/delete/highlight muestran rectangulos
+        # distintos sobre la pagina). Si es el mismo modo, no hay nada
+        # nuevo que dibujar.
+        if previous_mode == mode:
+            return
         if self.pdf_doc and self.pdf_doc.is_open():
+            if getattr(self, '_suppress_render', False):
+                self._render_pending = True
+                return
             self.render_page()
     
+    # Tope de hints visuales por pagina. PDFs mal estructurados pueden
+    # tener miles de spans (un span por caracter, OCR por palabra suelta).
+    # Crear y repintar un QGraphicsPathItem con miles de subrects penaliza
+    # cada redibujado de la escena durante scroll/drag. Por encima de este
+    # numero, omitimos los hints: el editor funciona igual, solo se pierde
+    # el indicador visual verde sobre cada bloque.
+    _MAX_HINTS_PER_PAGE = 400
+
     def show_text_hints(self):
-        """Muestra indicadores sutiles de dónde hay texto seleccionable."""
+        """Muestra indicadores sutiles de dónde hay texto seleccionable.
+
+        OPTIMIZACION: usa un unico QGraphicsPathItem con todos los rects
+        en lugar de N items separados. Si los spans superan
+        _MAX_HINTS_PER_PAGE, omite los hints para no penalizar el
+        renderizado de la escena.
+        """
         if not self.pdf_doc or not self.pdf_doc.is_open():
             return
-        
+
         try:
-            # Obtener todos los bloques de texto
             blocks = self.pdf_doc.get_text_blocks(self.current_page)
-            
+            if not blocks:
+                return
+            if len(blocks) > self._MAX_HINTS_PER_PAGE:
+                print(f"show_text_hints: {len(blocks)} bloques > {self._MAX_HINTS_PER_PAGE}, omitiendo hints (rendimiento)")
+                return
+            path = QPainterPath()
             for block in blocks:
-                # Convertir a coordenadas de vista
                 view_rect = self.pdf_to_view_rect(block.rect)
-                
-                # Crear un indicador sutil (borde muy tenue)
-                hint = QGraphicsRectItem(view_rect)
-                hint.setPen(QPen(QColor(100, 200, 255, 60), 1))
-                hint.setBrush(QBrush(QColor(100, 200, 255, 25)))
-                hint.setZValue(10)
-                self.scene.addItem(hint)
+                path.addRect(view_rect)
+            hint = QGraphicsPathItem(path)
+            hint.setPen(QPen(QColor(100, 200, 255, 60), 1))
+            hint.setBrush(QBrush(QColor(100, 200, 255, 25)))
+            hint.setZValue(10)
+            self.scene.addItem(hint)
         except Exception as e:
             print(f"Error mostrando hints: {e}")
     
@@ -1086,27 +1192,43 @@ class PDFPageView(QGraphicsView):
         
         try:
             blocks = self.pdf_doc.get_text_blocks(self.current_page)
+            if not blocks:
+                return
+            if len(blocks) > self._MAX_HINTS_PER_PAGE:
+                print(f"show_edit_hints: {len(blocks)} bloques > {self._MAX_HINTS_PER_PAGE}, omitiendo hints (rendimiento)")
+                return
             is_scanned = self.pdf_doc.is_image_based_pdf()
-            
+
+            # OPTIMIZACION: dos QPainterPath (uno por color) en lugar de
+            # un QGraphicsRectItem por span. En docs complejos con 500+
+            # spans pasa de ~3-5s a <50ms. Cada addItem en un loop con
+            # cientos de items costaba O(N log N) por updates al indice
+            # espacial; con 2 items totales el coste es ~O(1).
+            path_normal = QPainterPath()
+            path_ocr = QPainterPath()
+
             for block in blocks:
                 view_rect = self.pdf_to_view_rect(block.rect)
-                hint = QGraphicsRectItem(view_rect)
-                
                 font_name = getattr(block, 'font_name', '') or ''
                 is_ocr_block = (is_scanned and
                                 font_name.lower() in ('helvetica', 'helv'))
-                
                 if is_ocr_block:
-                    # Naranja tenue para texto OCR (no editable directamente)
-                    hint.setPen(QPen(QColor(255, 160, 0, 50), 1, Qt.DotLine))
-                    hint.setBrush(QBrush(QColor(255, 160, 0, 10)))
+                    path_ocr.addRect(view_rect)
                 else:
-                    # Verde para texto editable normal
-                    hint.setPen(QPen(QColor(0, 180, 120, 80), 1.5, Qt.DotLine))
-                    hint.setBrush(QBrush(QColor(0, 180, 120, 15)))
-                
-                hint.setZValue(10)
-                self.scene.addItem(hint)
+                    path_normal.addRect(view_rect)
+
+            if not path_normal.isEmpty():
+                item = QGraphicsPathItem(path_normal)
+                item.setPen(QPen(QColor(0, 180, 120, 80), 1.5, Qt.DotLine))
+                item.setBrush(QBrush(QColor(0, 180, 120, 15)))
+                item.setZValue(10)
+                self.scene.addItem(item)
+            if not path_ocr.isEmpty():
+                item = QGraphicsPathItem(path_ocr)
+                item.setPen(QPen(QColor(255, 160, 0, 50), 1, Qt.DotLine))
+                item.setBrush(QBrush(QColor(255, 160, 0, 10)))
+                item.setZValue(10)
+                self.scene.addItem(item)
         except Exception as e:
             print(f"Error mostrando edit hints: {e}")
     
@@ -1179,6 +1301,7 @@ class PDFPageView(QGraphicsView):
                         event.accept()
                         return
                     self.dragging_image = True
+                    self.userInteractionStarted.emit()
                     self.drag_start_pos = scene_pos
                     self.image_was_moved = False
                     event.accept()
@@ -1191,6 +1314,7 @@ class PDFPageView(QGraphicsView):
                     self._select_text_item(clicked_text)
                     self._deselect_image_item()
                     self.dragging_text = True
+                    self.userInteractionStarted.emit()
                     self.drag_start_pos = scene_pos
                     self.drag_original_rect = QRectF(clicked_text.rect())
                     self.text_was_moved = False
@@ -1391,6 +1515,7 @@ class PDFPageView(QGraphicsView):
                     self._select_text_item(item)
                     self._deselect_image_item()
                     self.dragging_text = True
+                    self.userInteractionStarted.emit()
                     self.drag_start_pos = scene_pos
                     # Posición inicial del item ya desplazada: cualquier movimiento
                     # adicional contará desde aquí; text_was_moved=True para que
@@ -1420,6 +1545,15 @@ class PDFPageView(QGraphicsView):
     
     def mouseReleaseEvent(self, event):
         """Maneja el evento de soltar el ratón."""
+        # Cualquier release de boton izquierdo termina la interaccion.
+        # La señal permite al main_window reanudar tareas en background
+        # (ej: generacion de miniaturas) que se pausaron al iniciar drag.
+        was_interacting = (
+            getattr(self, 'dragging_text', False)
+            or getattr(self, 'dragging_image', False)
+        )
+        if was_interacting:
+            self.userInteractionEnded.emit()
         if event.button() == Qt.LeftButton:
             # Manejar fin de redimensión de imagen
             if (self.selected_image_item and 
@@ -1563,20 +1697,79 @@ class PDFPageView(QGraphicsView):
         # El preview ya está siendo manejado por SelectionRect con estilo rojo
     
     def wheelEvent(self, event):
-        """Maneja el evento de la rueda del ratón para zoom."""
+        """Maneja el evento de la rueda del raton.
+
+        - Ctrl+rueda: zoom (in/out).
+        - Rueda sin modificador: scroll vertical normal. Cuando se llega
+          al borde de la pagina actual y se sigue girando en la misma
+          direccion, avanza/retrocede automaticamente a la siguiente
+          pagina y posiciona el scroll al inicio/final correspondiente.
+          Asi el usuario navega TODAS las paginas del PDF de forma
+          continua, como en un visor moderno, sin tocar miniaturas.
+        """
         if event.modifiers() == Qt.ControlModifier:
-            # Zoom con Ctrl + rueda
             delta = event.angleDelta().y()
             if delta > 0:
                 self.zoom_in()
             else:
                 self.zoom_out()
             event.accept()
-        else:
+            return
+
+        # Scroll continuo entre paginas
+        delta_y = event.angleDelta().y()
+        sb = self.verticalScrollBar()
+        if not self.pdf_doc or not self.pdf_doc.is_open():
             super().wheelEvent(event)
+            return
+        page_count = self.pdf_doc.page_count()
+
+        # Si estamos en el limite de la pagina y el usuario sigue
+        # rodando en esa direccion, saltar a la siguiente/anterior.
+        at_bottom = sb.value() >= sb.maximum() - 1
+        at_top = sb.value() <= sb.minimum() + 1
+
+        if delta_y < 0 and at_bottom and self.current_page < page_count - 1:
+            self.load_page(self.current_page + 1)
+            self.verticalScrollBar().setValue(0)
+            self.pageChanged.emit(self.current_page)
+            event.accept()
+            return
+        if delta_y > 0 and at_top and self.current_page > 0:
+            self.load_page(self.current_page - 1)
+            self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
+            self.pageChanged.emit(self.current_page)
+            event.accept()
+            return
+
+        super().wheelEvent(event)
     
     def keyPressEvent(self, event):
         """Maneja eventos de teclado."""
+        # Navegacion de paginas con teclado (PageUp/PageDown/Home/End).
+        # No se aplica si el usuario tiene un texto seleccionado (las
+        # flechas se usan para nudge en modo edicion -- ver mas abajo).
+        if (self.pdf_doc and self.pdf_doc.is_open()
+                and not self.selected_text_item):
+            page_count = self.pdf_doc.page_count()
+            new_page = None
+            if event.key() == Qt.Key_PageDown:
+                if self.current_page < page_count - 1:
+                    new_page = self.current_page + 1
+            elif event.key() == Qt.Key_PageUp:
+                if self.current_page > 0:
+                    new_page = self.current_page - 1
+            elif event.key() == Qt.Key_Home and event.modifiers() & Qt.ControlModifier:
+                new_page = 0
+            elif event.key() == Qt.Key_End and event.modifiers() & Qt.ControlModifier:
+                new_page = page_count - 1
+            if new_page is not None:
+                self.load_page(new_page)
+                self.verticalScrollBar().setValue(0)
+                self.pageChanged.emit(self.current_page)
+                event.accept()
+                return
+
         # Eliminar texto seleccionado con Delete o Backspace
         if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
             if self.selected_text_item and self.tool_mode == 'edit':

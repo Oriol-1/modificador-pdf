@@ -249,9 +249,18 @@ class TextHitTester:
             page_num: Número de página
             cache: Caché a llenar
         """
-        if not self._document or not self._document.is_open:
+        # fitz.Document expone ``is_closed`` (bool), no ``is_open`` (este
+        # nunca existio: era un bug latente que crasheaba con
+        # AttributeError cuando el hit_tester recibia un doc real).
+        # Mantenemos compat con tests basados en Mock que usan is_open.
+        if self._document is None:
             return
-        
+        is_closed = getattr(self._document, 'is_closed', False)
+        if isinstance(is_closed, bool) and is_closed:
+            return
+        is_open_attr = getattr(self._document, 'is_open', None)
+        if is_open_attr is False:
+            return
         if page_num < 0 or page_num >= self._document.page_count:
             return
         

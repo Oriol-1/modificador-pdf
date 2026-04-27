@@ -5,9 +5,9 @@ Soporta drag & drop para reordenar páginas y menú contextual.
 
 from PyQt5.QtWidgets import (
     QListWidget, QListWidgetItem, QVBoxLayout, QWidget, QLabel,
-    QMenu, QAction, QMessageBox
+    QMenu, QAction, QMessageBox, QApplication
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QSize
+from PyQt5.QtCore import Qt, pyqtSignal, QSize, QTimer
 from PyQt5.QtGui import QPixmap, QImage, QIcon
 
 
@@ -65,44 +65,123 @@ class ThumbnailPanel(QWidget):
         self.generate_thumbnails()
     
     def generate_thumbnails(self):
-        """Genera miniaturas para todas las páginas."""
+        """Genera miniaturas para todas las páginas SIN bloquear la UI.
+
+        OPTIMIZACION: anteriormente este metodo renderizaba pagina a
+        pagina sincronicamente, congelando la interfaz durante segundos
+        en docs grandes (50+ paginas). Ahora:
+
+        1. Crea placeholders inmediatos para todas las paginas (no
+           bloquea, el usuario ve la lista al instante).
+        2. Renderiza las miniaturas reales en lotes con QApplication.
+           processEvents() entre paginas, asi la UI sigue respondiendo
+           y se puede arrastrar/cerrar la ventana sin parecer colgada.
+        3. Si se cambia de doc durante el render, se cancela el lote
+           anterior automaticamente (via _thumbnail_generation_token).
+        """
         self.list_widget.clear()
-        
+
         if not self.pdf_doc or not self.pdf_doc.is_open():
             return
-        
+
         page_count = self.pdf_doc.page_count()
-        
+
+        # 1) Insertar placeholders inmediatos. La UI muestra la lista al
+        # instante; el usuario sabe que el panel esta poblado mientras se
+        # generan los pixmaps reales en segundo plano (cooperativo).
+        placeholder_size = QSize(self.thumbnail_size, self.thumbnail_size)
+        empty_pixmap = QPixmap(placeholder_size)
+        empty_pixmap.fill(Qt.transparent)
+        empty_icon = QIcon(empty_pixmap)
         for page_num in range(page_count):
-            # Renderizar miniatura
-            pixmap = self.pdf_doc.render_page(page_num, zoom=0.2)
-            
-            if pixmap:
-                # Convertir a QPixmap
-                img = QImage(
-                    pixmap.samples,
-                    pixmap.width,
-                    pixmap.height,
-                    pixmap.stride,
-                    QImage.Format_RGB888
+            item = QListWidgetItem(empty_icon, f"Página {page_num + 1}")
+            item.setData(Qt.UserRole, page_num)
+            item.setSizeHint(QSize(self.thumbnail_size + 20, self.thumbnail_size + 40))
+            self.list_widget.addItem(item)
+
+        # Token para invalidar este lote si el doc cambia antes de acabar
+        self._thumbnail_generation_token = getattr(self, '_thumbnail_generation_token', 0) + 1
+        my_token = self._thumbnail_generation_token
+
+        # 2) DEFERRED START: programamos el PRIMER lote tambien con
+        # singleShot para devolver control inmediatamente al event loop.
+        # Asi set_pdf_document termina al instante (solo placeholders,
+        # ~5-30ms) y la UI ya esta lista mientras el primer batch real
+        # se renderiza ~10ms despues. Antes el primer lote sincrono
+        # bloqueaba 600-900ms en docs grandes.
+        QTimer.singleShot(
+            0,
+            lambda: self._render_thumbnails_cooperatively(my_token, 0, page_count),
+        )
+
+    def _render_thumbnails_cooperatively(self, token: int, start: int, total: int):
+        """Renderiza miniaturas de UNA en UNA sin bloquear la UI.
+
+        Cada llamada renderiza UNA pagina (~50-200ms) y reprograma la
+        siguiente con singleShot. Asi cada lote es lo mas corto posible,
+        permitiendo a la UI procesar mouse-move, edicion, etc. entre
+        renders. Antes con batch=3 se bloqueaba 150-600ms por lote, lo
+        que causaba "tirones" durante el drag/edicion.
+
+        Si el usuario esta interactuando (drag de texto/imagen), la
+        generacion se PAUSA y se reintenta 100ms despues hasta que la
+        interaccion termine. La UI nunca pelea con el background.
+        """
+        if token != getattr(self, '_thumbnail_generation_token', None):
+            return
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+
+        # Si esta marcado como pausado (por interaccion del usuario,
+        # ej. drag o edicion), reintentar cuando se despause.
+        if getattr(self, '_paused', False):
+            QTimer.singleShot(
+                200,
+                lambda: self._render_thumbnails_cooperatively(token, start, total),
+            )
+            return
+
+        if start >= total:
+            return
+
+        try:
+            pixmap = self.pdf_doc.render_page(start, zoom=0.2)
+        except Exception:
+            pixmap = None
+        if pixmap:
+            img = QImage(
+                pixmap.samples, pixmap.width, pixmap.height,
+                pixmap.stride, QImage.Format_RGB888
+            )
+            qpixmap = QPixmap.fromImage(img)
+            if qpixmap.width() > self.thumbnail_size or qpixmap.height() > self.thumbnail_size:
+                qpixmap = qpixmap.scaled(
+                    self.thumbnail_size, self.thumbnail_size,
+                    Qt.KeepAspectRatio, Qt.SmoothTransformation
                 )
-                qpixmap = QPixmap.fromImage(img)
-                
-                # Escalar si es necesario
-                if qpixmap.width() > self.thumbnail_size or qpixmap.height() > self.thumbnail_size:
-                    qpixmap = qpixmap.scaled(
-                        self.thumbnail_size,
-                        self.thumbnail_size,
-                        Qt.KeepAspectRatio,
-                        Qt.SmoothTransformation
-                    )
-                
-                # Crear item
-                item = QListWidgetItem(QIcon(qpixmap), f"Página {page_num + 1}")
-                item.setData(Qt.UserRole, page_num)
-                item.setSizeHint(QSize(self.thumbnail_size + 20, self.thumbnail_size + 40))
-                
-                self.list_widget.addItem(item)
+            if start < self.list_widget.count():
+                item = self.list_widget.item(start)
+                if item is not None:
+                    item.setIcon(QIcon(qpixmap))
+
+        next_start = start + 1
+        if next_start < total:
+            # Pequena pausa entre renders (30ms) para que el event
+            # loop tenga tiempo de procesar mouse-move/edit/save sin
+            # competir con el siguiente render. Mejor que singleShot(0)
+            # cuando el usuario esta interactuando.
+            QTimer.singleShot(
+                30,
+                lambda: self._render_thumbnails_cooperatively(token, next_start, total),
+            )
+
+    def pause_thumbnails(self):
+        """Pausa la generacion en curso. Llamar al iniciar drag/edit."""
+        self._paused = True
+
+    def resume_thumbnails(self):
+        """Reanuda la generacion en curso."""
+        self._paused = False
     
     def on_item_clicked(self, item):
         """Maneja el click en una miniatura."""

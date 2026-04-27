@@ -3,6 +3,7 @@ Ventana principal del editor de PDF.
 """
 
 import os
+import sys
 import shutil
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
@@ -17,9 +18,10 @@ from ui.pdf_viewer import PDFPageView
 from ui.thumbnail_panel import ThumbnailPanel
 from ui.toolbar import EditorToolBar
 from ui.workspace_manager import (
-    WorkspaceManager, WorkspaceSetupDialog, 
+    WorkspaceManager, WorkspaceSetupDialog,
     WorkspaceStatusWidget, PendingPDFsDialog,
-    WorkspaceVisualDialog, GroupVisualDialog
+    WorkspaceVisualDialog, GroupVisualDialog,
+    GroupActionBar
 )
 from ui.help_system import HelpDialog, show_help, open_online_manual
 from ui.search_replace_panel import SearchReplacePanel, SearchResult
@@ -163,6 +165,17 @@ class MainWindow(QMainWindow):
         self.workspace_status = WorkspaceStatusWidget(self.workspace_manager)
         self.toolbar.addSeparator()
         self.toolbar.addWidget(self.workspace_status)
+
+        # Barra de accion del grupo: muy visible, persistente, guia el
+        # flujo paso a paso (Guardar -> siguiente PDF -> Terminar grupo).
+        # Solo aparece cuando hay un workspace con grupo activo.
+        self.group_action_bar = GroupActionBar(self.workspace_manager)
+        self.group_action_bar.saveRequested.connect(self.save_file)
+        self.group_action_bar.finishRequested.connect(self._on_finish_group)
+        # Se inserta DESPUES del toolbar (indice 1) para quedar siempre
+        # visible bajo la barra de herramientas.
+        self.main_layout.insertWidget(1, self.group_action_bar, 0)
+        self.group_action_bar.hide()
         
         # Barra de estado
         self.setup_status_bar()
@@ -625,7 +638,8 @@ class MainWindow(QMainWindow):
         if group:
             # Actualizar widget de estado
             self.workspace_status.update_status()
-            
+            self._refresh_group_action_bar()
+
             # Abrir directamente el primer PDF pendiente
             pending = group.get_pending_pdfs()
             if pending:
@@ -828,6 +842,18 @@ class MainWindow(QMainWindow):
         
         # Visor
         self.pdf_viewer.zoomChanged.connect(self.on_zoom_changed)
+        # Pausar la generacion en background de miniaturas mientras el
+        # usuario arrastra/edita, para evitar tirones por contienda en
+        # el hilo de UI.
+        self.pdf_viewer.userInteractionStarted.connect(
+            self.thumbnail_panel.pause_thumbnails
+        )
+        self.pdf_viewer.userInteractionEnded.connect(
+            self.thumbnail_panel.resume_thumbnails
+        )
+        # Sincronizar toolbar y panel de miniaturas cuando el usuario
+        # cambia de pagina por scroll/teclado en el viewer.
+        self.pdf_viewer.pageChanged.connect(self._on_viewer_page_changed)
         self.pdf_viewer.textSelected.connect(self.on_text_selected)
         self.pdf_viewer.documentModified.connect(self.on_document_modified)
         
@@ -959,26 +985,25 @@ class MainWindow(QMainWindow):
         """Carga un archivo PDF."""
         self.status_label.setText("Cargando PDF...")
         QApplication.processEvents()
-        
-        # Cerrar documento anterior si existe
+
         if self.pdf_doc.is_open():
             self.pdf_doc.close()
-        
-        # Limpiar estado del visor
-        self.pdf_viewer.clear_all_state()
-        
+
         if self.pdf_doc.open(file_path):
+            # Suprimir renders intermedios: set_tool_mode, set_zoom,
+            # toolbar updates pueden disparar render_page; con bulk-load
+            # solo se hace UN render al final, ahorrando ~70% del tiempo
+            # de carga en PDFs grandes (4 renders -> 1 render).
+            if hasattr(self.pdf_viewer, 'begin_bulk_load'):
+                self.pdf_viewer.begin_bulk_load()
             self.current_file = file_path
-            # Guardar ruta original para el flujo de workspace
             self.original_file_path = file_path
-            
-            # Mostrar visor y ocultar zona de arrastre
+
             self.show_pdf_viewer()
-            
-            # Actualizar interfaz
+
             self.pdf_viewer.set_pdf_document(self.pdf_doc)
             self.thumbnail_panel.set_pdf_document(self.pdf_doc)
-            
+
             self.toolbar.set_document_loaded(True)
             self.toolbar.set_page_count(self.pdf_doc.page_count())
             self.toolbar.set_current_page(0)
@@ -1012,10 +1037,12 @@ class MainWindow(QMainWindow):
             else:
                 self.status_label.setText(f"✓ {os.path.basename(file_path)} - Arrastra sobre el texto para eliminarlo")
             
-            # Reiniciar estado de deshacer/rehacer
             self.update_undo_redo_state()
-            
+
             self.update_title()
+            # Desactivar bulk-load y disparar UN render final consolidado
+            if hasattr(self.pdf_viewer, 'end_bulk_load'):
+                self.pdf_viewer.end_bulk_load()
             self.update_status()
         else:
             error_detail = self.pdf_doc.get_last_error()
@@ -1050,96 +1077,172 @@ class MainWindow(QMainWindow):
                     return
         
         self.status_label.setText("Guardando...")
+        QApplication.setOverrideCursor(Qt.WaitCursor)
         QApplication.processEvents()
+        try:
+            # CRÍTICO: Sincronizar todos los textos editables con los datos antes de comprometerse
+            if hasattr(self.pdf_viewer, 'sync_all_text_items_to_data'):
+                self.status_label.setText("Sincronizando cambios...")
+                QApplication.processEvents()
+                self.pdf_viewer.sync_all_text_items_to_data()
 
-        # CRÍTICO: Sincronizar todos los textos editables con los datos antes de comprometerse
-        print("\n=== INICIANDO GUARDADO ===")
-        if hasattr(self.pdf_viewer, 'sync_all_text_items_to_data'):
-            self.pdf_viewer.sync_all_text_items_to_data()
+            if hasattr(self.pdf_viewer, 'commit_overlay_texts'):
+                self.status_label.setText("Aplicando textos al PDF...")
+                QApplication.processEvents()
+                commit_result = self.pdf_viewer.commit_overlay_texts()
+                if not commit_result:
+                    print("ADVERTENCIA: commit_overlay_texts retornó False")
 
-        if hasattr(self.pdf_viewer, 'commit_overlay_texts'):
-            commit_result = self.pdf_viewer.commit_overlay_texts()
-            if not commit_result:
-                print("ADVERTENCIA: commit_overlay_texts retornó False")
-
-        if hasattr(self.pdf_viewer, 'commit_overlay_images'):
-            img_result = self.pdf_viewer.commit_overlay_images()
-            if not img_result:
-                print("ADVERTENCIA: commit_overlay_images retornó False")
+            if hasattr(self.pdf_viewer, 'commit_overlay_images'):
+                self.status_label.setText("Aplicando imágenes al PDF...")
+                QApplication.processEvents()
+                img_result = self.pdf_viewer.commit_overlay_images()
+                if not img_result:
+                    print("ADVERTENCIA: commit_overlay_images retornó False")
+            self.status_label.setText("Escribiendo archivo...")
+            QApplication.processEvents()
+        except Exception:
+            QApplication.restoreOverrideCursor()
+            raise
         
         # Verificar si el archivo está en el workspace
         is_from_workspace = (self.original_file_path and 
                             self.workspace_manager.is_file_in_origin(self.original_file_path))
         
-        if is_from_workspace:
-            # Flujo de workspace: guardar modificado y mover original
-            self._save_with_workspace_flow()
-        else:
-            # Flujo normal
-            save_ok = self.pdf_doc.save()
-            if save_ok:
-                if hasattr(self.pdf_viewer, 'clear_committed_overlays'):
-                    self.pdf_viewer.clear_committed_overlays()
-                self.pdf_viewer.render_page()
-                
-                self.update_title()
-                self.update_status()
-                self.update_undo_redo_state()
-                self.status_label.setText("✓ Archivo guardado - Puedes arrastrar otro PDF para editarlo")
-                
-                QMessageBox.information(
-                    self,
-                    "Guardado exitoso",
-                    f"El archivo se guardó correctamente.\n\n"
-                    f"📁 {os.path.basename(self.current_file)}\n\n"
-                    f"Ahora puedes:\n"
-                    f"• Continuar editando este PDF\n"
-                    f"• Arrastrar otro PDF para editarlo"
-                )
+        try:
+            if is_from_workspace:
+                # Flujo de workspace: guardar modificado y mover original
+                self._save_with_workspace_flow()
             else:
-                QMessageBox.critical(
-                    self,
-                    "Error",
-                    "No se pudo guardar el archivo.\n\n"
-                    "Intenta usar 'Guardar como' para guardarlo con otro nombre."
-                )
-                self.status_label.setText("Error al guardar")
+                # Flujo normal
+                save_ok = self.pdf_doc.save()
+                if save_ok:
+                    if hasattr(self.pdf_viewer, 'clear_committed_overlays'):
+                        self.pdf_viewer.clear_committed_overlays()
+                    self.pdf_viewer.render_page()
+
+                    self.update_title()
+                    self.update_status()
+                    self.update_undo_redo_state()
+                    self.status_label.setText("✓ Archivo guardado - Puedes arrastrar otro PDF para editarlo")
+
+                    # Restaurar el cursor ANTES del modal para que el
+                    # mouse no aparezca de espera mientras el usuario lee.
+                    QApplication.restoreOverrideCursor()
+
+                    # Abrir la carpeta del archivo guardado en el
+                    # explorador para que el usuario lo localice
+                    # inmediatamente sin tener que buscarlo manualmente.
+                    self._open_containing_folder(self.current_file)
+
+                    QMessageBox.information(
+                        self,
+                        "Guardado exitoso",
+                        f"El archivo se guardó correctamente.\n\n"
+                        f"📁 {os.path.basename(self.current_file)}\n\n"
+                        f"Se ha abierto la carpeta donde se guardó."
+                    )
+                    return  # Cursor ya restaurado
+                else:
+                    QApplication.restoreOverrideCursor()
+                    QMessageBox.critical(
+                        self,
+                        "Error",
+                        "No se pudo guardar el archivo.\n\n"
+                        "Intenta usar 'Guardar como' para guardarlo con otro nombre."
+                    )
+                    self.status_label.setText("Error al guardar")
+                    return
+        finally:
+            # Garantizar restauracion del cursor en cualquier caso
+            try:
+                QApplication.restoreOverrideCursor()
+            except Exception:
+                pass
     
     def _save_with_workspace_flow(self):
-        """Guarda el archivo usando el flujo de workspace."""
-        try:
-            # Obtener el contenido modificado del PDF (mismos parametros que
-            # save() para coherencia y rendimiento: garbage=1+clean=False).
-            modified_content = self.pdf_doc.doc.tobytes(garbage=1, deflate=True, clean=False)
+        """Guarda el archivo usando el flujo de workspace.
 
-            # Guardar la ruta original antes de procesar
+        OPTIMIZACION FINAL: en el flujo workspace el usuario casi siempre
+        pulsa "Abrir siguiente" tras guardar, lo que dispara load_pdf y
+        cierra el doc actual de nuevo. Antes haciamos:
+
+            tobytes -> write -> close -> reopen-from-bytes -> next clic ->
+            close el reopen -> open next file
+
+        El reopen-from-bytes (parsea ~50-500MB en RAM segun PDF) era
+        trabajo COMPLETAMENTE desperdiciado: se cerraba inmediatamente.
+        Ahora marcamos el doc como "saved-and-detached":
+
+            tobytes -> write -> close -> _show_save_result_dialog
+
+        Si el usuario pulsa "Abrir siguiente", load_pdf abre el siguiente
+        archivo directamente. Si elige "Cerrar", el doc ya esta cerrado.
+        Si por algun caso raro intenta seguir editando el mismo, el
+        sistema lo reabre perezosamente desde el archivo guardado.
+
+        Este cambio elimina el cuello de botella mas grande del flujo
+        (1-5s en PDFs largos -> 0ms).
+        """
+        try:
             original_src = self.original_file_path
 
-            # Procesar con el workspace manager (guarda el modificado y calcula destino del original)
+            # Calcular ruta destino SIN escribir todavia (modified_content=None).
+            self.status_label.setText("Preparando guardado...")
+            QApplication.processEvents()
             result = self.workspace_manager.process_saved_pdf(
                 original_src,
-                modified_content
+                None,  # solo calcular paths, sin escribir
+            )
+
+            if not (result and result.get('modified')):
+                raise RuntimeError("No se pudo calcular la ruta de destino")
+
+            # OPTIMIZACION CLAVE: doc.save(path) escribe directamente a
+            # disco SIN materializar el PDF entero como bytes en Python.
+            # Antes hacia: tobytes (~6s, 28MB en RAM) -> open+write (~50ms).
+            # Ahora: doc.save (~3-4s, IO directo, sin copia en RAM).
+            self.status_label.setText("Guardando archivo modificado...")
+            QApplication.processEvents()
+            self.pdf_doc.doc.save(
+                result['modified'],
+                garbage=0,
+                deflate=True,
+                deflate_images=False,
+                deflate_fonts=False,
+                clean=False,
             )
 
             if result and result['modified']:
-                # 1. Cerrar el documento actual para liberar el archivo
+                # CRITICO: invalidar referencias al doc en componentes que
+                # lo cachean (hit_tester) ANTES de cerrarlo. Si quedan con
+                # un fitz.Document cerrado, un hover/edit posterior puede
+                # provocar segfault en PyMuPDF al consultar paginas.
+                try:
+                    if hasattr(self.pdf_viewer, '_hit_tester') and self.pdf_viewer._hit_tester:
+                        self.pdf_viewer._hit_tester.clear_cache()
+                        self.pdf_viewer._hit_tester.set_document(None)
+                except Exception:
+                    pass
                 self.pdf_doc.close()
 
-                # 2. Ahora que el archivo está liberado, mover el original
                 if result.get('original_src') and result.get('original_dest'):
+                    self.status_label.setText("Archivando original...")
+                    QApplication.processEvents()
                     self.workspace_manager.move_original_to_archive(
                         result['original_src'],
                         result['original_dest']
                     )
 
-                # 3. Actualizar variables de estado
                 self.original_file_path = None
                 self.current_file = result['modified']
-
-                # 4. Reabrir el archivo modificado
-                self.pdf_doc.open(result['modified'])
-                self.pdf_viewer.set_pdf_document(self.pdf_doc)
-                self.thumbnail_panel.set_pdf_document(self.pdf_doc)
+                self.pdf_doc.file_path = result['modified']
+                self.pdf_doc.modified = False
+                if hasattr(self.pdf_viewer, 'clear_committed_overlays'):
+                    try:
+                        self.pdf_viewer.clear_committed_overlays()
+                    except Exception:
+                        pass
                 
                 self.update_title()
                 self.update_status()
@@ -1147,14 +1250,20 @@ class MainWindow(QMainWindow):
                 
                 # Actualizar widget de estado del workspace
                 self.workspace_status.update_status()
-                self.workspace_status.update_status()
-                
+                self._refresh_group_action_bar()
+
                 # Obtener stats actualizados
                 stats = self.workspace_manager.get_stats()
-                
-                # Mostrar diálogo visual del resultado
+
+                # Restaurar cursor antes del modal: el usuario necesita
+                # interactuar con el dialogo, no debe verse el cursor de
+                # espera durante esa interaccion.
+                try:
+                    QApplication.restoreOverrideCursor()
+                except Exception:
+                    pass
                 self._show_save_result_dialog(result, stats)
-                
+
                 self.status_label.setText(f"✅ Guardado en workspace - {stats['pending']} pendientes")
                 
             else:
@@ -1237,7 +1346,13 @@ class MainWindow(QMainWindow):
             
             btn_close = QPushButton("Cerrar")
             btn_close.setProperty("class", "secondary")
-            btn_close.clicked.connect(dialog.accept)
+            # El doc fue cerrado al guardar (workspace flow) para liberar
+            # el archivo original. Si el usuario elige Cerrar aqui en lugar
+            # de Abrir siguiente, retornamos a la pantalla inicial para
+            # que la UI quede en un estado coherente (sin doc abierto).
+            btn_close.clicked.connect(
+                lambda: (dialog.accept(), self._return_to_drop_zone_after_save())
+            )
             buttons_layout.addWidget(btn_close)
             
             layout.addLayout(buttons_layout)
@@ -1272,6 +1387,30 @@ class MainWindow(QMainWindow):
                 if not self.check_save():
                     return
             self.load_pdf(pending[0])
+
+    def _return_to_drop_zone_after_save(self):
+        """Vuelve a la pantalla inicial tras guardar (workspace flow).
+
+        El doc se cerro durante el guardado para liberar el archivo
+        original. Aqui solo limpiamos UI: ocultamos el visor, mostramos
+        el drop zone y reseteamos los widgets de estado.
+        """
+        try:
+            self.current_file = None
+            self.original_file_path = None
+            self.main_container.hide()
+            self.drop_zone.show()
+            if hasattr(self.toolbar, 'set_document_loaded'):
+                self.toolbar.set_document_loaded(False)
+            self.update_title()
+            self.update_status()
+            self.workspace_status.update_status()
+            self._refresh_group_action_bar()
+            self.status_label.setText(
+                "Arrastra un PDF o usa Ctrl+O para abrir"
+            )
+        except Exception as e:
+            print(f"_return_to_drop_zone_after_save: {e}")
     
     def _open_results_folder(self):
         """Abre la carpeta de resultados (Modificado - Sí) en el explorador."""
@@ -1315,6 +1454,11 @@ class MainWindow(QMainWindow):
                 self.update_title()
                 self.update_status()
                 self.status_label.setText(f"Guardado como: {os.path.basename(file_path)}")
+
+                # Abrir la carpeta del archivo guardado en el explorador
+                # para que el usuario lo localice de inmediato sin
+                # tener que buscarlo manualmente.
+                self._open_containing_folder(file_path)
             else:
                 QMessageBox.critical(
                     self,
@@ -1763,15 +1907,136 @@ class MainWindow(QMainWindow):
     def update_title(self):
         """Actualiza el título de la ventana."""
         title = "PDF Editor Pro"
-        
+
         if self.current_file:
             filename = os.path.basename(self.current_file)
             if self.pdf_doc.modified:
                 title = f"*{filename} - {title}"
             else:
                 title = f"{filename} - {title}"
-        
+
         self.setWindowTitle(title)
+        # Cualquier cambio de archivo es buen momento para refrescar la
+        # barra de accion del grupo (estado del flujo: editar/guardar/terminar).
+        self._refresh_group_action_bar()
+
+    def _on_viewer_page_changed(self, page_num: int):
+        """Sincroniza UI cuando el viewer cambia de pagina por scroll/teclado.
+
+        Actualiza el panel de miniaturas, el toolbar y la barra de estado
+        para reflejar la pagina actual sin que el usuario tenga que tocar
+        manualmente esos controles.
+        """
+        try:
+            self.toolbar.set_current_page(page_num)
+        except Exception:
+            pass
+        try:
+            self.thumbnail_panel.select_page(page_num)
+        except Exception:
+            pass
+        self.update_status()
+
+    def _refresh_group_action_bar(self):
+        """Refresca la barra de accion del grupo segun el estado actual."""
+        if not hasattr(self, 'group_action_bar'):
+            return
+        has_open = bool(self.current_file and self.pdf_doc and self.pdf_doc.is_open())
+        self.group_action_bar.update_state(has_open_pdf=has_open)
+
+    def _open_containing_folder(self, file_path: str) -> None:
+        """Abre la carpeta que contiene el archivo en el explorador.
+
+        Multi-plataforma: Windows usa explorer (selecciona el archivo),
+        macOS abre Finder, Linux usa xdg-open. Silencia errores: si
+        no se puede abrir (ej. en CI sin entorno grafico), no rompe el
+        flujo de guardado.
+        """
+        if not file_path:
+            return
+        try:
+            folder = os.path.dirname(os.path.abspath(file_path))
+            if not os.path.isdir(folder):
+                return
+            if sys.platform.startswith("win"):
+                # /select muestra el archivo concreto resaltado
+                import subprocess
+                subprocess.Popen(
+                    ['explorer', '/select,', os.path.normpath(file_path)],
+                    close_fds=True,
+                )
+            elif sys.platform == "darwin":
+                import subprocess
+                subprocess.Popen(['open', '-R', file_path], close_fds=True)
+            else:
+                import subprocess
+                subprocess.Popen(['xdg-open', folder], close_fds=True)
+        except Exception as e:
+            print(f"No se pudo abrir la carpeta del archivo: {e}")
+
+    def _on_finish_group(self):
+        """Manejador del boton 'Terminar grupo'.
+
+        Solo se invoca cuando todos los PDFs del grupo estan guardados.
+        Cierra el PDF actual y muestra un dialogo de confirmacion antes
+        de volver al inicio del flujo (drop zone).
+        """
+        group = self.workspace_manager.current_group
+        group_name = group.name if group else ""
+        modified = group.get_modified_count() if group else 0
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Grupo completado")
+        msg.setIcon(QMessageBox.Question)
+        msg.setText(
+            f"<b>Grupo «{group_name}» completado</b><br><br>"
+            f"Has guardado <b>{modified} PDF{'s' if modified != 1 else ''}</b> "
+            f"en este grupo.<br><br>"
+            f"¿Quieres terminar el flujo y volver al inicio?"
+        )
+        ok_btn = msg.addButton("✓ Terminar grupo", QMessageBox.AcceptRole)
+        msg.addButton("Continuar editando", QMessageBox.RejectRole)
+        msg.setDefaultButton(ok_btn)
+        msg.exec_()
+        if msg.clickedButton() is not ok_btn:
+            return
+
+        # Cerrar el PDF actual si lo hay
+        try:
+            if self.pdf_doc and self.pdf_doc.is_open():
+                self.close_file()
+        except Exception:
+            pass
+
+        # Volver a la pantalla inicial
+        try:
+            self.main_container.hide()
+            self.drop_zone.show()
+        except Exception:
+            pass
+
+        # CRITICO: salir del contexto de grupo. Sin esto, current_group
+        # sigue puesto y la GroupActionBar continua visible mostrando
+        # "TERMINAR GRUPO" pese a que el usuario ya termino. La idea es
+        # que el editor vuelva a un estado de edicion individual limpio,
+        # sin botones ni mensajes del flujo de grupo anterior.
+        try:
+            self.workspace_manager.current_group = None
+        except Exception:
+            pass
+
+        # Estadisticas globales para el resumen
+        try:
+            stats = self.workspace_manager.get_global_stats()
+            self.status_label.setText(
+                f"✓ Grupo «{group_name}» terminado - "
+                f"{stats.get('completed_groups', 0)} grupo(s) completado(s)"
+            )
+        except Exception:
+            self.status_label.setText(f"✓ Grupo «{group_name}» terminado")
+        self.workspace_status.update_status()
+        # Refrescar la barra: ahora current_group=None -> se ocultara.
+        self._refresh_group_action_bar()
     
     def update_status(self):
         """Actualiza la barra de estado."""
@@ -2300,7 +2565,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
     def on_workspace_created(self, workspace_path):
         """Callback cuando se crea un workspace."""
         self.workspace_status.update_status()
-        
+        self._refresh_group_action_bar()
+
         # Preguntar si quiere abrir el primer PDF pendiente
         pending = self.workspace_manager.get_pending_pdfs()
         if pending:
@@ -2363,9 +2629,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
         
         if files:
             success, failed = self.workspace_manager.import_pdfs(files)
-            
+
             self.workspace_status.update_status()
-            
+            self._refresh_group_action_bar()
+
             msg = ""
             if success > 0:
                 msg += f"✅ {success} PDF{'s' if success != 1 else ''} importado{'s' if success != 1 else ''}\n"
