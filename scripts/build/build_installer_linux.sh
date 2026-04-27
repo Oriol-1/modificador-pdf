@@ -26,7 +26,7 @@ cd "$PROJECT_ROOT"
 
 # Variables
 APP_NAME="pdf-editor-pro"
-VERSION="2.1.5"
+VERSION="2.1.6"
 MAINTAINER="Oriol Alonso Esplugas <alonsoesplugas@gmail.com>"
 DESCRIPTION="Editor de PDF profesional con capacidades de edición de texto"
 ARCH="amd64"

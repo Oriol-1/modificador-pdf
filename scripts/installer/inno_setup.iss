@@ -7,7 +7,7 @@
 ; 3. Compilar (Ctrl+F9)
 
 #define MyAppName "Modificador de PDF"
-#define MyAppVersion "2.1.5"
+#define MyAppVersion "2.1.6"
 #define MyAppPublisher "Modificador PDF"
 #define MyAppURL "https://github.com/tu-usuario/modificador-pdf"
 #define MyAppExeName "Modificador de PDF.exe"
