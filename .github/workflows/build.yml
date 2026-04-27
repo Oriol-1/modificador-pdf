@@ -16,10 +16,6 @@ on:
 permissions:
   contents: write
 
-# Forzar Node.js 24 para evitar warnings de deprecación
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   # ==================== BUILD WINDOWS ====================
   build-windows:
