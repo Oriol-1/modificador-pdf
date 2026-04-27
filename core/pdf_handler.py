@@ -2149,6 +2149,33 @@ class PDFDocument:
                 except Exception:
                     pass
 
+    def _visual_point_to_mediabox(self, page, visual_x: float, visual_y: float) -> Tuple[fitz.Point, int]:
+        """Convierte coordenadas visuales (las que el usuario ve en el viewer)
+        a coordenadas del mediabox para insert_text, devolviendo tambien el
+        angulo ``rotate`` que hay que pasar a PyMuPDF para que el glifo
+        salga horizontal en la vista visual.
+
+        En PDFs escaneados/imagen es habitual que la pagina tenga
+        ``page.rotation != 0`` (escaneo en horizontal rotado a vertical).
+        Sin esta transformacion, insert_text mete el texto en mediabox y
+        al guardar y reabrir el PDF aparece girado 90/180/270 grados.
+        """
+        rotation = page.rotation
+        if rotation == 0:
+            return fitz.Point(visual_x, visual_y), 0
+        if rotation == 90:
+            visual_width = page.rect.width
+            return fitz.Point(visual_y, visual_width - visual_x), 90
+        if rotation == 180:
+            visual_width = page.rect.width
+            visual_height = page.rect.height
+            return fitz.Point(visual_width - visual_x, visual_height - visual_y), 180
+        if rotation == 270:
+            visual_height = page.rect.height
+            return fitz.Point(visual_height - visual_y, visual_x), 270
+        # Rotacion no estandar: insertar sin rotacion (best-effort)
+        return fitz.Point(visual_x, visual_y), 0
+
     def add_text_runs_to_page(
         self,
         page_num: int,
@@ -2247,15 +2274,31 @@ class PDFDocument:
                 metrics = QFontMetrics(qfont)
                 text_width = metrics.horizontalAdvance(text)
                 
-                # Insertar el texto
-                insert_point = fitz.Point(current_x, current_y)
-                rc = page.insert_text(
-                    insert_point,
-                    text,
-                    fontsize=font_size,
-                    fontname=font_name,
-                    color=color_tuple
+                # Insertar el texto. Transformar (current_x, current_y)
+                # de coordenadas VISUALES a coordenadas del mediabox y
+                # obtener el angulo rotate correspondiente, asi el texto
+                # sale horizontal en la vista del usuario aunque la pagina
+                # tenga page.rotation != 0 (caso PDFs escaneados).
+                insert_point, rotate_angle = self._visual_point_to_mediabox(
+                    page, current_x, current_y
                 )
+                if rotate_angle:
+                    rc = page.insert_text(
+                        insert_point,
+                        text,
+                        fontsize=font_size,
+                        fontname=font_name,
+                        color=color_tuple,
+                        rotate=rotate_angle,
+                    )
+                else:
+                    rc = page.insert_text(
+                        insert_point,
+                        text,
+                        fontsize=font_size,
+                        fontname=font_name,
+                        color=color_tuple,
+                    )
                 
                 if rc <= 0:
                     print(f"Warning: insert_text failed for run '{text}' with rc={rc}")

@@ -26,7 +26,7 @@ cd "$PROJECT_ROOT"
 
 # Variables
 APP_NAME="PDF_Editor_Pro"
-VERSION="2.1.6"
+VERSION="2.1.7"
 
 # Verificar que existe la compilación
 if [ ! -d "dist/ModificadorPDF" ] && [ ! -d "dist/PDF_Editor_Pro" ]; then

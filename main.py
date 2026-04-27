@@ -59,7 +59,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("PDF Editor Pro")
     app.setOrganizationName("PDF Editor")
-    app.setApplicationVersion("2.1.6")
+    app.setApplicationVersion("2.1.7")
     
     # Aplicar estilo
     app.setStyle('Fusion')
