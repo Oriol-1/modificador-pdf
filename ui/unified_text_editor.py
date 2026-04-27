@@ -18,14 +18,18 @@ Uso desde pdf_viewer:
 """
 
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QTextEdit,
     QPushButton, QWidget, QScrollArea, QFrame, QSizePolicy,
-    QDoubleSpinBox, QToolButton
+    QDoubleSpinBox, QToolButton, QAction
 )
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QFont, QColor, QPalette
+from PyQt5.QtGui import (
+    QFont, QColor, QPalette,
+    QTextCharFormat, QTextCursor, QKeySequence, QFontMetricsF,
+)
 
-from typing import List, Optional
+from copy import copy
+from typing import List, Optional, Dict, Tuple
 from core.text_engine.page_document_model import EditableSpan
 
 
@@ -94,28 +98,101 @@ class SpanEditWidget(QFrame):
         self._size_spin.valueChanged.connect(self._on_format_changed)
         fmt_row.addWidget(self._size_spin)
         
+        # Boton NEGRITA: muy visible, con icono "B" en serif negrita real
+        # y etiqueta "Negrita" al lado para que su funcion sea inequivoca.
+        # Estados muy contrastados: gris apagado vs azul brillante.
+        # Aplica/quita negrita SOLO a la seleccion. Sin seleccion conmuta
+        # toda la linea (comportamiento legacy).
         self._bold_btn = QToolButton()
-        self._bold_btn.setText("B")
+        self._bold_btn.setText("B  Negrita")
         self._bold_btn.setCheckable(True)
         self._bold_btn.setChecked(self.span.is_bold)
-        self._bold_btn.setFixedSize(22, 22)
-        self._bold_btn.setStyleSheet(
-            "QToolButton { font-weight: bold; font-size: 11px; color: #ccc; "
-            "background: #1e1e1e; border: 1px solid #555; border-radius: 3px; }"
-            "QToolButton:checked { background: #0078d4; color: white; }"
+        self._bold_btn.setMinimumHeight(32)
+        self._bold_btn.setMinimumWidth(96)
+        self._bold_btn.setCursor(Qt.PointingHandCursor)
+        self._bold_btn.setToolTip(
+            "Negrita (Ctrl+B)\n"
+            "• Selecciona texto y pulsa Negrita para aplicar/quitar solo en esa parte\n"
+            "• Sin seleccion: aplica/quita negrita a toda la linea"
         )
-        self._bold_btn.toggled.connect(self._on_format_changed)
+        # Fuente del propio boton: la "B" se ve realmente en negrita serif
+        # y el texto "Negrita" en sans normal, dejando la accion claramente
+        # legible aunque el icono sea solo texto.
+        _bold_font = QFont("Georgia", 13)
+        _bold_font.setBold(True)
+        self._bold_btn.setFont(_bold_font)
+        self._bold_btn.setStyleSheet(
+            """
+            QToolButton {
+                color: #e0e0e0;
+                background: #2a2a2a;
+                border: 2px solid #555;
+                border-radius: 6px;
+                padding: 2px 12px 2px 10px;
+                text-align: center;
+            }
+            QToolButton:hover {
+                background: #3a3a3a;
+                border-color: #888;
+                color: white;
+            }
+            QToolButton:checked {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #1a8cff, stop:1 #0066cc);
+                border: 2px solid #00aaff;
+                color: white;
+            }
+            QToolButton:checked:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #3399ff, stop:1 #1a8cff);
+                border-color: #66ccff;
+            }
+            """
+        )
+        # Click manual (no toggled, lo gestionamos para diferenciar
+        # selection-toggle vs whole-line-toggle).
+        self._bold_btn.clicked.connect(self._on_bold_clicked)
         fmt_row.addWidget(self._bold_btn)
-        
+
+        # Boton ITALICA con estilo coherente al de negrita.
         self._italic_btn = QToolButton()
-        self._italic_btn.setText("I")
+        self._italic_btn.setText("I  Cursiva")
         self._italic_btn.setCheckable(True)
         self._italic_btn.setChecked(self.span.is_italic)
-        self._italic_btn.setFixedSize(22, 22)
+        self._italic_btn.setMinimumHeight(32)
+        self._italic_btn.setMinimumWidth(96)
+        self._italic_btn.setCursor(Qt.PointingHandCursor)
+        self._italic_btn.setToolTip("Cursiva — aplica al span entero")
+        _italic_font = QFont("Georgia", 13)
+        _italic_font.setItalic(True)
+        self._italic_btn.setFont(_italic_font)
         self._italic_btn.setStyleSheet(
-            "QToolButton { font-style: italic; font-size: 11px; color: #ccc; "
-            "background: #1e1e1e; border: 1px solid #555; border-radius: 3px; }"
-            "QToolButton:checked { background: #0078d4; color: white; }"
+            """
+            QToolButton {
+                color: #e0e0e0;
+                background: #2a2a2a;
+                border: 2px solid #555;
+                border-radius: 6px;
+                padding: 2px 12px 2px 10px;
+                text-align: center;
+            }
+            QToolButton:hover {
+                background: #3a3a3a;
+                border-color: #888;
+                color: white;
+            }
+            QToolButton:checked {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #1a8cff, stop:1 #0066cc);
+                border: 2px solid #00aaff;
+                color: white;
+            }
+            QToolButton:checked:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #3399ff, stop:1 #1a8cff);
+                border-color: #66ccff;
+            }
+            """
         )
         self._italic_btn.toggled.connect(self._on_format_changed)
         fmt_row.addWidget(self._italic_btn)
@@ -123,10 +200,17 @@ class SpanEditWidget(QFrame):
         fmt_row.addStretch()
         layout.addLayout(fmt_row)
         
-        # Campo de edición del texto
-        self.edit = QLineEdit(self.span.original_text)
+        # Campo de edicion: QTextEdit en lugar de QLineEdit para soportar
+        # negrita por seleccion (formato rico interno). Visualmente sigue
+        # siendo una linea, con altura fija ajustada al texto.
+        self.edit = QTextEdit()
+        self.edit.setAcceptRichText(False)  # paste como texto plano
+        self.edit.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.edit.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.edit.setLineWrapMode(QTextEdit.NoWrap)
+        self.edit.setTabChangesFocus(True)
         self.edit.setStyleSheet(f"""
-            QLineEdit {{
+            QTextEdit {{
                 background: #1e1e1e;
                 border: 1px solid {self._color}40;
                 border-radius: 3px;
@@ -135,20 +219,35 @@ class SpanEditWidget(QFrame):
                 font-size: 13px;
                 selection-background-color: #0078d4;
             }}
-            QLineEdit:focus {{
+            QTextEdit:focus {{
                 border: 2px solid {self._color};
                 background: #252525;
             }}
         """)
-        
-        # Aplicar fuente original para preview visual
+
+        # Fuente original para preview
         font = QFont()
         font.setFamily(self.span.font_name)
         font.setPointSizeF(min(self.span.font_size, 14))
         font.setBold(self.span.is_bold)
         font.setItalic(self.span.is_italic)
         self.edit.setFont(font)
-        
+
+        # Insertar texto inicial preservando is_bold global
+        self._set_initial_text(self.span.original_text, self.span.is_bold)
+        # Altura fija basada en una linea
+        fm = QFontMetricsF(font)
+        self.edit.setFixedHeight(int(fm.height() + 18))
+
+        # Atajo Ctrl+B + sincronizacion del boton con el cursor
+        bold_shortcut = QAction(self.edit)
+        bold_shortcut.setShortcut(QKeySequence("Ctrl+B"))
+        bold_shortcut.triggered.connect(self._on_bold_clicked)
+        self.edit.addAction(bold_shortcut)
+        self.edit.cursorPositionChanged.connect(self._sync_bold_button)
+        self.edit.selectionChanged.connect(self._sync_bold_button)
+
+        # Cambio de texto/formato
         self.edit.textChanged.connect(self._on_text_changed)
         layout.addWidget(self.edit)
         
@@ -158,10 +257,23 @@ class SpanEditWidget(QFrame):
         self._overflow_label.hide()
         layout.addWidget(self._overflow_label)
     
-    def _on_text_changed(self, new_text: str):
+    def _on_text_changed(self):
         """Llamado cuando el usuario edita el texto."""
+        new_text = self.edit.toPlainText()
+        # Bloquear saltos de linea (este editor es por linea)
+        if "\n" in new_text:
+            new_text = new_text.replace("\n", " ").replace("\r", " ")
+            self.edit.blockSignals(True)
+            cur = self.edit.textCursor()
+            pos = cur.position()
+            self.edit.setPlainText(new_text)
+            cur = self.edit.textCursor()
+            cur.setPosition(min(pos, len(new_text)))
+            self.edit.setTextCursor(cur)
+            self.edit.blockSignals(False)
+
         self.span.text = new_text
-        
+
         # Estimar desbordamiento (heurística simple basada en longitud)
         orig_len = len(self.span.original_text)
         new_len = len(new_text)
@@ -172,35 +284,139 @@ class SpanEditWidget(QFrame):
             self._overflow_label.show()
         else:
             self._overflow_label.hide()
-        
+
         self.spanModified.emit()
-    
-    def _on_format_changed(self):
-        """Llamado cuando cambia un control de formato."""
+
+    def _set_initial_text(self, text: str, bold: bool) -> None:
+        """Inicializa el QTextEdit con el texto, aplicando bold global si procede."""
+        self.edit.blockSignals(True)
+        self.edit.setPlainText(text)
+        if bold and text:
+            cur = self.edit.textCursor()
+            cur.select(QTextCursor.Document)
+            fmt = QTextCharFormat()
+            fmt.setFontWeight(QFont.Bold)
+            cur.mergeCharFormat(fmt)
+        self.edit.blockSignals(False)
+
+    # ------------------------------------------------------------------
+    # Negrita por seleccion
+    # ------------------------------------------------------------------
+    def _on_bold_clicked(self) -> None:
+        """Click en B (o Ctrl+B): si hay seleccion, conmuta solo esa parte;
+        si no hay seleccion, conmuta toda la linea (legacy)."""
+        cur = self.edit.textCursor()
+        if cur.hasSelection():
+            current_bold = cur.charFormat().fontWeight() >= QFont.Bold
+            new_weight = QFont.Normal if current_bold else QFont.Bold
+            fmt = QTextCharFormat()
+            fmt.setFontWeight(new_weight)
+            cur.mergeCharFormat(fmt)
+        else:
+            # Toggle de toda la linea (comportamiento legacy)
+            doc_cur = QTextCursor(self.edit.document())
+            doc_cur.select(QTextCursor.Document)
+            # Determinar bold mayoritario
+            all_bold = self._whole_line_is_bold()
+            new_weight = QFont.Normal if all_bold else QFont.Bold
+            fmt = QTextCharFormat()
+            fmt.setFontWeight(new_weight)
+            doc_cur.mergeCharFormat(fmt)
+        self._sync_bold_button()
+        self._on_format_state_changed()
+        self.edit.setFocus()
+
+    def _whole_line_is_bold(self) -> bool:
+        doc = self.edit.document()
+        if doc.isEmpty():
+            return False
+        block = doc.firstBlock()
+        any_text = False
+        while block.isValid():
+            it = block.begin()
+            while not it.atEnd():
+                frag = it.fragment()
+                if frag.isValid() and frag.text():
+                    any_text = True
+                    if frag.charFormat().fontWeight() < QFont.Bold:
+                        return False
+                it += 1
+            block = block.next()
+        return any_text
+
+    def _sync_bold_button(self) -> None:
+        """Refleja en el boton el estado de negrita en el cursor/seleccion."""
+        cur = self.edit.textCursor()
+        is_bold = cur.charFormat().fontWeight() >= QFont.Bold
+        self._bold_btn.blockSignals(True)
+        self._bold_btn.setChecked(is_bold)
+        self._bold_btn.blockSignals(False)
+
+    def get_bold_runs(self) -> List[Tuple[str, bool]]:
+        """Devuelve la linea como [(texto, is_bold), ...] siguiendo los
+        fragmentos del QTextEdit. Si no hay texto, lista vacia."""
+        runs: List[Tuple[str, bool]] = []
+        doc = self.edit.document()
+        block = doc.firstBlock()
+        while block.isValid():
+            it = block.begin()
+            while not it.atEnd():
+                frag = it.fragment()
+                if frag.isValid():
+                    txt = frag.text()
+                    if txt:
+                        is_bold = frag.charFormat().fontWeight() >= QFont.Bold
+                        runs.append((txt, is_bold))
+                it += 1
+            block = block.next()
+        return runs
+
+    def has_partial_bold(self) -> bool:
+        """True si hay negrita en parte de la linea pero no en toda."""
+        runs = self.get_bold_runs()
+        if not runs:
+            return False
+        bolds = {b for _, b in runs}
+        return len(bolds) > 1
+
+    def _on_format_state_changed(self) -> None:
+        """Recalcula dirty_format desde tamano + bold del cursor + italic."""
         new_size = self._size_spin.value()
-        new_bold = self._bold_btn.isChecked()
         new_italic = self._italic_btn.isChecked()
-        
-        # Marcar formato dirty en el span
+        # Bold "global": True si TODA la linea esta en bold
+        new_bold = self._whole_line_is_bold()
+        partial_bold = self.has_partial_bold()
+
         format_changed = (
             abs(new_size - self.span.font_size) > 0.01
             or new_bold != self.span.is_bold
             or new_italic != self.span.is_italic
+            or partial_bold  # negrita parcial siempre marca cambio de formato
         )
         self.span.dirty_format = format_changed
         self.span.new_font_size = new_size if abs(new_size - self.span.font_size) > 0.01 else None
         self.span.new_is_bold = new_bold if new_bold != self.span.is_bold else None
         self.span.new_is_italic = new_italic if new_italic != self.span.is_italic else None
-        
-        # Actualizar preview de fuente en el campo de edición
+
+        self.spanModified.emit()
+
+    def _on_format_changed(self):
+        """Cambio en spinbox de tamano o boton italic."""
+        new_size = self._size_spin.value()
+        new_italic = self._italic_btn.isChecked()
+
+        # Reaplicar tamano/italic al QTextEdit (preview)
         font = QFont()
         font.setFamily(self.span.font_name)
         font.setPointSizeF(min(new_size, 14))
-        font.setBold(new_bold)
+        font.setBold(self.span.is_bold)
         font.setItalic(new_italic)
         self.edit.setFont(font)
-        
-        self.spanModified.emit()
+        # Ajustar altura
+        fm = QFontMetricsF(font)
+        self.edit.setFixedHeight(int(fm.height() + 18))
+
+        self._on_format_state_changed()
     
     def set_selected(self, selected: bool):
         """Selecciona/deselecciona visualmente este span."""
@@ -459,7 +675,15 @@ def show_unified_editor(
     title: str = "Editar texto",
     selected_span: Optional[EditableSpan] = None
 ) -> Optional[List[EditableSpan]]:
-    """Muestra el editor unificado y retorna los spans editados."""
+    """Muestra el editor unificado y retorna los spans editados.
+
+    Si un span tiene negrita parcial (palabra concreta en negrita), se
+    almacena como ``span.bold_runs = [(text, is_bold), ...]`` SIN dividir
+    el span. PageWriter usa ese campo para medir el ancho real con la
+    negrita aplicada (reflow correcto) y RichTextWriter lo escribe como
+    multiples <span> inline. Asi se evita la duplicacion encima del
+    original y la linea se ajusta cuando la negrita ocupa mas anchura.
+    """
     if not spans:
         return None
 
@@ -468,11 +692,29 @@ def show_unified_editor(
     )
 
     if dialog.exec_() == QDialog.Accepted:
-        dirty = [
-            s for s in spans
-            if s.dirty or getattr(s, 'dirty_format', False)
-        ]
-        return dirty if dirty else None
+        widget_for: Dict[int, "SpanEditWidget"] = {
+            id(w.span): w for w in dialog._span_widgets
+        }
+        dirty_out: List[EditableSpan] = []
+        for s in spans:
+            w = widget_for.get(id(s))
+            if w is not None:
+                if w.has_partial_bold():
+                    runs = w.get_bold_runs()
+                    s.bold_runs = runs
+                    full_text = "".join(t for t, _ in runs)
+                    # Asegurar que el texto efectivo coincide con la suma de runs
+                    if full_text != s.original_text:
+                        s.new_text = full_text
+                        s.dirty = True
+                    s.dirty_format = True
+                else:
+                    # Sin negrita parcial: limpiar bold_runs por si quedo de
+                    # una edicion anterior
+                    s.bold_runs = None
+            if s.dirty or getattr(s, 'dirty_format', False):
+                dirty_out.append(s)
+        return dirty_out if dirty_out else None
 
     # Si se canceló, revertir los cambios
     for span in spans:
@@ -482,5 +724,6 @@ def show_unified_editor(
         span.new_font_size = None
         span.new_is_bold = None
         span.new_is_italic = None
+        span.bold_runs = None
 
     return None

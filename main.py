@@ -5,6 +5,33 @@ Mantiene la tipografía original y preserva formularios y estructura del documen
 
 import sys
 import os
+import faulthandler
+
+# Habilitar faulthandler: si ocurre un segfault o crash de C (PyMuPDF, PyQt),
+# imprime un traceback Python apuntando a la linea exacta antes de morir.
+# Asi podemos diagnosticar crashes nativos en lugar de quedarnos a ciegas.
+try:
+    faulthandler.enable()
+except Exception:
+    pass
+
+# Hook de excepciones globales: captura cualquier excepcion no controlada
+# que escape al event loop de Qt. Sin esto, una excepcion no atrapada
+# puede provocar que Qt aborte el proceso silenciosamente. Imprimimos el
+# traceback completo para poder diagnosticar.
+def _excepthook(exc_type, exc_value, exc_tb):
+    import traceback
+    try:
+        sys.stderr.write("\n=== UNHANDLED EXCEPTION ===\n")
+        traceback.print_exception(exc_type, exc_value, exc_tb)
+        sys.stderr.write("=== END EXCEPTION ===\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
+    # Mantener comportamiento por defecto tambien
+    sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+sys.excepthook = _excepthook
 
 # Reconfigurar stdout/stderr a UTF-8 con errors='replace' para que ningún
 # print con caracteres no codificables en la consola Windows (cp1252) pueda

@@ -68,6 +68,13 @@ class EditableSpan:
     new_char_spacing: Optional[float] = None
     new_word_spacing: Optional[float] = None
     dirty_format: bool = False
+
+    # Negrita por fragmento dentro del mismo span (palabra concreta en
+    # negrita sin afectar al resto de la linea). Lista de (texto, is_bold).
+    # Si es None, se aplica la negrita global del span. Cuando esta puesto,
+    # _measure_text_width usa el ancho real considerando la negrita por
+    # trozo, y RichTextWriter genera multiples <span> inline.
+    bold_runs: Optional[List[Tuple[str, bool]]] = None
     
     @property
     def text(self) -> str:

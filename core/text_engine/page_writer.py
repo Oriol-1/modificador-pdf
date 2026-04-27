@@ -175,22 +175,39 @@ class PageWriter:
         return (affected_spans, new_positions)
     
     def _measure_text_width(self, span: EditableSpan) -> float:
-        """Mide el ancho del texto actual del span usando la fuente correcta."""
-        is_bold = span.effective_is_bold
+        """Mide el ancho del texto actual del span usando la fuente correcta.
+
+        Si el span tiene ``bold_runs`` (negrita parcial por fragmento), se
+        suman los anchos de cada trozo con su negrita propia, para que el
+        reflow tenga en cuenta que las palabras en negrita ocupan mas.
+        """
         font_size = span.effective_font_size
-        font = self._resolve_font(span.font_name, span.font_name_pdf, is_bold)
+
+        # Helper que mide un texto dado con cierta negrita
+        def _measure(text: str, is_bold: bool) -> float:
+            font = self._resolve_font(span.font_name, span.font_name_pdf, is_bold)
+            try:
+                return font.text_length(text, fontsize=font_size)
+            except Exception:
+                return len(text) * font_size * 0.6
+
         try:
-            width = font.text_length(span.text, fontsize=font_size)
-            # Añadir efectos de char_spacing/word_spacing
+            if span.bold_runs:
+                width = sum(_measure(t, b) for t, b in span.bold_runs if t)
+                full_text = "".join(t for t, _ in span.bold_runs)
+            else:
+                width = _measure(span.text, span.effective_is_bold)
+                full_text = span.text
+
+            # Efectos de char_spacing/word_spacing sobre el texto completo
             char_sp = span.effective_char_spacing
-            if abs(char_sp) > 0.001 and len(span.text) > 1:
-                width += char_sp * (len(span.text) - 1)
+            if abs(char_sp) > 0.001 and len(full_text) > 1:
+                width += char_sp * (len(full_text) - 1)
             word_sp = span.effective_word_spacing
             if abs(word_sp) > 0.001:
-                width += word_sp * span.text.count(' ')
+                width += word_sp * full_text.count(' ')
             return width
         except Exception:
-            # Fallback: estimación basada en caracteres
             return len(span.text) * font_size * 0.6
     
     def _get_line_spacing(self, paragraph: Paragraph) -> float:
@@ -249,7 +266,14 @@ class PageWriter:
                         rect = fitz.Rect(px - 0.5, py - h, px + w + 0.5, py + 0.5)
                     else:
                         rect = None
-                    rtw.write_spans([span], rect=rect)
+                    result = rtw.write_spans([span], rect=rect)
+                    # Si RichTextWriter falla (p.ej. excepción interna en
+                    # insert_htmlbox), reescribir con TextWriter estándar
+                    # para no perder el span (el caso típico es la negrita
+                    # en una palabra al mover+editar). El font con is_bold
+                    # se resuelve en _write_spans_textwriter.
+                    if not result.success:
+                        self._write_spans_textwriter([span])
             
             # Spans sin formato → TextWriter estándar
             if std_spans:

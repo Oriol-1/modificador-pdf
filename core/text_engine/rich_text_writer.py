@@ -91,7 +91,21 @@ class RichTextWriter:
         
         try:
             overflow = self._page.insert_htmlbox(rect, html_content)
-            has_overflow = overflow is not None and overflow > 0
+            # PyMuPDF >= 1.23 devuelve (spare_height, scale): spare<0 = overflow.
+            # Versiones antiguas devolvían un entero/float (overflow chars > 0).
+            has_overflow = False
+            if overflow is not None:
+                if isinstance(overflow, tuple):
+                    if overflow:
+                        try:
+                            has_overflow = float(overflow[0]) < 0.0
+                        except (TypeError, ValueError):
+                            has_overflow = False
+                else:
+                    try:
+                        has_overflow = float(overflow) > 0.0
+                    except (TypeError, ValueError):
+                        has_overflow = False
             return WriteResult(
                 success=True,
                 overflow=has_overflow,
@@ -119,50 +133,56 @@ class RichTextWriter:
     def _spans_to_html(self, spans: List[EditableSpan]) -> str:
         """
         Convierte una lista de EditableSpan a HTML inline.
-        
-        Cada span se convierte en un <span> con estilos CSS inline.
+
+        Cada span se convierte en uno o varios <span> con estilos CSS
+        inline. Si el span trae ``bold_runs`` (negrita por fragmento),
+        emite un <span> por cada trozo con su font-weight propio.
         """
         html_parts = []
-        
+
         for span in spans:
-            style_parts = []
-            
-            # Familia de fuente
-            font_family = self._resolve_font_family(span.font_name)
-            style_parts.append(f"font-family:{font_family}")
-            
-            # Tamaño
-            size = span.effective_font_size
-            style_parts.append(f"font-size:{size:.1f}pt")
-            
-            # Bold
-            if span.effective_is_bold:
-                style_parts.append("font-weight:bold")
-            
-            # Italic
-            if span.effective_is_italic:
-                style_parts.append("font-style:italic")
-            
-            # Color
-            color = span.effective_color
-            if color and color != "#000000":
-                style_parts.append(f"color:{color}")
-            
-            # Espaciado entre caracteres (letter-spacing CSS)
-            char_sp = span.effective_char_spacing
-            if abs(char_sp) > 0.001:
-                style_parts.append(f"letter-spacing:{char_sp:.2f}pt")
-            
-            # Word spacing
-            word_sp = span.effective_word_spacing
-            if abs(word_sp) > 0.001:
-                style_parts.append(f"word-spacing:{word_sp:.2f}pt")
-            
-            style = ";".join(style_parts)
-            text = html.escape(span.text)
-            html_parts.append(f'<span style="{style}">{text}</span>')
-        
+            # Estilos comunes (todo excepto bold)
+            common_style = self._common_style_parts(span)
+
+            if span.bold_runs:
+                # Emite un <span> por trozo, con bold por fragmento
+                for txt, is_bold in span.bold_runs:
+                    if not txt:
+                        continue
+                    parts = list(common_style)
+                    if is_bold:
+                        parts.append("font-weight:bold")
+                    html_parts.append(
+                        f'<span style="{";".join(parts)}">{html.escape(txt)}</span>'
+                    )
+            else:
+                parts = list(common_style)
+                if span.effective_is_bold:
+                    parts.append("font-weight:bold")
+                html_parts.append(
+                    f'<span style="{";".join(parts)}">{html.escape(span.text)}</span>'
+                )
+
         return "".join(html_parts)
+
+    def _common_style_parts(self, span: EditableSpan) -> list:
+        """Devuelve la lista de estilos CSS comunes (sin font-weight)."""
+        style_parts: list = []
+        font_family = self._resolve_font_family(span.font_name)
+        style_parts.append(f"font-family:{font_family}")
+        style_parts.append(f"font-size:{span.effective_font_size:.1f}pt")
+        if span.effective_is_italic:
+            style_parts.append("font-style:italic")
+        color = span.effective_color
+        if color and color != "#000000":
+            style_parts.append(f"color:{color}")
+        char_sp = span.effective_char_spacing
+        if abs(char_sp) > 0.001:
+            style_parts.append(f"letter-spacing:{char_sp:.2f}pt")
+        word_sp = span.effective_word_spacing
+        if abs(word_sp) > 0.001:
+            style_parts.append(f"word-spacing:{word_sp:.2f}pt")
+        return style_parts
     
     def _resolve_font_family(self, font_name: str) -> str:
         """Resuelve el nombre de fuente a una familia CSS."""

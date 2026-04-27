@@ -404,6 +404,11 @@ class WorkspaceManager:
                     f.write(modified_content)
                 result['modified'] = modified_dest
                 print(f"DEBUG: ✅ Modificado guardado en: {modified_dest}")
+            else:
+                # Modo "calcular ruta sin escribir": el caller hara la
+                # escritura directa via doc.save(), evitando el coste
+                # de materializar tobytes() en memoria.
+                result['modified'] = modified_dest
             
             # 2. Calcular destino para el original (se moverá después de cerrar)
             original_dest = os.path.join(group.original_folder, filename)
@@ -842,6 +847,211 @@ class WorkspaceStatusWidget(QFrame):
             self.pending_label.hide()
             self.btn_pending.hide()
             self.btn_config.setText("⚙️ Configurar")
+
+
+class GroupActionBar(QFrame):
+    """Barra de acción persistente para flujo de edición por grupos.
+
+    Aparece SOLO cuando hay un workspace activo con grupo seleccionado.
+    Guía al usuario paso a paso:
+
+    - Mientras quedan PDFs por guardar -> botón grande "Guardar cambios"
+      en azul brillante (acción primaria del flujo de edición).
+    - Cuando todos los PDFs del grupo están guardados -> el botón cambia
+      a "Terminar grupo" en verde (cierra el flujo con seguridad).
+
+    El usuario siempre tiene la acción siguiente claramente identificada
+    y a la vista, evitando confusión sobre qué hacer en cada paso.
+    """
+
+    saveRequested = pyqtSignal()
+    finishRequested = pyqtSignal()
+
+    def __init__(self, workspace_manager: WorkspaceManager, parent=None):
+        super().__init__(parent)
+        self.workspace_manager = workspace_manager
+        self._is_finish_state = False
+        self._setup_ui()
+        self.update_state()
+
+    def _setup_ui(self):
+        self.setObjectName("GroupActionBar")
+        self.setStyleSheet(
+            """
+            #GroupActionBar {
+                background-color: #1e2530;
+                border: none;
+                border-top: 1px solid #2a3340;
+                border-bottom: 2px solid #0078d4;
+            }
+            #GroupActionBar QLabel { color: #e6edf3; }
+            #GroupActionBar QLabel#groupName {
+                font-size: 13px; font-weight: bold; color: #ffffff;
+            }
+            #GroupActionBar QLabel#groupProgress {
+                font-size: 12px; color: #9aa6b2;
+            }
+            QPushButton#primaryAction {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #1a8cff, stop:1 #0066cc);
+                color: white;
+                border: 2px solid #00aaff;
+                border-radius: 6px;
+                font-size: 14px;
+                font-weight: bold;
+                padding: 10px 28px;
+                min-width: 220px;
+                min-height: 40px;
+            }
+            QPushButton#primaryAction:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #3399ff, stop:1 #1a8cff);
+                border-color: #66ccff;
+            }
+            QPushButton#primaryAction:pressed {
+                background: #0066cc;
+            }
+            QPushButton#primaryAction:disabled {
+                background: #3a3a3a;
+                color: #888;
+                border: 2px solid #555;
+            }
+            QPushButton#finishAction {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #2bbf6a, stop:1 #1f9352);
+                color: white;
+                border: 2px solid #4cd884;
+                border-radius: 6px;
+                font-size: 14px;
+                font-weight: bold;
+                padding: 10px 28px;
+                min-width: 220px;
+                min-height: 40px;
+            }
+            QPushButton#finishAction:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #44d884, stop:1 #2bbf6a);
+                border-color: #7fe8a6;
+            }
+            QPushButton#finishAction:pressed { background: #1f9352; }
+            """
+        )
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(16, 8, 16, 8)
+        layout.setSpacing(14)
+
+        # Bloque izquierdo: nombre del grupo + progreso
+        info_box = QVBoxLayout()
+        info_box.setSpacing(2)
+        info_box.setContentsMargins(0, 0, 0, 0)
+
+        self.group_name_label = QLabel("📁 Sin grupo activo")
+        self.group_name_label.setObjectName("groupName")
+        info_box.addWidget(self.group_name_label)
+
+        self.progress_label = QLabel("")
+        self.progress_label.setObjectName("groupProgress")
+        info_box.addWidget(self.progress_label)
+
+        layout.addLayout(info_box)
+        layout.addStretch()
+
+        # Bloque centro: indicación textual del paso actual
+        self.step_label = QLabel("")
+        self.step_label.setStyleSheet(
+            "color: #9aa6b2; font-size: 12px; font-style: italic;"
+        )
+        layout.addWidget(self.step_label)
+        layout.addStretch()
+
+        # Botón principal (cambia entre Guardar y Terminar)
+        self.primary_btn = QPushButton("💾 GUARDAR CAMBIOS")
+        self.primary_btn.setObjectName("primaryAction")
+        self.primary_btn.setCursor(Qt.PointingHandCursor)
+        self.primary_btn.clicked.connect(self._on_primary_clicked)
+        layout.addWidget(self.primary_btn)
+
+    def _on_primary_clicked(self):
+        if self._is_finish_state:
+            self.finishRequested.emit()
+        else:
+            self.saveRequested.emit()
+
+    def update_state(self, has_open_pdf: bool = True):
+        """Actualiza nombre, progreso y modo (Guardar vs Terminar).
+
+        Args:
+            has_open_pdf: True si hay un PDF abierto en el editor. Si es
+                False y el grupo no esta completo, el boton Guardar se
+                muestra deshabilitado (no hay nada que guardar).
+        """
+        if not self.workspace_manager.is_workspace_active():
+            self.hide()
+            return
+        group = self.workspace_manager.current_group
+        if group is None:
+            self.hide()
+            return
+
+        self.show()
+        # Truncar nombre largo
+        gname = group.name
+        if len(gname) > 50:
+            gname = gname[:47] + "..."
+        pending = group.get_pending_count()
+        modified = group.get_modified_count()
+        total = pending + modified
+        self.group_name_label.setText(f"📁 Grupo: {gname}")
+        self.progress_label.setText(
+            f"{modified} de {total} PDF{'s' if total != 1 else ''} guardado{'s' if modified != 1 else ''}"
+            f"   •   {pending} pendiente{'s' if pending != 1 else ''}"
+        )
+
+        if pending == 0 and modified > 0:
+            # Todos los PDFs del grupo guardados -> mostrar Terminar
+            self._is_finish_state = True
+            self.primary_btn.setText("✓ TERMINAR GRUPO")
+            self.primary_btn.setObjectName("finishAction")
+            self.primary_btn.setToolTip(
+                "Todos los PDFs del grupo han sido guardados.\n"
+                "Pulsa para cerrar el flujo y volver al inicio."
+            )
+            self.step_label.setText("✓ Todos los PDFs guardados")
+            self.step_label.setStyleSheet(
+                "color: #4cd884; font-size: 12px; font-weight: bold;"
+            )
+            self.primary_btn.setEnabled(True)
+        else:
+            # Aun quedan PDFs por guardar -> Guardar cambios
+            self._is_finish_state = False
+            self.primary_btn.setText("💾 GUARDAR CAMBIOS")
+            self.primary_btn.setObjectName("primaryAction")
+            self.primary_btn.setToolTip(
+                "Guardar los cambios del PDF actual (Ctrl+S)\n"
+                "Despues podras avanzar al siguiente PDF del grupo."
+            )
+            if has_open_pdf:
+                self.step_label.setText(
+                    "Paso actual: edita y pulsa Guardar para avanzar al siguiente PDF"
+                )
+                self.step_label.setStyleSheet(
+                    "color: #9aa6b2; font-size: 12px; font-style: italic;"
+                )
+                self.primary_btn.setEnabled(True)
+            else:
+                self.step_label.setText(
+                    "Abre un PDF pendiente para empezar a editarlo"
+                )
+                self.step_label.setStyleSheet(
+                    "color: #9aa6b2; font-size: 12px; font-style: italic;"
+                )
+                self.primary_btn.setEnabled(False)
+
+        # Re-aplicar stylesheet para que el cambio de objectName tenga efecto
+        self.primary_btn.setStyle(self.primary_btn.style())
+        self.style().unpolish(self.primary_btn)
+        self.style().polish(self.primary_btn)
 
 
 class PendingPDFsDialog(QDialog):

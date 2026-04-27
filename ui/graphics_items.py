@@ -7,10 +7,13 @@ from PyQt5.QtWidgets import (
     QGraphicsRectItem, QGraphicsTextItem, QGraphicsDropShadowEffect,
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QTextEdit,
     QSpinBox, QCheckBox, QDialogButtonBox, QGroupBox, QMenu, QToolButton,
-    QGraphicsPixmapItem
+    QGraphicsPixmapItem, QAction
 )
 from PyQt5.QtCore import Qt, QRectF, QPointF
-from PyQt5.QtGui import QPen, QBrush, QColor, QCursor, QFont, QPixmap, QPainter
+from PyQt5.QtGui import (
+    QPen, QBrush, QColor, QCursor, QFont, QPixmap, QPainter,
+    QTextCharFormat, QKeySequence, QTextCursor,
+)
 
 from enum import IntEnum
 
@@ -88,9 +91,18 @@ class TextEditDialog(QDialog):
     """
     Diálogo para editar texto con opciones de formato.
     Usa QTextEdit para soportar textos grandes y multilínea.
+
+    Soporte de NEGRITA POR SELECCIÓN: el botón "B" (o Ctrl+B) aplica/quita
+    negrita ÚNICAMENTE al texto seleccionado en el editor. Si no hay
+    selección, alterna el estilo del cursor para lo que se escriba a
+    continuación. El resto del texto no se ve afectado.
+
+    Si se pasa ``text_runs`` con estilos por fragmento, el diálogo los
+    reproduce y los devuelve actualizados en ``get_values()``.
     """
-    def __init__(self, text: str = "", font_size: int = 12, is_bold: bool = False, 
-                 title: str = "Editar texto", parent=None):
+    def __init__(self, text: str = "", font_size: int = 12, is_bold: bool = False,
+                 title: str = "Editar texto", parent=None,
+                 text_runs: list = None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setMinimumSize(500, 350)
@@ -242,19 +254,71 @@ class TextEditDialog(QDialog):
         symbols_layout.addStretch()
         text_layout.addLayout(symbols_layout)
         
+        # Botón de NEGRITA aplicado a la selección (toolbar superior)
+        self._bold_btn = QToolButton()
+        self._bold_btn.setText("B")
+        self._bold_btn.setToolTip("Negrita en la selección (Ctrl+B)")
+        self._bold_btn.setCheckable(True)
+        self._bold_btn.setFixedSize(36, 36)
+        self._bold_btn.setStyleSheet(
+            """
+            QToolButton {
+                font-weight: bold;
+                font-size: 16px;
+                background: #3d3d3d;
+                border: 2px solid #555;
+                border-radius: 6px;
+                color: #cccccc;
+            }
+            QToolButton:hover { background: #4a4a4a; border-color: #0078d4; color: white; }
+            QToolButton:checked { background: #0078d4; border-color: #00aaff; color: white; }
+            """
+        )
+        symbols_layout.addWidget(self._bold_btn)
+
         # QTextEdit multilínea
         self.text_edit = QTextEdit()
-        self.text_edit.setPlainText(text)
-        self.text_edit.setPlaceholderText("Escribe el texto aquí...")
+        # Aceptamos rich text internamente para poder almacenar negritas por
+        # fragmento. La inserción/pegado se filtra a texto plano para no
+        # introducir estilos foráneos al copiar desde otras fuentes.
         self.text_edit.setAcceptRichText(False)
+        self.text_edit.setPlaceholderText("Escribe el texto aquí...")
+
+        # Cargar contenido inicial: si vienen text_runs los respetamos para
+        # preservar negritas por fragmento; si no, plain text con el bold
+        # global indicado.
+        self._initial_font_size = float(font_size)
+        if text_runs:
+            self._load_runs_into_editor(text_runs, default_text=text,
+                                        default_bold=is_bold)
+        else:
+            self.text_edit.setPlainText(text)
+            if is_bold:
+                cursor = self.text_edit.textCursor()
+                cursor.select(QTextCursor.Document)
+                fmt = QTextCharFormat()
+                fmt.setFontWeight(QFont.Bold)
+                cursor.mergeCharFormat(fmt)
+
         text_layout.addWidget(self.text_edit, 1)
-        
+
+        # Atajo Ctrl+B y conexiones
+        self._bold_btn.clicked.connect(self._toggle_bold_selection)
+        bold_shortcut = QAction(self)
+        bold_shortcut.setShortcut(QKeySequence("Ctrl+B"))
+        bold_shortcut.triggered.connect(self._toggle_bold_selection)
+        self.text_edit.addAction(bold_shortcut)
+        # El estado del botón refleja la negrita en el cursor actual
+        self.text_edit.cursorPositionChanged.connect(self._sync_bold_button)
+        self.text_edit.selectionChanged.connect(self._sync_bold_button)
+        self._sync_bold_button()
+
         layout.addWidget(text_group, 1)
-        
-        # Grupo de formato
+
+        # Grupo de formato (sólo tamaño global; la negrita ya es por selección)
         format_group = QGroupBox("Formato")
         format_layout = QHBoxLayout(format_group)
-        
+
         size_layout = QHBoxLayout()
         size_label = QLabel("Tamaño:")
         self.size_spin = QSpinBox()
@@ -264,11 +328,11 @@ class TextEditDialog(QDialog):
         size_layout.addWidget(size_label)
         size_layout.addWidget(self.size_spin)
         format_layout.addLayout(size_layout)
-        
-        self.bold_check = QCheckBox("Negrita")
-        self.bold_check.setChecked(is_bold)
-        format_layout.addWidget(self.bold_check)
-        
+
+        hint = QLabel("Selecciona texto y pulsa B (o Ctrl+B) para negrita")
+        hint.setStyleSheet("color: #888;")
+        format_layout.addWidget(hint)
+
         format_layout.addStretch()
         layout.addWidget(format_group)
         
@@ -288,13 +352,110 @@ class TextEditDialog(QDialog):
         """Inserta un símbolo en la posición actual del cursor."""
         self.text_edit.insertPlainText(symbol)
         self.text_edit.setFocus()
-    
+
+    # ------------------------------------------------------------------
+    # Negrita por selección
+    # ------------------------------------------------------------------
+    def _toggle_bold_selection(self) -> None:
+        """Aplica/quita negrita al texto seleccionado. Si no hay selección,
+        cambia el estilo del cursor para lo que se escriba a continuación."""
+        cursor = self.text_edit.textCursor()
+        # Determinar estado actual: si la selección/posición ya está en bold,
+        # quitarlo; en caso contrario, ponerlo.
+        current_weight = cursor.charFormat().fontWeight()
+        new_weight = QFont.Normal if current_weight >= QFont.Bold else QFont.Bold
+        fmt = QTextCharFormat()
+        fmt.setFontWeight(new_weight)
+        if cursor.hasSelection():
+            cursor.mergeCharFormat(fmt)
+        else:
+            self.text_edit.mergeCurrentCharFormat(fmt)
+        self._sync_bold_button()
+        self.text_edit.setFocus()
+
+    def _sync_bold_button(self) -> None:
+        """Sincroniza el estado pulsado del botón B con el formato actual."""
+        cursor = self.text_edit.textCursor()
+        is_bold = cursor.charFormat().fontWeight() >= QFont.Bold
+        self._bold_btn.blockSignals(True)
+        self._bold_btn.setChecked(is_bold)
+        self._bold_btn.blockSignals(False)
+
+    def _load_runs_into_editor(self, runs, default_text: str,
+                                default_bold: bool) -> None:
+        """Carga una lista de runs (con is_bold) en el QTextEdit como texto
+        plano con formato por fragmento. Salta cualquier estilo no soportado."""
+        self.text_edit.clear()
+        cursor = self.text_edit.textCursor()
+        wrote_any = False
+        for run in runs or []:
+            t = str(run.get('text', ''))
+            if not t:
+                if run.get('needs_newline'):
+                    cursor.insertBlock()
+                continue
+            fmt = QTextCharFormat()
+            fmt.setFontWeight(
+                QFont.Bold if run.get('is_bold') else QFont.Normal
+            )
+            cursor.insertText(t, fmt)
+            wrote_any = True
+        if not wrote_any:
+            # Fallback al texto plano original si los runs estaban vacíos
+            cursor.insertText(default_text or "")
+            if default_bold:
+                cursor.select(QTextCursor.Document)
+                fmt = QTextCharFormat()
+                fmt.setFontWeight(QFont.Bold)
+                cursor.mergeCharFormat(fmt)
+
+    def _extract_runs_from_editor(self):
+        """Recorre el QTextDocument y produce una lista de runs con
+        is_bold por fragmento, preservando saltos de línea."""
+        runs = []
+        doc = self.text_edit.document()
+        block = doc.firstBlock()
+        first_block = True
+        while block.isValid():
+            needs_newline = not first_block
+            it = block.begin()
+            block_had_text = False
+            while not it.atEnd():
+                frag = it.fragment()
+                if frag.isValid():
+                    text = frag.text()
+                    if text:
+                        runs.append({
+                            'text': text,
+                            'is_bold': frag.charFormat().fontWeight() >= QFont.Bold,
+                            'needs_newline': needs_newline and not block_had_text,
+                        })
+                        block_had_text = True
+                it += 1
+            if not block_had_text and not first_block:
+                # Línea vacía: insertar marcador de salto sin texto
+                runs.append({'text': '', 'is_bold': False, 'needs_newline': True})
+            block = block.next()
+            first_block = False
+        return runs
+
     def get_values(self):
-        """Retorna los valores del diálogo."""
+        """Retorna los valores del diálogo.
+
+        Incluye ``text_runs`` con la información de negrita por fragmento,
+        para preservar los formatos parciales aplicados por el usuario.
+        ``is_bold`` se conserva por compatibilidad y refleja si TODO el
+        texto está en negrita.
+        """
+        runs = self._extract_runs_from_editor()
+        all_bold = bool(runs) and all(
+            r.get('is_bold', False) for r in runs if r.get('text')
+        )
         return {
             'text': self.text_edit.toPlainText(),
             'font_size': self.size_spin.value(),
-            'is_bold': self.bold_check.isChecked()
+            'is_bold': all_bold,
+            'text_runs': runs,
         }
 
 

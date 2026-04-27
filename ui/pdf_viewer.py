@@ -4,13 +4,13 @@ Visor de páginas PDF con soporte para zoom, scroll y selección de texto.
 
 from PyQt5.QtWidgets import (
     QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
-    QGraphicsRectItem, QMenu, QAction, QInputDialog, QMessageBox,
+    QGraphicsRectItem, QGraphicsPathItem, QMenu, QAction, QInputDialog, QMessageBox,
     QToolTip, QDialog
 )
 from PyQt5.QtCore import Qt, QRectF, pyqtSignal, QPointF, QTimer, QRect
 from PyQt5.QtGui import (
     QPixmap, QImage, QPen, QBrush, QColor, QPainter, QCursor,
-    QFont, QFontMetrics
+    QFont, QFontMetrics, QPainterPath
 )
 import fitz
 from collections import Counter
@@ -130,6 +130,9 @@ class PDFPageView(QGraphicsView):
     pageClicked = pyqtSignal(QPointF)  # Click en la página
     zoomChanged = pyqtSignal(float)  # Cambio de zoom
     documentModified = pyqtSignal()  # Emitida cuando el documento se modifica
+    userInteractionStarted = pyqtSignal()  # Drag/edit comienza (pausa background)
+    userInteractionEnded = pyqtSignal()  # Drag/edit termina (reanuda background)
+    pageChanged = pyqtSignal(int)  # Emitida al cambiar de pagina por scroll/teclado
     
     # Señales de hit-testing (Phase 3C)
     spanHovered = pyqtSignal(object)  # TextSpanMetrics cuando el cursor está sobre un span
@@ -308,19 +311,16 @@ class PDFPageView(QGraphicsView):
         self._hit_tester = TextHitTester(font_manager=font_manager)
     
     def _init_properties_tooltip(self) -> None:
-        """Inicializar el tooltip de propiedades tipográficas."""
-        if not HAS_TEXT_TOOLTIP:
-            return
-        
-        # Crear tooltip con configuración estándar
-        self._properties_tooltip = create_text_properties_tooltip(
-            parent=self,
-            style=TooltipStyle.STANDARD,
-            dark_theme=True
-        )
-        
-        # Conectar señal de hover
-        self.spanHovered.connect(self._properties_tooltip.on_span_hovered)
+        """Tooltip de propiedades tipograficas DESACTIVADO.
+
+        El tooltip mostraba fuente, tamaño, estilo, color, embedding y
+        fallback al pasar por encima de un texto. El usuario pidió que
+        no apareciera ninguna informacion al hacer hover.
+
+        Se deja el atributo a None para que el resto del viewer no
+        falle al consultarlo, y no conectamos la senal spanHovered.
+        """
+        self._properties_tooltip = None
     
     def set_tooltip_style(self, style: 'TooltipStyle') -> None:
         """
@@ -544,15 +544,30 @@ class PDFPageView(QGraphicsView):
         return self._selection_overlay.has_selection
 
     def _update_hit_tester_document(self) -> None:
-        """Actualizar el documento en el hit-tester."""
+        """Actualizar el documento en el hit-tester.
+
+        BUG ANTERIOR: comprobaba ``pdf_doc._doc`` (con underscore) pero el
+        atributo real en PDFDocument es ``doc`` (sin). Como hasattr fallaba,
+        ``set_document(None)`` se llamaba y el hit_tester quedaba sin doc:
+        cada hover en el viewer reintentaba extraer el cache (stale o
+        nulo), causando microsegmentos de UI bloqueada en PDFs con muchos
+        spans (los "tirones" reportados).
+        """
         if not self._hit_tester:
             return
-        
-        if self.pdf_doc and hasattr(self.pdf_doc, '_doc'):
-            # Acceder al documento fitz subyacente
-            self._hit_tester.set_document(self.pdf_doc._doc)
-        else:
-            self._hit_tester.set_document(None)
+
+        fitz_doc = None
+        if self.pdf_doc is not None:
+            # PDFDocument.doc es el fitz.Document. Aceptamos tambien _doc
+            # por si algun consumidor antiguo lo expusiera con underscore.
+            fitz_doc = getattr(self.pdf_doc, 'doc', None) or getattr(self.pdf_doc, '_doc', None)
+        # Invalidar cache anterior antes de cambiar el doc para evitar
+        # que un hover dispare extracciones contra el doc antiguo.
+        try:
+            self._hit_tester.clear_cache()
+        except Exception:
+            pass
+        self._hit_tester.set_document(fitz_doc)
     
     def invalidate_hit_test_cache(self, page_num: int = None) -> None:
         """
@@ -738,25 +753,66 @@ class PDFPageView(QGraphicsView):
     
     # ========== End Hit-Testing Methods ==========
     
+    def begin_bulk_load(self):
+        """Activa el modo bulk: render_page se vuelve no-op y solo
+        marca _render_pending. Llamar antes de varias operaciones que
+        dispararian render_page (set_tool_mode, set_zoom, etc.).
+        """
+        self._suppress_render = True
+        self._render_pending = False
+
+    def end_bulk_load(self):
+        """Desactiva el modo bulk y ejecuta UN render_page final si
+        alguna operacion lo solicito durante el bloque."""
+        self._suppress_render = False
+        if getattr(self, '_render_pending', False):
+            self._render_pending = False
+            self.render_page()
+
     def set_pdf_document(self, pdf_doc):
-        """Establece el documento PDF a mostrar."""
-        # Limpiar estado anterior completamente
+        """Establece el documento PDF a mostrar.
+
+        OPTIMIZACION: anteriormente se hacian dos render_page completos
+        en el primer cargado (load_page(0) al zoom actual + fit_width
+        que vuelve a renderizar al zoom de ajuste). Ahora calculamos el
+        zoom de ajuste ANTES del primer render usando las dimensiones
+        de la pagina directamente, asi solo se renderiza una vez.
+        """
         self.clear_all_state()
-        
+
         self.pdf_doc = pdf_doc
         if pdf_doc and pdf_doc.is_open():
-            # Conectar callbacks para el sistema de undo con overlays
             pdf_doc.set_overlay_callbacks(
                 self.get_overlay_state,
                 self.restore_overlay_state
             )
-            # Actualizar hit-tester con el nuevo documento
             self._update_hit_tester_document()
-            # Actualizar integrador de texto con el nuevo documento
             self._update_text_integrator_document()
-            self.load_page(0)
-            # Ajustar al ancho automáticamente al abrir documento
-            self.fit_width()
+
+            # Pre-calcular zoom de fit-width SIN renderizar todavia, asi
+            # el primer render se hace ya al zoom correcto.
+            self.current_page = 0
+            try:
+                page_info = self.pdf_doc.get_page_info(0)
+                if page_info and page_info.get('rect') is not None:
+                    rotation = page_info.get('rotation', 0)
+                    rect = page_info['rect']
+                    if rotation in (90, 270):
+                        page_w_pt = rect.height
+                    else:
+                        page_w_pt = rect.width
+                    view_w = self.viewport().width() - 20
+                    if page_w_pt > 0 and view_w > 0:
+                        new_zoom = view_w / page_w_pt
+                        new_zoom = max(self.min_zoom, min(new_zoom, self.max_zoom))
+                        self.zoom_level = new_zoom
+                        if hasattr(self, 'coord_converter'):
+                            self.coord_converter.update(zoom_level=self.zoom_level)
+            except Exception as e:
+                print(f"set_pdf_document: pre-calculo de fit fallo: {e}")
+
+            self.render_page()
+            self.zoomChanged.emit(self.zoom_level)
     
     def clear_all_state(self):
         """Limpia todo el estado del visor para evitar conflictos."""
@@ -899,7 +955,12 @@ class PDFPageView(QGraphicsView):
         """Renderiza la página actual con el nivel de zoom actual."""
         if not self.pdf_doc or not self.pdf_doc.is_open():
             return
-        
+
+        # Si esta activado el suppress, marcar render pendiente y salir.
+        # flush_pending_render lo ejecutara cuando se desactive el flag.
+        if getattr(self, '_suppress_render', False):
+            self._render_pending = True
+            return
         # Limpiar escena
         self.scene.clear()
         self.highlight_items.clear()
@@ -927,12 +988,12 @@ class PDFPageView(QGraphicsView):
         
         # Actualizar convertidor de coordenadas
         self.coord_converter.update(zoom_level=self.zoom_level, page_rotation=self.page_rotation)
-        
+
         # Renderizar página
         pixmap = self.pdf_doc.render_page(self.current_page, self.zoom_level)
         if not pixmap:
             return
-        
+
         # Guardar tamaño del pixmap para conversión de coordenadas
         self.pixmap_width = pixmap.width
         self.pixmap_height = pixmap.height
@@ -954,26 +1015,44 @@ class PDFPageView(QGraphicsView):
         # Ajustar escena
         self.scene.setSceneRect(self.page_item.boundingRect())
         
-        # Mostrar indicadores de texto seleccionable si está en modo eliminar
-        if self.tool_mode == 'delete':
-            self.show_text_hints()
-        
-        # Mostrar indicadores de resaltados existentes si está en modo highlight
-        if self.tool_mode == 'highlight':
-            self.show_existing_highlights()
-        
-        # Mostrar indicadores de texto editable si está en modo edición
-        if self.tool_mode == 'edit':
-            self.show_edit_hints()
-        
-        # Restaurar textos editables para esta página
         self._restore_editable_texts_for_page()
-        
-        # Restaurar imágenes editables para esta página
         self._restore_editable_images_for_page()
 
         if self.is_readonly:
             self._apply_readonly_flags_to_scene()
+
+        # Hints (recuadros de texto editable) DIFERIDOS: pueden tardar
+        # 1-5s en PDFs complejos creando un QGraphicsRectItem por span.
+        # Programarlos con singleShot deja que el pixmap se muestre
+        # YA y la UI responda; los hints aparecen ~50-300ms despues
+        # sin congelar la edicion. Si render_page se llama otra vez
+        # antes de que disparen, el token los cancela.
+        self._hints_token = getattr(self, '_hints_token', 0) + 1
+        _hints_token = self._hints_token
+        _hints_mode = self.tool_mode
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(0, lambda: self._render_hints_deferred(_hints_token, _hints_mode))
+
+    def _render_hints_deferred(self, token: int, mode: str):
+        """Renderiza los hints visuales del modo actual de forma diferida.
+        Si el token cambio (otro render_page se ejecuto), cancela este."""
+        if token != getattr(self, '_hints_token', None):
+            return
+        if not self.pdf_doc or not self.pdf_doc.is_open():
+            return
+        if self.tool_mode != mode:
+            # Cambio de modo durante el delay: descartar; el nuevo modo
+            # programara su propio render con su mode correspondiente.
+            return
+        try:
+            if mode == 'delete':
+                self.show_text_hints()
+            elif mode == 'highlight':
+                self.show_existing_highlights()
+            elif mode == 'edit':
+                self.show_edit_hints()
+        except Exception as e:
+            print(f"_render_hints_deferred: {e}")
 
     def _apply_readonly_flags_to_scene(self):
         """Aplica los flags de solo lectura (sin mover ni seleccionar) a todos los items."""
@@ -1029,50 +1108,77 @@ class PDFPageView(QGraphicsView):
             self.render_page()
 
     def set_tool_mode(self, mode: str):
-        """Establece el modo de herramienta actual."""
+        """Establece el modo de herramienta actual.
+
+        OPTIMIZACION: si el modo no cambia, no renderiza (antes siempre
+        re-renderizaba la pagina, lo que costaba 1-2s en PDFs grandes).
+        """
         if self.is_readonly:
             return
+        previous_mode = getattr(self, 'tool_mode', None)
         self.tool_mode = mode
-        
+
         if mode == 'select':
             self.setCursor(Qt.IBeamCursor)
             self.setStyleSheet(self.styleSheet())  # Mantener estilo
         elif mode == 'highlight':
             self.setCursor(Qt.CrossCursor)
         elif mode == 'delete':
-            # Cursor personalizado para borrado
             self.setCursor(Qt.CrossCursor)
         elif mode == 'edit':
             self.setCursor(Qt.PointingHandCursor)
         else:
             self.setCursor(Qt.ArrowCursor)
-        
-        # Limpiar selección previa al cambiar herramienta
+
         self.clear_selection()
-        
-        # Mostrar/ocultar indicadores de texto
+
+        # Solo re-renderizar si el modo realmente cambio (los hints
+        # dependen del modo: edit/delete/highlight muestran rectangulos
+        # distintos sobre la pagina). Si es el mismo modo, no hay nada
+        # nuevo que dibujar.
+        if previous_mode == mode:
+            return
         if self.pdf_doc and self.pdf_doc.is_open():
+            if getattr(self, '_suppress_render', False):
+                self._render_pending = True
+                return
             self.render_page()
     
+    # Tope de hints visuales por pagina. PDFs mal estructurados pueden
+    # tener miles de spans (un span por caracter, OCR por palabra suelta).
+    # Crear y repintar un QGraphicsPathItem con miles de subrects penaliza
+    # cada redibujado de la escena durante scroll/drag. Por encima de este
+    # numero, omitimos los hints: el editor funciona igual, solo se pierde
+    # el indicador visual verde sobre cada bloque.
+    _MAX_HINTS_PER_PAGE = 400
+
     def show_text_hints(self):
-        """Muestra indicadores sutiles de dónde hay texto seleccionable."""
+        """Muestra indicadores sutiles de dónde hay texto seleccionable.
+
+        OPTIMIZACION: usa un unico QGraphicsPathItem con todos los rects
+        en lugar de N items separados. Si los spans superan
+        _MAX_HINTS_PER_PAGE, omite los hints para no penalizar el
+        renderizado de la escena.
+        """
         if not self.pdf_doc or not self.pdf_doc.is_open():
             return
-        
+
         try:
-            # Obtener todos los bloques de texto
             blocks = self.pdf_doc.get_text_blocks(self.current_page)
-            
+            if not blocks:
+                return
+            if len(blocks) > self._MAX_HINTS_PER_PAGE:
+                print(f"show_text_hints: {len(blocks)} bloques > {self._MAX_HINTS_PER_PAGE}, omitiendo hints (rendimiento)")
+                return
+            path = QPainterPath()
             for block in blocks:
-                # Convertir a coordenadas de vista
                 view_rect = self.pdf_to_view_rect(block.rect)
-                
-                # Crear un indicador sutil (borde muy tenue)
-                hint = QGraphicsRectItem(view_rect)
-                hint.setPen(QPen(QColor(100, 200, 255, 60), 1))
-                hint.setBrush(QBrush(QColor(100, 200, 255, 25)))
-                hint.setZValue(10)
-                self.scene.addItem(hint)
+                path.addRect(view_rect)
+            hint = QGraphicsPathItem(path)
+            hint.setPen(QPen(QColor(100, 200, 255, 60), 1))
+            hint.setBrush(QBrush(QColor(100, 200, 255, 25)))
+            hint.setZValue(10)
+            self.scene.addItem(hint)
         except Exception as e:
             print(f"Error mostrando hints: {e}")
     
@@ -1086,27 +1192,43 @@ class PDFPageView(QGraphicsView):
         
         try:
             blocks = self.pdf_doc.get_text_blocks(self.current_page)
+            if not blocks:
+                return
+            if len(blocks) > self._MAX_HINTS_PER_PAGE:
+                print(f"show_edit_hints: {len(blocks)} bloques > {self._MAX_HINTS_PER_PAGE}, omitiendo hints (rendimiento)")
+                return
             is_scanned = self.pdf_doc.is_image_based_pdf()
-            
+
+            # OPTIMIZACION: dos QPainterPath (uno por color) en lugar de
+            # un QGraphicsRectItem por span. En docs complejos con 500+
+            # spans pasa de ~3-5s a <50ms. Cada addItem en un loop con
+            # cientos de items costaba O(N log N) por updates al indice
+            # espacial; con 2 items totales el coste es ~O(1).
+            path_normal = QPainterPath()
+            path_ocr = QPainterPath()
+
             for block in blocks:
                 view_rect = self.pdf_to_view_rect(block.rect)
-                hint = QGraphicsRectItem(view_rect)
-                
                 font_name = getattr(block, 'font_name', '') or ''
                 is_ocr_block = (is_scanned and
                                 font_name.lower() in ('helvetica', 'helv'))
-                
                 if is_ocr_block:
-                    # Naranja tenue para texto OCR (no editable directamente)
-                    hint.setPen(QPen(QColor(255, 160, 0, 50), 1, Qt.DotLine))
-                    hint.setBrush(QBrush(QColor(255, 160, 0, 10)))
+                    path_ocr.addRect(view_rect)
                 else:
-                    # Verde para texto editable normal
-                    hint.setPen(QPen(QColor(0, 180, 120, 80), 1.5, Qt.DotLine))
-                    hint.setBrush(QBrush(QColor(0, 180, 120, 15)))
-                
-                hint.setZValue(10)
-                self.scene.addItem(hint)
+                    path_normal.addRect(view_rect)
+
+            if not path_normal.isEmpty():
+                item = QGraphicsPathItem(path_normal)
+                item.setPen(QPen(QColor(0, 180, 120, 80), 1.5, Qt.DotLine))
+                item.setBrush(QBrush(QColor(0, 180, 120, 15)))
+                item.setZValue(10)
+                self.scene.addItem(item)
+            if not path_ocr.isEmpty():
+                item = QGraphicsPathItem(path_ocr)
+                item.setPen(QPen(QColor(255, 160, 0, 50), 1, Qt.DotLine))
+                item.setBrush(QBrush(QColor(255, 160, 0, 10)))
+                item.setZValue(10)
+                self.scene.addItem(item)
         except Exception as e:
             print(f"Error mostrando edit hints: {e}")
     
@@ -1179,6 +1301,7 @@ class PDFPageView(QGraphicsView):
                         event.accept()
                         return
                     self.dragging_image = True
+                    self.userInteractionStarted.emit()
                     self.drag_start_pos = scene_pos
                     self.image_was_moved = False
                     event.accept()
@@ -1191,6 +1314,7 @@ class PDFPageView(QGraphicsView):
                     self._select_text_item(clicked_text)
                     self._deselect_image_item()
                     self.dragging_text = True
+                    self.userInteractionStarted.emit()
                     self.drag_start_pos = scene_pos
                     self.drag_original_rect = QRectF(clicked_text.rect())
                     self.text_was_moved = False
@@ -1274,6 +1398,16 @@ class PDFPageView(QGraphicsView):
                         }
                         self.drag_start_pos = scene_pos
                         self._text_drag_start_item_pos = QPointF(scene_pos)
+                        # OPTIMIZACION: lanzar la captura del snapshot en un
+                        # hilo de fondo desde YA. doc.tobytes() puede tardar
+                        # 100-1000ms y bloqueaba el primer movimiento; ahora
+                        # corre en paralelo al drag y se espera (si hace falta)
+                        # solo en mouseRelease.
+                        try:
+                            if self.pdf_doc:
+                                self.pdf_doc.start_move_source_snapshot_async()
+                        except Exception:
+                            pass
                         # No activamos dragging_text todavía: lo haremos en
                         # mouseMoveEvent al superar el umbral. Si no se supera,
                         # mouseReleaseEvent delegará en handle_edit_click.
@@ -1381,6 +1515,7 @@ class PDFPageView(QGraphicsView):
                     self._select_text_item(item)
                     self._deselect_image_item()
                     self.dragging_text = True
+                    self.userInteractionStarted.emit()
                     self.drag_start_pos = scene_pos
                     # Posición inicial del item ya desplazada: cualquier movimiento
                     # adicional contará desde aquí; text_was_moved=True para que
@@ -1410,6 +1545,15 @@ class PDFPageView(QGraphicsView):
     
     def mouseReleaseEvent(self, event):
         """Maneja el evento de soltar el ratón."""
+        # Cualquier release de boton izquierdo termina la interaccion.
+        # La señal permite al main_window reanudar tareas en background
+        # (ej: generacion de miniaturas) que se pausaron al iniciar drag.
+        was_interacting = (
+            getattr(self, 'dragging_text', False)
+            or getattr(self, 'dragging_image', False)
+        )
+        if was_interacting:
+            self.userInteractionEnded.emit()
         if event.button() == Qt.LeftButton:
             # Manejar fin de redimensión de imagen
             if (self.selected_image_item and 
@@ -1553,20 +1697,79 @@ class PDFPageView(QGraphicsView):
         # El preview ya está siendo manejado por SelectionRect con estilo rojo
     
     def wheelEvent(self, event):
-        """Maneja el evento de la rueda del ratón para zoom."""
+        """Maneja el evento de la rueda del raton.
+
+        - Ctrl+rueda: zoom (in/out).
+        - Rueda sin modificador: scroll vertical normal. Cuando se llega
+          al borde de la pagina actual y se sigue girando en la misma
+          direccion, avanza/retrocede automaticamente a la siguiente
+          pagina y posiciona el scroll al inicio/final correspondiente.
+          Asi el usuario navega TODAS las paginas del PDF de forma
+          continua, como en un visor moderno, sin tocar miniaturas.
+        """
         if event.modifiers() == Qt.ControlModifier:
-            # Zoom con Ctrl + rueda
             delta = event.angleDelta().y()
             if delta > 0:
                 self.zoom_in()
             else:
                 self.zoom_out()
             event.accept()
-        else:
+            return
+
+        # Scroll continuo entre paginas
+        delta_y = event.angleDelta().y()
+        sb = self.verticalScrollBar()
+        if not self.pdf_doc or not self.pdf_doc.is_open():
             super().wheelEvent(event)
+            return
+        page_count = self.pdf_doc.page_count()
+
+        # Si estamos en el limite de la pagina y el usuario sigue
+        # rodando en esa direccion, saltar a la siguiente/anterior.
+        at_bottom = sb.value() >= sb.maximum() - 1
+        at_top = sb.value() <= sb.minimum() + 1
+
+        if delta_y < 0 and at_bottom and self.current_page < page_count - 1:
+            self.load_page(self.current_page + 1)
+            self.verticalScrollBar().setValue(0)
+            self.pageChanged.emit(self.current_page)
+            event.accept()
+            return
+        if delta_y > 0 and at_top and self.current_page > 0:
+            self.load_page(self.current_page - 1)
+            self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
+            self.pageChanged.emit(self.current_page)
+            event.accept()
+            return
+
+        super().wheelEvent(event)
     
     def keyPressEvent(self, event):
         """Maneja eventos de teclado."""
+        # Navegacion de paginas con teclado (PageUp/PageDown/Home/End).
+        # No se aplica si el usuario tiene un texto seleccionado (las
+        # flechas se usan para nudge en modo edicion -- ver mas abajo).
+        if (self.pdf_doc and self.pdf_doc.is_open()
+                and not self.selected_text_item):
+            page_count = self.pdf_doc.page_count()
+            new_page = None
+            if event.key() == Qt.Key_PageDown:
+                if self.current_page < page_count - 1:
+                    new_page = self.current_page + 1
+            elif event.key() == Qt.Key_PageUp:
+                if self.current_page > 0:
+                    new_page = self.current_page - 1
+            elif event.key() == Qt.Key_Home and event.modifiers() & Qt.ControlModifier:
+                new_page = 0
+            elif event.key() == Qt.Key_End and event.modifiers() & Qt.ControlModifier:
+                new_page = page_count - 1
+            if new_page is not None:
+                self.load_page(new_page)
+                self.verticalScrollBar().setValue(0)
+                self.pageChanged.emit(self.current_page)
+                event.accept()
+                return
+
         # Eliminar texto seleccionado con Delete o Backspace
         if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
             if self.selected_text_item and self.tool_mode == 'edit':
@@ -3149,28 +3352,34 @@ class PDFPageView(QGraphicsView):
         current_text = text_item.text
         current_font_size = text_item.font_size
         current_is_bold = getattr(text_item, 'is_bold', False)
-        
+        current_runs = getattr(text_item, 'text_runs', None)
+
         dialog = TextEditDialog(
             text=current_text,
             font_size=current_font_size,
             is_bold=current_is_bold,
             title='Editar texto',
-            parent=self
+            parent=self,
+            text_runs=current_runs,
         )
-        
+
         if dialog.exec_() == QDialog.Accepted:
             values = dialog.get_values()
             new_text = values['text'].strip()
             new_font_size = values['font_size']
             new_is_bold = values['is_bold']
-            
+            new_runs = values.get('text_runs') or None
+
             # Si el spinner devuelve el mismo valor redondeado que le pasamos,
             # el usuario NO cambió el tamaño → preservar el original exacto
             # para evitar degradación progresiva por redondeo
             if round(current_font_size) == new_font_size:
                 new_font_size = current_font_size
-            
-            self._apply_text_edit(text_item, new_text, new_font_size, new_is_bold)
+
+            self._apply_text_edit(
+                text_item, new_text, new_font_size, new_is_bold,
+                edited_runs=new_runs,
+            )
     
     def _remove_text_data_for_item(self, text_item: EditableTextItem):
         """Elimina los datos guardados de un text_item del overlay system."""
@@ -3190,14 +3399,15 @@ class PDFPageView(QGraphicsView):
             self.editable_text_items.remove(text_item)
     
     def _apply_text_edit(
-        self, 
-        text_item: EditableTextItem, 
-        new_text: str, 
-        new_font_size: float, 
+        self,
+        text_item: EditableTextItem,
+        new_text: str,
+        new_font_size: float,
         new_is_bold: bool,
         was_truncated: bool = False,
         warnings: list = None,
-        text_actually_changed: bool = None
+        text_actually_changed: bool = None,
+        edited_runs: list = None,
     ):
         """Aplica los cambios de edición al texto.
         
@@ -3233,7 +3443,16 @@ class PDFPageView(QGraphicsView):
         print(f"  size_changed = {size_changed} (new={new_font_size}, current={text_item.font_size})")
         print(f"  bold_changed = {bold_changed}")
         
-        if not (text_changed or size_changed or bold_changed):
+        # Detectar si los runs (negrita por fragmento) cambiaron aunque el
+        # texto/tamano/bold global no hayan cambiado.
+        runs_changed = False
+        if edited_runs:
+            existing_runs = getattr(text_item, 'text_runs', None) or []
+            def _norm(rs):
+                return [(r.get('text', ''), bool(r.get('is_bold', False))) for r in rs if r.get('text')]
+            runs_changed = _norm(edited_runs) != _norm(existing_runs)
+
+        if not (text_changed or size_changed or bold_changed or runs_changed):
             print("  NO HAY CAMBIOS - retornando")
             return
         
@@ -3261,10 +3480,32 @@ class PDFPageView(QGraphicsView):
         # Obtener line_spacing original
         original_line_spacing = getattr(text_item, 'line_spacing', 0.0)
         
-        # CRÍTICO: Si el TEXTO cambió, crear un NUEVO text_run con el nuevo texto
-        # pero PRESERVANDO los estilos originales (tipografía, tamaño, color, etc.)
+        # CRÍTICO: Si el TEXTO cambió, crear los text_runs nuevos.
+        # - Si el editor devolvió `edited_runs` (con negritas por fragmento),
+        #   los usamos preservando los estilos originales por run.
+        # - Si no, fallback al comportamiento clásico: un único run.
         text_runs = getattr(text_item, 'text_runs', None)
-        if text_changed:
+        used_edited_runs = False
+        if text_changed and edited_runs:
+            print(f"  TEXTO CAMBIÓ - usando {len(edited_runs)} runs editados (negrita por seleccion)")
+            built = []
+            for r in edited_runs:
+                built.append({
+                    'text': r.get('text', ''),
+                    'font_name': original_font_name,
+                    'font_size': new_font_size,
+                    'is_bold': bool(r.get('is_bold', False)),
+                    'is_italic': False,
+                    'color': color_hex,
+                    'needs_newline': bool(r.get('needs_newline', False)),
+                })
+            text_item.text_runs = built
+            text_item.has_mixed_styles = any(r['is_bold'] for r in built) and not all(r['is_bold'] for r in built)
+            text_item.line_spacing = original_line_spacing
+            text_runs = built
+            text_item._text = new_text
+            used_edited_runs = True
+        elif text_changed:
             print(f"  TEXTO CAMBIÓ - creando nuevo text_run con estilos originales")
             # Crear nuevo run con los estilos originales (o los nuevos si se cambiaron)
             new_run = {
@@ -3282,6 +3523,28 @@ class PDFPageView(QGraphicsView):
             print(f"    Nuevo run creado: font={original_font_name}, size={new_font_size}, bold={new_is_bold}")
             # SOLO actualizar _text cuando el usuario REALMENTE cambió el texto
             text_item._text = new_text
+        elif edited_runs and not text_changed:
+            # El texto NO cambió pero el usuario aplicó negrita por selección.
+            # Reconstruimos los runs preservando los estilos originales.
+            existing = text_runs or []
+            base_size = existing[0].get('font_size', new_font_size) if existing else new_font_size
+            built = []
+            for r in edited_runs:
+                built.append({
+                    'text': r.get('text', ''),
+                    'font_name': original_font_name,
+                    'font_size': base_size,
+                    'is_bold': bool(r.get('is_bold', False)),
+                    'is_italic': False,
+                    'color': color_hex,
+                    'needs_newline': bool(r.get('needs_newline', False)),
+                })
+            text_item.text_runs = built
+            text_item.has_mixed_styles = any(r['is_bold'] for r in built) and not all(r['is_bold'] for r in built)
+            text_item.line_spacing = original_line_spacing
+            text_runs = built
+            used_edited_runs = True
+            print(f"  Negrita por seleccion aplicada sobre texto existente ({len(built)} runs)")
         
         # Actualizar propiedades del item
         text_item.font_size = new_font_size
@@ -3289,7 +3552,7 @@ class PDFPageView(QGraphicsView):
         
         # Si cambió el tamaño de fuente (pero NO el texto), actualizar los text_runs
         # para que conserven sus proporciones relativas
-        if text_runs and size_changed:
+        if text_runs and size_changed and not used_edited_runs:
             # Calcular el factor de escala usando el tamaño ORIGINAL antes del cambio
             if original_font_size and original_font_size > 0:
                 scale_factor = new_font_size / original_font_size
@@ -3309,8 +3572,8 @@ class PDFPageView(QGraphicsView):
             
             # Guardar el nuevo tamaño como referencia para futuros cambios
             text_item._original_font_size = new_font_size
-        elif text_runs and bold_changed:
-            # Solo cambió bold, actualizar todos los runs
+        elif text_runs and bold_changed and not used_edited_runs:
+            # Solo cambió bold global, actualizar todos los runs
             for run in text_runs:
                 run['is_bold'] = new_is_bold
         elif not text_runs and (size_changed or bold_changed) and not text_changed:
@@ -3695,13 +3958,29 @@ class PDFPageView(QGraphicsView):
                     own_rect=original_pdf_rect, fs=fs
                 )
             
-            # Borrar el texto ORIGINAL del PDF (solo una vez)
-            self.pdf_doc._save_snapshot()
+            # Antes de modificar el doc, esperamos a que la captura
+            # asíncrona del snapshot pristine termine. Si está en marcha,
+            # se garantiza que el snapshot represente el estado pre-erase.
+            try:
+                self.pdf_doc.wait_move_source_snapshot()
+            except Exception:
+                pass
+
+            # OPTIMIZACION: reutilizar el snapshot pristine ya capturado
+            # como base del undo, evitando un segundo doc.tobytes() (~50-500ms)
+            move_bytes = getattr(self.pdf_doc, '_move_source_bytes', None)
+            self.pdf_doc._save_snapshot(pdf_bytes=move_bytes)
+
+            # Borrar el texto ORIGINAL del PDF (solo una vez).
+            # refresh=False: nos saltamos el _refresh_document (~50-500ms);
+            # render_page() inmediatamente despues ya re-renderiza el pixmap
+            # desde el doc modificado y muestra la redaccion correctamente.
             self.pdf_doc.erase_text_transparent(
                 self.current_page,
                 rect_to_erase,
                 save_snapshot=False,
-                already_internal=already_internal
+                already_internal=already_internal,
+                refresh=False,
             )
             
             # Obtener el rect actual (sin recalcular)
@@ -4105,12 +4384,12 @@ class PDFPageView(QGraphicsView):
                 page_data[-1]['source_page_idx'] = self.current_page
                 page_data[-1]['original_text'] = block.text
 
-                # Tomar snapshot pristine inmediatamente, antes de cualquier
-                # erase. Garantiza que show_pdf_page tenga acceso al span
-                # original aunque el flujo CASO 2 borre el texto del PDF
-                # actual durante el primer movimiento.
+                # Snapshot pristine: si aun no se ha lanzado (p.ej. el drag
+                # vino por una ruta distinta a mousePress) lo arrancamos en
+                # background. La espera para garantizar que captura el
+                # estado pre-erase ocurre en _update_text_in_pdf CASO 2.
                 if self.pdf_doc:
-                    self.pdf_doc._ensure_move_source_snapshot()
+                    self.pdf_doc.start_move_source_snapshot_async()
 
         return text_item
 
@@ -4622,11 +4901,24 @@ class PDFPageView(QGraphicsView):
                     # tamaño, kerning, color y saltos de línea de forma
                     # visualmente idéntica al original.
                     # ============================================================
+                    # CRÍTICO: si el usuario aplicó negrita por selección u
+                    # otro cambio de formato, NUNCA usar MOVE puro: clonaria
+                    # los glifos originales sin las negritas, perdiendolas.
+                    # Detectamos formato por la presencia de runs con bold
+                    # mixto o has_mixed_styles=True. En ese caso vamos al
+                    # flujo normal (erase + add_text_runs_to_page).
+                    _runs = text_data.get('text_runs') or []
+                    has_format_changes = (
+                        bool(text_data.get('has_mixed_styles'))
+                        or any(r.get('is_bold') for r in _runs)
+                        or any(r.get('is_italic') for r in _runs)
+                    )
                     is_pure_move = (
                         text_data.get('move_only') is True
                         and text_data.get('source_rect_internal') is not None
                         and text_data.get('source_page_idx') is not None
                         and text_data.get('text') == text_data.get('original_text')
+                        and not has_format_changes
                     )
                     if is_pure_move:
                         try:
@@ -4676,12 +4968,37 @@ class PDFPageView(QGraphicsView):
                             self.pdf_doc.erase_text_transparent(
                                 page_idx,
                                 original_rect,
-                                save_snapshot=False
+                                save_snapshot=False,
+                                refresh=False,
                             )
                             print(f"    [OK] Posicion original cubierta")
                         except Exception as e:
                             print(f"    Advertencia: No se pudo cubrir posición original: {e}")
                         text_data['original_pdf_rect'] = None
+
+                    # CASO move_only NATIVO + cambio de formato: el texto venía
+                    # de un span NATIVO del PDF (move_only=True) y abandonamos
+                    # el pure_move por aplicar negrita/itálica. Hay que borrar
+                    # los glifos NATIVOS originales (en source_rect_internal)
+                    # sin tocar el fondo, antes de escribir los runs editados.
+                    if (text_data.get('move_only')
+                            and text_data.get('source_rect_internal') is not None):
+                        try:
+                            src_rect_int = text_data['source_rect_internal']
+                            src_page_idx = text_data.get('source_page_idx', page_idx)
+                            self.pdf_doc.erase_text_transparent(
+                                src_page_idx,
+                                fitz.Rect(src_rect_int),
+                                save_snapshot=False,
+                                already_internal=True,
+                                refresh=False,
+                            )
+                            print(f"    [OK] Glifos nativos originales limpiados (move+formato)")
+                        except Exception as e:
+                            print(f"    Advertencia: no se pudo limpiar origen nativo: {e}")
+                        # Marcamos como ya consumido para no repetir en futuros saves
+                        text_data['move_only'] = False
+                        text_data['source_rect_internal'] = None
                     
                     # Limpiar texto OCR invisible subyacente antes de escribir
                     # Evita superposiciones si render_mode=3 se corrompe tras apply_redactions
@@ -4692,7 +5009,8 @@ class PDFPageView(QGraphicsView):
                             if existing_text.strip():
                                 self.pdf_doc.erase_text_transparent(
                                     page_idx, pdf_rect,
-                                    save_snapshot=False
+                                    save_snapshot=False,
+                                    refresh=False,
                                 )
                                 print(f"    [OK] Texto existente bajo overlay limpiado")
                     except Exception as e:
