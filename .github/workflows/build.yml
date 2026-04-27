@@ -16,6 +16,13 @@ on:
 permissions:
   contents: write
 
+# Forzar Node 24 para acciones que aun declaran Node 20 en su action.yml
+# (actions/upload-artifact@v5 lo declara hasta que liberen v6, prevista
+# despues del deadline forzoso del 2026-06-02). Convierte el warning de
+# "deprecated, may not work" en informativo "running on Node 24".
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   # ==================== BUILD WINDOWS ====================
   build-windows:
